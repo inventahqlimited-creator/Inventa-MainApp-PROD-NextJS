@@ -59,7 +59,7 @@ export default function LoginForm() {
           top: -100px; left: -200px; pointer-events: none;
         }
         .left-top { position: relative; z-index: 2; }
-        .left-body { position: relative; z-index: 2; flex: 1; display: flex; flex-direction: column; justify-content: flex-end; padding: 0 0 48px; }
+        .left-body { position: relative; z-index: 2; flex: 1; display: flex; flex-direction: column; justify-content: center; padding: 0; }
         .left-bottom { position: relative; z-index: 2; font-size: 12px; color: rgba(255,255,255,0.25); }
         .tagline-eyebrow { font-size: 11px; font-weight: 600; letter-spacing: 0.14em; color: var(--teal-light); margin-bottom: 16px; opacity: 0.7; text-transform: uppercase; }
         .tagline { font-family: var(--font-display); font-size: 61px; font-weight: 800; line-height: 1.08; letter-spacing: -0.03em; color: white; max-width: 702px; }

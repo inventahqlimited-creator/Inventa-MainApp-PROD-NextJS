@@ -2,14 +2,13 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 
 export const metadata = { title: 'Dashboard' }
+export const dynamic = 'force-dynamic'
 
 export default async function DashboardPage() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-
   if (!user) redirect('/login')
 
-  // Fetch org membership server-side
   const { data: rawMembership } = await supabase
     .from('org_members')
     .select('org_id, role')
@@ -31,12 +30,8 @@ export default async function DashboardPage() {
         {membership && (
           <>
             <p style={{ fontSize: '13px', color: 'var(--gray-400)', marginTop: '16px', marginBottom: '4px' }}>Organisation</p>
-            <p style={{ fontWeight: 600, color: 'var(--slate)' }}>
-              {membership.org_id}
-            </p>
-            <p style={{ fontSize: '13px', color: 'var(--gray-400)', marginTop: '4px' }}>
-              Role: {membership.role}
-            </p>
+            <p style={{ fontWeight: 600, color: 'var(--slate)' }}>{membership.org_id}</p>
+            <p style={{ fontSize: '13px', color: 'var(--gray-400)', marginTop: '4px' }}>Role: {membership.role}</p>
           </>
         )}
       </div>

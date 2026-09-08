@@ -1,0 +1,40 @@
+@import "tailwindcss";
+
+/* ══ inventaHQ Design System ══ */
+:root {
+  --slate:         #0F2D35;
+  --slate-mid:     #1A4A57;
+  --teal:          #0D9488;
+  --teal-hover:    #0B7A6E;
+  --teal-light:    #5EEAD4;
+  --teal-pale:     #CCFBF1;
+  --teal-surface:  #F0FAFA;
+  --white:         #FFFFFF;
+  --gray-50:       #F8FAFA;
+  --gray-100:      #F0F0EE;
+  --gray-200:      #E2E2DF;
+  --gray-400:      #9CA3AF;
+  --gray-900:      #111827;
+  --danger:        #EF4444;
+  --font-display:  'Plus Jakarta Sans', sans-serif;
+  --font-ui:       'Inter', sans-serif;
+  --shadow-sm:     0 1px 3px rgba(0,0,0,0.07), 0 4px 12px rgba(0,0,0,0.05);
+  --shadow-lg:     0 8px 32px rgba(0,0,0,0.13), 0 2px 8px rgba(0,0,0,0.07);
+  --transition:    150ms ease-out;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  font-family: var(--font-ui);
+  background: var(--gray-50);
+  color: var(--gray-900);
+  font-size: 14px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--gray-200); border-radius: 9999px; }

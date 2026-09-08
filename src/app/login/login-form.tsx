@@ -76,4 +76,115 @@ export default function LoginForm() {
           padding: 40px 20px; position: relative;
         }
         .right-panel::before {
-          content: ''; position: absolute; top: 0; left: 0; right: 0;
+          content: ''; position: absolute; top: 0; left: 0; right: 0; height: 4px;
+          background: linear-gradient(90deg, var(--teal) 0%, var(--teal-light) 100%);
+        }
+        .form-card { width: 100%; max-width: 380px; }
+        .form-welcome { font-family: var(--font-display); font-size: 24px; font-weight: 800; letter-spacing: -0.025em; color: var(--slate); margin-bottom: 6px; }
+        .form-sub { font-size: 13.5px; color: var(--gray-400); margin-bottom: 32px; }
+        .field { display: flex; flex-direction: column; gap: 6px; margin-bottom: 18px; }
+        .field label { font-size: 12px; font-weight: 600; color: var(--slate); }
+        .field input { height: 47px; padding: 0 14px; border: 1.5px solid var(--gray-200); border-radius: 13px; background: white; font-family: var(--font-ui); font-size: 14px; color: var(--gray-900); outline: none; width: 100%; transition: border-color 150ms, box-shadow 150ms; }
+        .field input:focus { border-color: var(--teal); box-shadow: 0 0 0 3px rgba(13,148,136,0.12); }
+        .pw-wrap { position: relative; }
+        .pw-wrap input { padding-right: 44px; }
+        .pw-toggle { position: absolute; right: 12px; top: 50%; transform: translateY(-50%); background: none; border: none; cursor: pointer; color: var(--gray-400); display: flex; align-items: center; }
+        .remforg { display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px; }
+        .remember { display: flex; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; color: var(--gray-400); }
+        .remember input { accent-color: var(--teal); }
+        .forgot-link { font-size: 13px; color: var(--teal); background: none; border: none; cursor: pointer; font-weight: 500; }
+        .btn-signin { width: 100%; height: 48px; background: var(--teal); color: white; border: none; border-radius: 13px; font-family: var(--font-display); font-size: 15px; font-weight: 700; cursor: pointer; box-shadow: 0 4px 14px rgba(13,148,136,0.28); transition: background 150ms; }
+        .btn-signin:hover { background: var(--teal-hover); }
+        .btn-signin:disabled { opacity: 0.7; cursor: not-allowed; }
+        .error-box { background: #FEF2F2; border: 1.5px solid #FECACA; border-radius: 13px; padding: 12px 14px; font-size: 13px; color: #B91C1C; margin-bottom: 18px; }
+        .back-btn { background: none; border: none; cursor: pointer; font-size: 13px; color: var(--gray-400); display: flex; align-items: center; gap: 6px; padding: 0; margin-bottom: 24px; }
+        .sent-icon { width: 52px; height: 52px; border-radius: 50%; background: var(--teal-surface); border: 1.5px solid var(--teal-pale); display: flex; align-items: center; justify-content: center; margin: 0 auto 16px; color: var(--teal); }
+        @media (max-width: 900px) { .left-panel { display: none; } .right-panel { width: 100%; } }
+      `}</style>
+
+      <div className="login-page">
+        <div className="left-panel">
+          <div className="left-top">
+            <svg style={{ display: 'block', width: '396px' }} viewBox="0 0 480 76" xmlns="http://www.w3.org/2000/svg">
+              <defs>
+                <clipPath id="ll"><polygon points="0,0 185,0 165,76 0,76"/></clipPath>
+                <clipPath id="lr"><polygon points="185,0 480,0 480,76 165,76"/></clipPath>
+                <mask id="lm"><rect width="480" height="76" fill="white"/><rect x="3" y="0" width="20" height="17" fill="black"/></mask>
+              </defs>
+              <text x="3" y="60" fontFamily="'Plus Jakarta Sans',sans-serif" fontSize="54" fontWeight="800" letterSpacing="-2" fill="rgba(255,255,255,0.28)" clipPath="url(#ll)" mask="url(#lm)">inventaHQ</text>
+              <text x="3" y="60" fontFamily="'Plus Jakarta Sans',sans-serif" fontSize="54" fontWeight="800" letterSpacing="-2" fill="#5EEAD4" clipPath="url(#lr)" mask="url(#lm)" paintOrder="stroke fill" stroke="#5EEAD4" strokeWidth="1.1" strokeLinejoin="round">inventaHQ</text>
+            </svg>
+          </div>
+          <div className="left-body">
+            <div className="tagline-eyebrow">No guessing. Just control.</div>
+            <h1 className="tagline">Every unit.<br/>Every location.<br/><em>Always accounted for.</em></h1>
+            <p className="tagline-sub">Real-time stock visibility across every warehouse, order, and transfer — so nothing slips through.</p>
+            <div className="stat-row">
+              <div className="stat"><div className="stat-val">100%</div><div className="stat-label">Stock visibility</div></div>
+              <div className="stat-divider"/>
+              <div className="stat"><div className="stat-val">Live</div><div className="stat-label">Order tracking</div></div>
+              <div className="stat-divider"/>
+              <div className="stat"><div className="stat-val">Zero</div><div className="stat-label">Blind spots</div></div>
+            </div>
+          </div>
+          <div className="left-bottom">© 2026 inventaHQ. All rights reserved.</div>
+        </div>
+
+        <div className="right-panel">
+          <div className="form-card">
+            {view === 'signin' && (
+              <form onSubmit={handleSignIn}>
+                <div className="form-welcome">Welcome back</div>
+                <div className="form-sub">Sign in to your inventaHQ workspace.</div>
+                {error && <div className="error-box">{error}</div>}
+                <div className="field">
+                  <label>Email address</label>
+                  <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@company.com" required autoComplete="email"/>
+                </div>
+                <div className="field">
+                  <label>Password</label>
+                  <div className="pw-wrap">
+                    <input type={showPw ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" required autoComplete="current-password"/>
+                    <button type="button" className="pw-toggle" onClick={() => setShowPw(!showPw)}>
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                    </button>
+                  </div>
+                </div>
+                <div className="remforg">
+                  <label className="remember"><input type="checkbox"/> Remember me</label>
+                  <button type="button" className="forgot-link" onClick={() => { setView('forgot'); setError('') }}>Forgot password?</button>
+                </div>
+                <button type="submit" className="btn-signin" disabled={loading}>{loading ? 'Signing in…' : 'Sign in'}</button>
+              </form>
+            )}
+
+            {view === 'forgot' && (
+              <form onSubmit={handleForgot}>
+                <button type="button" className="back-btn" onClick={() => { setView('signin'); setError('') }}>← Back to sign in</button>
+                <div className="form-welcome" style={{ fontSize: '20px' }}>Reset your password</div>
+                <div className="form-sub" style={{ marginBottom: '28px' }}>Enter your email and we&apos;ll send a reset link.</div>
+                {error && <div className="error-box">{error}</div>}
+                <div className="field">
+                  <label>Email address</label>
+                  <input type="email" value={forgotEmail} onChange={e => setForgotEmail(e.target.value)} placeholder="you@company.com" required/>
+                </div>
+                <button type="submit" className="btn-signin" disabled={loading}>{loading ? 'Sending…' : 'Send reset link'}</button>
+              </form>
+            )}
+
+            {view === 'forgot-sent' && (
+              <div style={{ textAlign: 'center' }}>
+                <div className="sent-icon">
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07A19.5 19.5 0 0 1 4.69 12a19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 3.6 1.18h3a2 2 0 0 1 2 1.72c.127.96.361 1.903.7 2.81a2 2 0 0 1-.45 2.11L7.91 8.82a16 16 0 0 0 6.29 6.29l.98-.98a2 2 0 0 1 2.11-.45c.907.339 1.85.573 2.81.7A2 2 0 0 1 22 16.92z"/></svg>
+                </div>
+                <div style={{ fontFamily: 'var(--font-display)', fontSize: '17px', fontWeight: 700, color: 'var(--slate)', marginBottom: '8px' }}>Check your inbox</div>
+                <div style={{ fontSize: '13.5px', color: 'var(--gray-400)', lineHeight: 1.6 }}>Reset link sent to <strong style={{ color: 'var(--slate)' }}>{forgotEmail}</strong>. Expires in 15 minutes.</div>
+                <button className="btn-signin" style={{ marginTop: '28px' }} onClick={() => setView('signin')}>Back to sign in</button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </>
+  )
+}

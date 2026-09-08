@@ -4,12 +4,17 @@ primary_region = "syd"
 [build]
   dockerfile = "Dockerfile"
 
+  [build.args]
+    NEXT_PUBLIC_SUPABASE_URL      = "https://cggtzuthslbvdvuaqadk.supabase.co"
+    NEXT_PUBLIC_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImNnZ3R6dXRoc2xidmR2dWFxYWRrIiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODgyMzIxNTIsImV4cCI6MjEwMzgwODE1Mn0.WLA619ifLYmqDkiwN_A0OeSl5gfoJqM4jVKQ3Nimx3E"
+    NEXT_PUBLIC_APP_URL           = "https://app.inventahq.com"
+
 [env]
   PORT     = "3000"
   NODE_ENV = "production"
 
 [http_service]
-  internal_port        = 3000 
+  internal_port        = 3000
   force_https          = true
   auto_stop_machines   = false
   auto_start_machines  = true

@@ -3,7 +3,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import OrgStatusForm from './org-status-form'
 import UsersTable from './users-table'
-import type { Member } from './types'
+import UsersTable, { Member } from './users-table'
 
 export const dynamic = 'force-dynamic'
 

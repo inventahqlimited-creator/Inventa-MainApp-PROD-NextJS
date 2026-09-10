@@ -1,12 +1,13 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
 
 export default function LoginForm() {
   const router = useRouter()
   const supabase = createClient()
+  const [isHub, setIsHub] = useState(false)
 
   const [email, setEmail]       = useState('')
   const [password, setPassword] = useState('')
@@ -16,6 +17,10 @@ export default function LoginForm() {
   const [view, setView]         = useState<'signin' | 'forgot' | 'forgot-sent'>('signin')
   const [forgotEmail, setForgotEmail] = useState('')
 
+  useEffect(() => {
+    setIsHub(window.location.hostname === 'hub.inventahq.com')
+  }, [])
+
   async function handleSignIn(e: React.FormEvent) {
     e.preventDefault()
     setError('')
@@ -23,16 +28,40 @@ export default function LoginForm() {
     try {
       const { data: authData, error: authErr } = await supabase.auth.signInWithPassword({ email, password })
       if (authErr) { setError('Incorrect email or password. Please try again.'); setPassword(''); setLoading(false); return }
-      const { data: membership } = await supabase.from('org_members').select('org_id, role').eq('user_id', authData.user.id).single()
-      if (!membership) { await supabase.auth.signOut(); setError('Your account is not linked to any organisation. Contact your administrator.'); setLoading(false); return }
-      router.refresh(); router.push('/')
+
+      const { data: membership } = await supabase
+        .from('org_members')
+        .select('org_id, role')
+        .eq('user_id', authData.user.id)
+        .single()
+
+      const m = membership as { org_id: string; role: string } | null
+
+      if (!m) {
+        await supabase.auth.signOut()
+        setError('Your account is not linked to any organisation. Contact your administrator.')
+        setLoading(false)
+        return
+      }
+
+      if (isHub && m.role !== 'admin') {
+        await supabase.auth.signOut()
+        setError('Hub access is for administrators only. Please use app.inventahq.com instead.')
+        setLoading(false)
+        return
+      }
+
+      router.refresh()
+      router.push(isHub ? '/admin' : '/')
     } catch { setError('Something went wrong. Please try again.'); setLoading(false) }
   }
 
   async function handleForgot(e: React.FormEvent) {
     e.preventDefault()
     setLoading(true)
-    const { error: resetErr } = await supabase.auth.resetPasswordForEmail(forgotEmail, { redirectTo: `${window.location.origin}/auth/callback` })
+    const { error: resetErr } = await supabase.auth.resetPasswordForEmail(forgotEmail, {
+      redirectTo: `${window.location.origin}/auth/callback`,
+    })
     setLoading(false)
     if (resetErr) { setError(resetErr.message); return }
     setView('forgot-sent')
@@ -99,6 +128,10 @@ export default function LoginForm() {
         .error-box { background: #FEF2F2; border: 1.5px solid #FECACA; border-radius: 13px; padding: 12px 14px; font-size: 13px; color: #B91C1C; margin-bottom: 18px; }
         .back-btn { background: none; border: none; cursor: pointer; font-size: 13px; color: var(--gray-400); display: flex; align-items: center; gap: 6px; padding: 0; margin-bottom: 24px; }
         .sent-icon { width: 52px; height: 52px; border-radius: 50%; background: var(--teal-surface); border: 1.5px solid var(--teal-pale); display: flex; align-items: center; justify-content: center; margin: 0 auto 16px; color: var(--teal); }
+        .hub-badge { display: inline-flex; align-items: center; gap: 7px; background: rgba(13,148,136,0.08); border: 1px solid rgba(13,148,136,0.2); border-radius: 8px; padding: 6px 12px; margin-bottom: 20px; }
+        .hub-badge-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--teal); }
+        .hub-badge-text { font-size: 11px; font-weight: 700; color: var(--teal); letter-spacing: 0.08em; text-transform: uppercase; }
+        .hub-badge-sub { font-size: 11px; color: var(--gray-400); }
         @media (max-width: 900px) { .left-panel { display: none; } .right-panel { width: 100%; } }
       `}</style>
 
@@ -134,8 +167,20 @@ export default function LoginForm() {
           <div className="form-card">
             {view === 'signin' && (
               <form onSubmit={handleSignIn}>
+                {isHub && (
+                  <div className="hub-badge">
+                    <div className="hub-badge-dot"/>
+                    <span className="hub-badge-text">Hub</span>
+                    <span className="hub-badge-sub">— Internal Admin Portal</span>
+                  </div>
+                )}
                 <div className="form-welcome">Welcome back</div>
-                <div className="form-sub">Sign in to your inventaHQ workspace.</div>
+                <div className="form-sub">
+                  {isHub
+                    ? 'Sign in to inventaHQ Hub. Admin access only.'
+                    : 'Sign in to your inventaHQ workspace.'
+                  }
+                </div>
                 {error && <div className="error-box">{error}</div>}
                 <div className="field">
                   <label>Email address</label>
@@ -154,7 +199,9 @@ export default function LoginForm() {
                   <label className="remember"><input type="checkbox"/> Remember me</label>
                   <button type="button" className="forgot-link" onClick={() => { setView('forgot'); setError('') }}>Forgot password?</button>
                 </div>
-                <button type="submit" className="btn-signin" disabled={loading}>{loading ? 'Signing in…' : 'Sign in'}</button>
+                <button type="submit" className="btn-signin" disabled={loading}>
+                  {loading ? 'Signing in…' : isHub ? 'Sign in to Hub' : 'Sign in'}
+                </button>
               </form>
             )}
 

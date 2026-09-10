@@ -39,14 +39,20 @@ export async function proxy(request: NextRequest) {
   }
 
   if (isHub) {
-    if (!user) return NextResponse.redirect(new URL('/login', request.url))
+    if (!user) {
+      return NextResponse.redirect(new URL('/login', request.url))
+    }
     if (!pathname.startsWith('/admin') && !pathname.startsWith('/api/admin')) {
       return NextResponse.redirect(new URL('/admin', request.url))
     }
-    const { data: m } = await supabase
-      .from('org_members').select('role').eq('user_id', user.id).single()
-    const member = m as { role: string } | null
-    if (!member || member.role !== 'admin') {
+    // Verify admin role — check if user has ANY admin membership
+    const { data: members } = await supabase
+      .from('org_members')
+      .select('role, invite_status')
+      .eq('user_id', user.id)
+    const memberList = (members ?? []) as { role: string; invite_status: string }[]
+    const isAdmin = memberList.some(m => m.role === 'admin' && m.invite_status === 'accepted')
+    if (!isAdmin) {
       await supabase.auth.signOut()
       return NextResponse.redirect(new URL('/login', request.url))
     }

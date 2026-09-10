@@ -2,13 +2,11 @@
 
 import { useState } from 'react'
 import { useRouter, useParams } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
 
 export default function InviteUserPage() {
   const router = useRouter()
   const params = useParams()
   const orgId = params.id as string
-  const supabase = createClient()
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -23,39 +21,26 @@ export default function InviteUserPage() {
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault()
     setError('')
-
     if (!form.email.trim()) { setError('Email is required.'); return }
     if (!form.first_name.trim()) { setError('First name is required.'); return }
-
     setLoading(true)
 
     try {
-      const { error: memberErr } = await (supabase as any)
-        .from('org_members')
-        .insert({
-          org_id:        orgId,
-          first_name:    form.first_name.trim(),
-          last_name:     form.last_name.trim() || null,
-          email:         form.email.trim(),
-          role:          form.role,
-          invite_status: 'pending',
-        })
-
-      if (memberErr) {
-        setError(memberErr.message)
-        setLoading(false)
-        return
-      }
-
       const res = await fetch('/api/admin/invite', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: form.email.trim(), orgId, role: form.role }),
+        body: JSON.stringify({
+          email:     form.email.trim(),
+          orgId,
+          role:      form.role,
+          firstName: form.first_name.trim(),
+          lastName:  form.last_name.trim() || null,
+        }),
       })
 
       const result = await res.json()
       if (!res.ok) {
-        setError(result.error || 'Failed to send invite email.')
+        setError(result.error || 'Failed to send invite.')
         setLoading(false)
         return
       }
@@ -103,7 +88,6 @@ export default function InviteUserPage() {
           <div style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--gray-400)', marginBottom: '18px' }}>
             User Details
           </div>
-
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '14px' }}>
             <div>
               <label style={labelStyle}>First Name *</label>
@@ -119,11 +103,7 @@ export default function InviteUserPage() {
             </div>
             <div style={{ gridColumn: 'span 2' }}>
               <label style={labelStyle}>Role</label>
-              <select
-                style={{ ...inputStyle, cursor: 'pointer' }}
-                value={form.role}
-                onChange={e => set('role', e.target.value)}
-              >
+              <select style={{ ...inputStyle, cursor: 'pointer' }} value={form.role} onChange={e => set('role', e.target.value)}>
                 <option value="admin">Admin — Full access including user management</option>
                 <option value="manager">Manager — Can manage orders and products</option>
                 <option value="staff">Staff — Standard access</option>

@@ -3,41 +3,34 @@
 import { useState } from 'react'
 import Link from 'next/link'
 
-export default function UsersTable({ members, orgId }: {
-  members: {
-    id: string
-    user_id: string | null
-    first_name: string | null
-    last_name: string | null
-    email: string | null
-    role: string
-    invite_status: string
-    invited_at: string | null
-  }[]
-  orgId: string
-}) {
-  const [resending, setResending] = useState<string | null>(null)
-  const [resent, setResent] = useState<string | null>(null)
-  const [error, setError] = useState<string | null>(null)
+export default function UsersTable(props: { members: any[], orgId: string }) {
+  const members = props.members
+  const orgId = props.orgId
+  const [resending, setResending] = useState('')
+  const [resent, setResent] = useState('')
+  const [error, setError] = useState('')
 
-  async function handleResend(member: { id: string; email: string | null; role: string }) {
+  async function handleResend(member: any) {
     if (!member.email) return
     setResending(member.id)
-    setError(null)
+    setError('')
     const res = await fetch('/api/admin/resend-invite', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: member.email, orgId, role: member.role }),
     })
-    setResending(null)
+    setResending('')
     if (res.ok) {
       setResent(member.id)
-      setTimeout(() => setResent(null), 3000)
+      setTimeout(() => setResent(''), 3000)
     } else {
       const data = await res.json()
       setError(data.error || 'Failed to resend invite.')
     }
   }
+
+  const statusBg: any = { pending: '#EFF6FF', accepted: '#D1FAE5' }
+  const statusColor: any = { pending: '#1E40AF', accepted: '#065F46' }
 
   return (
     <div style={{ background: 'white', borderRadius: '14px', boxShadow: 'var(--shadow-sm)', overflow: 'hidden', marginTop: '20px' }}>
@@ -45,7 +38,7 @@ export default function UsersTable({ members, orgId }: {
         <div>
           <div style={{ fontFamily: 'var(--font-display)', fontSize: '15px', fontWeight: 700, color: 'var(--slate)' }}>Users</div>
           <div style={{ fontSize: '12px', color: 'var(--gray-400)', marginTop: '1px' }}>
-            {members.length} member{members.length !== 1 ? 's' : ''} · {members.filter(m => m.invite_status === 'pending').length} pending
+            {members.length} member{members.length !== 1 ? 's' : ''} · {members.filter((m: any) => m.invite_status === 'pending').length} pending
           </div>
         </div>
         <Link href={`/admin/organisations/${orgId}/users/invite`} style={{
@@ -77,13 +70,11 @@ export default function UsersTable({ members, orgId }: {
             </tr>
           </thead>
           <tbody>
-            {members.map((m, i) => {
+            {members.map((m: any, i: number) => {
               const fullName = [m.first_name, m.last_name].filter(Boolean).join(' ') || '—'
               const isPending = m.invite_status === 'pending'
               const isResending = resending === m.id
               const isResent = resent === m.id
-              const statusBg: Record<string, string> = { pending: '#EFF6FF', accepted: '#D1FAE5' }
-              const statusColor: Record<string, string> = { pending: '#1E40AF', accepted: '#065F46' }
               return (
                 <tr key={m.id} style={{ borderBottom: i < members.length - 1 ? '1px solid var(--gray-100)' : 'none' }}>
                   <td style={{ padding: '13px 16px', fontWeight: 600, color: 'var(--slate)', fontSize: '13.5px' }}>{fullName}</td>
@@ -103,7 +94,7 @@ export default function UsersTable({ members, orgId }: {
                   </td>
                   <td style={{ padding: '13px 16px', textAlign: 'right' }}>
                     {isPending && (
-                      <button onClick={() => handleResend(m)} disabled={isResending} style={{
+                      <button onClick={() => handleResend(m)} disabled={!!isResending} style={{
                         height: '30px', padding: '0 12px', borderRadius: '7px',
                         border: isResent ? '1.5px solid #0D9488' : '1.5px solid var(--gray-200)',
                         background: isResent ? '#F0FAFA' : 'white',

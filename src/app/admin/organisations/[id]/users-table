@@ -104,4 +104,41 @@ export default function UsersTable({ members, orgId }: { members: Member[]; orgI
                   </td>
                   <td style={{ padding: '13px 16px' }}>
                     <span style={{
-                      fontSize: '12px', fontWeight: 600, padding: '3px 10px',
+                      fontSize: '12px', fontWeight: 600, padding: '3px 10px', borderRadius: '999px',
+                      background: statusStyle[m.invite_status]?.bg ?? '#F3F4F6',
+                      color: statusStyle[m.invite_status]?.color ?? '#6B7280',
+                    }}>
+                      {m.invite_status.charAt(0).toUpperCase() + m.invite_status.slice(1)}
+                    </span>
+                  </td>
+                  <td style={{ padding: '13px 16px', color: 'var(--gray-400)', fontSize: '13px' }}>
+                    {m.invited_at ? new Date(m.invited_at).toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}
+                  </td>
+                  <td style={{ padding: '13px 16px', textAlign: 'right' }}>
+                    {isPending && (
+                      <button
+                        onClick={() => handleResend(m)}
+                        disabled={isResending}
+                        style={{
+                          height: '30px', padding: '0 12px', borderRadius: '7px',
+                          border: isResent ? '1.5px solid #0D9488' : '1.5px solid var(--gray-200)',
+                          background: isResent ? 'var(--teal-surface)' : 'white',
+                          color: isResent ? 'var(--teal)' : 'var(--gray-400)',
+                          fontSize: '12px', fontWeight: 600, cursor: isResending ? 'not-allowed' : 'pointer',
+                          fontFamily: 'var(--font-ui)', transition: 'all 150ms',
+                          opacity: isResending ? 0.6 : 1,
+                        }}
+                      >
+                        {isResending ? 'Sending…' : isResent ? '✓ Sent' : 'Resend invite'}
+                      </button>
+                    )}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
+      )}
+    </div>
+  )
+}

@@ -34,7 +34,6 @@ export default function InviteUserPage() {
         .from('org_members')
         .insert({
           org_id:        orgId,
-          user_id:       null,
           first_name:    form.first_name.trim(),
           last_name:     form.last_name.trim() || null,
           email:         form.email.trim(),

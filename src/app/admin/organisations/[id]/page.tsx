@@ -2,7 +2,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import OrgStatusForm from './org-status-form'
-import UsersTable, { Member } from './users-table'
+import UsersTable from './users-table'
 
 export const dynamic = 'force-dynamic'
 

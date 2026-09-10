@@ -2,40 +2,33 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-type Member = {
-  id: string
-  user_id: string | null
-  first_name: string | null
-  last_name: string | null
-  email: string | null
-  role: string
-  invite_status: string
-  invited_at: string | null
-}
 
-const statusStyle: Record<string, { bg: string; color: string }> = {
-  pending:  { bg: '#EFF6FF', color: '#1E40AF' },
-  accepted: { bg: '#D1FAE5', color: '#065F46' },
-}
-
-export type { Member }
-
-export default function UsersTable({ members, orgId }: { members: Member[]; orgId: string }) {
+export default function UsersTable({ members, orgId }: {
+  members: {
+    id: string
+    user_id: string | null
+    first_name: string | null
+    last_name: string | null
+    email: string | null
+    role: string
+    invite_status: string
+    invited_at: string | null
+  }[]
+  orgId: string
+}) {
   const [resending, setResending] = useState<string | null>(null)
   const [resent, setResent] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
 
-  async function handleResend(member: Member) {
+  async function handleResend(member: { id: string; email: string | null; role: string }) {
     if (!member.email) return
     setResending(member.id)
     setError(null)
-
     const res = await fetch('/api/admin/resend-invite', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email: member.email, orgId, role: member.role }),
     })
-
     setResending(null)
     if (res.ok) {
       setResent(member.id)
@@ -65,13 +58,11 @@ export default function UsersTable({ members, orgId }: { members: Member[]; orgI
           Invite User
         </Link>
       </div>
-
       {error && (
         <div style={{ padding: '12px 24px', background: '#FEF2F2', borderBottom: '1px solid #FECACA', fontSize: '13px', color: '#B91C1C' }}>
           {error}
         </div>
       )}
-
       {members.length === 0 ? (
         <div style={{ padding: '48px', textAlign: 'center', color: 'var(--gray-400)', fontSize: '13px' }}>
           No users yet. Invite the first user to get started.
@@ -91,7 +82,8 @@ export default function UsersTable({ members, orgId }: { members: Member[]; orgI
               const isPending = m.invite_status === 'pending'
               const isResending = resending === m.id
               const isResent = resent === m.id
-
+              const statusBg: Record<string, string> = { pending: '#EFF6FF', accepted: '#D1FAE5' }
+              const statusColor: Record<string, string> = { pending: '#1E40AF', accepted: '#065F46' }
               return (
                 <tr key={m.id} style={{ borderBottom: i < members.length - 1 ? '1px solid var(--gray-100)' : 'none' }}>
                   <td style={{ padding: '13px 16px', fontWeight: 600, color: 'var(--slate)', fontSize: '13.5px' }}>{fullName}</td>
@@ -102,11 +94,7 @@ export default function UsersTable({ members, orgId }: { members: Member[]; orgI
                     </span>
                   </td>
                   <td style={{ padding: '13px 16px' }}>
-                    <span style={{
-                      fontSize: '12px', fontWeight: 600, padding: '3px 10px', borderRadius: '999px',
-                      background: statusStyle[m.invite_status]?.bg ?? '#F3F4F6',
-                      color: statusStyle[m.invite_status]?.color ?? '#6B7280',
-                    }}>
+                    <span style={{ fontSize: '12px', fontWeight: 600, padding: '3px 10px', borderRadius: '999px', background: statusBg[m.invite_status] ?? '#F3F4F6', color: statusColor[m.invite_status] ?? '#6B7280' }}>
                       {m.invite_status.charAt(0).toUpperCase() + m.invite_status.slice(1)}
                     </span>
                   </td>
@@ -115,19 +103,14 @@ export default function UsersTable({ members, orgId }: { members: Member[]; orgI
                   </td>
                   <td style={{ padding: '13px 16px', textAlign: 'right' }}>
                     {isPending && (
-                      <button
-                        onClick={() => handleResend(m)}
-                        disabled={isResending}
-                        style={{
-                          height: '30px', padding: '0 12px', borderRadius: '7px',
-                          border: isResent ? '1.5px solid #0D9488' : '1.5px solid var(--gray-200)',
-                          background: isResent ? 'var(--teal-surface)' : 'white',
-                          color: isResent ? 'var(--teal)' : 'var(--gray-400)',
-                          fontSize: '12px', fontWeight: 600, cursor: isResending ? 'not-allowed' : 'pointer',
-                          fontFamily: 'var(--font-ui)', transition: 'all 150ms',
-                          opacity: isResending ? 0.6 : 1,
-                        }}
-                      >
+                      <button onClick={() => handleResend(m)} disabled={isResending} style={{
+                        height: '30px', padding: '0 12px', borderRadius: '7px',
+                        border: isResent ? '1.5px solid #0D9488' : '1.5px solid var(--gray-200)',
+                        background: isResent ? '#F0FAFA' : 'white',
+                        color: isResent ? '#0D9488' : '#9CA3AF',
+                        fontSize: '12px', fontWeight: 600, cursor: isResending ? 'not-allowed' : 'pointer',
+                        fontFamily: 'var(--font-ui)', transition: 'all 150ms', opacity: isResending ? 0.6 : 1,
+                      }}>
                         {isResending ? 'Sending…' : isResent ? '✓ Sent' : 'Resend invite'}
                       </button>
                     )}

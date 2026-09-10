@@ -2,7 +2,16 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import type { Member } from './page'
+export type Member = {
+  id: string
+  user_id: string | null
+  first_name: string | null
+  last_name: string | null
+  email: string | null
+  role: string
+  invite_status: string
+  invited_at: string | null
+}
 
 const statusStyle: Record<string, { bg: string; color: string }> = {
   pending:  { bg: '#EFF6FF', color: '#1E40AF' },

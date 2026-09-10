@@ -29,30 +29,39 @@ export default function LoginForm() {
       const { data: authData, error: authErr } = await supabase.auth.signInWithPassword({ email, password })
       if (authErr) { setError('Incorrect email or password. Please try again.'); setPassword(''); setLoading(false); return }
 
-      const { data: membership } = await supabase
+      const { data: memberships } = await supabase
         .from('org_members')
-        .select('org_id, role')
+        .select('org_id, role, invite_status')
         .eq('user_id', authData.user.id)
-        .single()
 
-      const m = membership as { org_id: string; role: string } | null
+      const list = (memberships ?? []) as { org_id: string; role: string; invite_status: string }[]
 
-      if (!m) {
-        await supabase.auth.signOut()
-        setError('Your account is not linked to any organisation. Contact your administrator.')
-        setLoading(false)
-        return
+      if (isHub) {
+        const hubAccess = list.find(m => m.role === 'admin' && m.invite_status === 'accepted')
+        if (!hubAccess) {
+          await supabase.auth.signOut()
+          setError('Hub access is for administrators only. If you are an org user, please sign in at app.inventahq.com.')
+          setLoading(false)
+          return
+        }
+        router.refresh()
+        router.push('/admin')
+      } else {
+        const appAccess = list.find(m => m.invite_status === 'accepted')
+        if (!appAccess) {
+          await supabase.auth.signOut()
+          const pending = list.find(m => m.invite_status === 'pending')
+          if (pending) {
+            setError('Your invite is still pending. Please check your email and accept the invitation first.')
+          } else {
+            setError('Your account is not linked to any organisation. Contact your administrator.')
+          }
+          setLoading(false)
+          return
+        }
+        router.refresh()
+        router.push('/')
       }
-
-      if (isHub && m.role !== 'admin') {
-        await supabase.auth.signOut()
-        setError('Hub access is for administrators only. Please use app.inventahq.com instead.')
-        setLoading(false)
-        return
-      }
-
-      router.refresh()
-      router.push(isHub ? '/admin' : '/')
     } catch { setError('Something went wrong. Please try again.'); setLoading(false) }
   }
 

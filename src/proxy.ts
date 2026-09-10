@@ -23,6 +23,7 @@ export async function proxy(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser()
   const { pathname, hostname } = request.nextUrl
+  console.log('[proxy] hostname:', hostname, 'pathname:', pathname)
 
   const isHub = hostname === 'hub.inventahq.com'
 

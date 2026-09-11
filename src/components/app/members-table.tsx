@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 
 type Member = {
   id: string
+  user_id: string | null
   first_name: string | null
   last_name: string | null
   email: string
@@ -30,7 +31,11 @@ const ROLE_COLORS: Record<string, string> = {
 
 function formatDate(iso: string | null) {
   if (!iso) return '—'
-  return new Date(iso).toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: 'numeric' })
+  return new Date(iso).toLocaleDateString('en-NZ', {
+    day: 'numeric',
+    month: 'short',
+    year: 'numeric',
+  })
 }
 
 function displayName(m: Member) {
@@ -129,12 +134,18 @@ export default function MembersTable({
     <div>
       {/* Header row */}
       <div className="flex items-center justify-between mb-5">
-        <p className="text-sm text-slate-400">{members.length} member{members.length !== 1 ? 's' : ''}</p>
+        <p className="text-sm text-slate-400">
+          {members.length} member{members.length !== 1 ? 's' : ''}
+        </p>
         {isAdmin && (
           <button
-            onClick={() => { setShowInvite(true); setInviteError(null); setInviteSuccess(false) }}
-            className="px-4 py-2 rounded-lg text-sm font-medium transition-colors"
-            style={{ background: 'var(--teal)', color: '#fff' }}
+            onClick={() => {
+              setShowInvite(true)
+              setInviteError(null)
+              setInviteSuccess(false)
+            }}
+            className="px-4 py-2 rounded-lg text-sm font-medium text-white transition-colors hover:opacity-90"
+            style={{ background: 'var(--teal)' }}
           >
             Invite member
           </button>
@@ -151,7 +162,10 @@ export default function MembersTable({
       <div className="rounded-xl border border-white/8 overflow-hidden">
         <table className="w-full text-sm">
           <thead>
-            <tr className="border-b border-white/8" style={{ background: 'rgba(255,255,255,0.03)' }}>
+            <tr
+              className="border-b border-white/8"
+              style={{ background: 'rgba(255,255,255,0.03)' }}
+            >
               <th className="text-left px-5 py-3 text-xs font-medium text-slate-500">Member</th>
               <th className="text-left px-5 py-3 text-xs font-medium text-slate-500">Role</th>
               <th className="text-left px-5 py-3 text-xs font-medium text-slate-500">Status</th>
@@ -160,8 +174,8 @@ export default function MembersTable({
             </tr>
           </thead>
           <tbody>
-            {members.map((m, i) => {
-              const isSelf = m.invite_status === 'accepted' && m.id === currentUserId
+            {members.map((m) => {
+              const isSelf = m.user_id === currentUserId
               const isPending = m.invite_status === 'pending'
               return (
                 <tr
@@ -170,13 +184,19 @@ export default function MembersTable({
                 >
                   <td className="px-5 py-4">
                     <div className="font-medium text-white">
-                      {displayName(m) ?? <span className="text-slate-500 italic">Invited</span>}
-                      {isSelf && <span className="ml-2 text-xs text-slate-500">(you)</span>}
+                      {displayName(m) ?? (
+                        <span className="text-slate-500 italic">Invited</span>
+                      )}
+                      {isSelf && (
+                        <span className="ml-2 text-xs text-slate-500">(you)</span>
+                      )}
                     </div>
                     <div className="text-slate-400 text-xs mt-0.5">{m.email}</div>
                   </td>
                   <td className="px-5 py-4">
-                    <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${ROLE_COLORS[m.role] ?? ''}`}>
+                    <span
+                      className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${ROLE_COLORS[m.role] ?? ''}`}
+                    >
                       {ROLE_LABELS[m.role] ?? m.role}
                     </span>
                   </td>
@@ -211,7 +231,10 @@ export default function MembersTable({
                           )}
                           {!isPending && (
                             <button
-                              onClick={() => { setChangeRoleTarget(m); setNewRole(m.role) }}
+                              onClick={() => {
+                                setChangeRoleTarget(m)
+                                setNewRole(m.role)
+                              }}
                               className="text-xs text-slate-400 hover:text-white transition-colors"
                             >
                               Change role
@@ -244,15 +267,17 @@ export default function MembersTable({
       {/* Change role modal */}
       {changeRoleTarget && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="w-full max-w-sm rounded-2xl border border-white/10 p-6"
-            style={{ background: 'var(--slate)' }}>
+          <div
+            className="w-full max-w-sm rounded-2xl border border-white/10 p-6"
+            style={{ background: 'var(--slate)' }}
+          >
             <h2 className="text-base font-semibold text-white mb-1">Change role</h2>
             <p className="text-sm text-slate-400 mb-5">
               {displayName(changeRoleTarget) ?? changeRoleTarget.email}
             </p>
             <select
               value={newRole}
-              onChange={e => setNewRole(e.target.value)}
+              onChange={(e) => setNewRole(e.target.value)}
               className="w-full rounded-lg px-3 py-2.5 text-sm text-white border border-white/10 bg-white/5 mb-5 focus:outline-none focus:border-teal-500"
             >
               <option value="admin">Admin</option>
@@ -263,15 +288,18 @@ export default function MembersTable({
             {error && <p className="text-red-400 text-xs mb-4">{error}</p>}
             <div className="flex gap-3">
               <button
-                onClick={() => setChangeRoleTarget(null)}
+                onClick={() => { setChangeRoleTarget(null); setError(null) }}
                 className="flex-1 py-2.5 rounded-lg text-sm text-slate-400 border border-white/10 hover:bg-white/5 transition-colors"
               >
                 Cancel
               </button>
               <button
                 onClick={handleRoleChange}
-                disabled={loading === `role-${changeRoleTarget.id}` || newRole === changeRoleTarget.role}
-                className="flex-1 py-2.5 rounded-lg text-sm font-medium text-white transition-colors disabled:opacity-40"
+                disabled={
+                  loading === `role-${changeRoleTarget.id}` ||
+                  newRole === changeRoleTarget.role
+                }
+                className="flex-1 py-2.5 rounded-lg text-sm font-medium text-white transition-colors disabled:opacity-40 hover:opacity-90"
                 style={{ background: 'var(--teal)' }}
               >
                 {loading === `role-${changeRoleTarget.id}` ? 'Saving…' : 'Save'}
@@ -284,8 +312,10 @@ export default function MembersTable({
       {/* Invite modal */}
       {showInvite && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
-          <div className="w-full max-w-sm rounded-2xl border border-white/10 p-6"
-            style={{ background: 'var(--slate)' }}>
+          <div
+            className="w-full max-w-sm rounded-2xl border border-white/10 p-6"
+            style={{ background: 'var(--slate)' }}
+          >
             <h2 className="text-base font-semibold text-white mb-1">Invite a team member</h2>
             <p className="text-sm text-slate-400 mb-5">
               They'll receive an email to set up their account.
@@ -297,11 +327,13 @@ export default function MembersTable({
             ) : (
               <>
                 <div className="mb-4">
-                  <label className="block text-xs text-slate-400 mb-1.5">Email address</label>
+                  <label className="block text-xs text-slate-400 mb-1.5">
+                    Email address
+                  </label>
                   <input
                     type="email"
                     value={inviteEmail}
-                    onChange={e => setInviteEmail(e.target.value)}
+                    onChange={(e) => setInviteEmail(e.target.value)}
                     placeholder="colleague@example.com"
                     className="w-full rounded-lg px-3 py-2.5 text-sm text-white border border-white/10 bg-white/5 focus:outline-none focus:border-teal-500 placeholder:text-slate-600"
                   />
@@ -310,7 +342,7 @@ export default function MembersTable({
                   <label className="block text-xs text-slate-400 mb-1.5">Role</label>
                   <select
                     value={inviteRole}
-                    onChange={e => setInviteRole(e.target.value)}
+                    onChange={(e) => setInviteRole(e.target.value)}
                     className="w-full rounded-lg px-3 py-2.5 text-sm text-white border border-white/10 bg-white/5 focus:outline-none focus:border-teal-500"
                   >
                     <option value="admin">Admin</option>
@@ -319,10 +351,16 @@ export default function MembersTable({
                     <option value="read_only">Read only</option>
                   </select>
                 </div>
-                {inviteError && <p className="text-red-400 text-xs mb-4">{inviteError}</p>}
+                {inviteError && (
+                  <p className="text-red-400 text-xs mb-4">{inviteError}</p>
+                )}
                 <div className="flex gap-3">
                   <button
-                    onClick={() => { setShowInvite(false); setInviteEmail(''); setInviteError(null) }}
+                    onClick={() => {
+                      setShowInvite(false)
+                      setInviteEmail('')
+                      setInviteError(null)
+                    }}
                     className="flex-1 py-2.5 rounded-lg text-sm text-slate-400 border border-white/10 hover:bg-white/5 transition-colors"
                   >
                     Cancel
@@ -330,7 +368,7 @@ export default function MembersTable({
                   <button
                     onClick={handleInvite}
                     disabled={loading === 'invite' || !inviteEmail}
-                    className="flex-1 py-2.5 rounded-lg text-sm font-medium text-white transition-colors disabled:opacity-40"
+                    className="flex-1 py-2.5 rounded-lg text-sm font-medium text-white transition-colors disabled:opacity-40 hover:opacity-90"
                     style={{ background: 'var(--teal)' }}
                   >
                     {loading === 'invite' ? 'Sending…' : 'Send invite'}

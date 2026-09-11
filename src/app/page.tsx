@@ -1,21 +1,13 @@
-import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
 import { headers } from 'next/headers'
-
-export const dynamic = 'force-dynamic'
+import { redirect } from 'next/navigation'
 
 export default async function RootPage() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/login')
-
   const headersList = await headers()
-  const host = headersList.get('host') || ''
-  const isHub = host.includes('hub.inventahq.com')
-
-  if (isHub) {
+  const host = headersList.get('host') ?? ''
+  
+  if (host.startsWith('hub.')) {
     redirect('/admin')
+  } else {
+    redirect('/dashboard')
   }
-
-  redirect('/dashboard')
 }

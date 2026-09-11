@@ -10,7 +10,7 @@ export default async function UsersSettingsPage() {
   // Get caller's membership
   const { data: membership } = await supabase
     .from('org_members')
-    .select('role, org_id')
+    .select('id, user_id, first_name, last_name, email, role, invite_status, invited_at, accepted_at')
     .eq('user_id', user.id)
     .eq('invite_status', 'accepted')
     .single()

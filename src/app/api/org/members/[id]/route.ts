@@ -45,9 +45,9 @@ export async function PATCH(request: Request, { params }: Params) {
     return NextResponse.json({ error: 'You cannot change your own role' }, { status: 400 })
   }
 
-  const { error } = await supabase
+    const { error } = await supabase
     .from('org_members')
-    .update({ role })
+    .update({ role } as never)
     .eq('id', id)
     .eq('org_id', caller.membership.org_id)
 

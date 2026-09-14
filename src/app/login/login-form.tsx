@@ -34,7 +34,6 @@ export default function LoginForm() {
         .select('org_id, role, invite_status')
         .eq('user_id', authData.user.id)
 
-      console.log('memberships', memberships, 'error', memberErr)
       const list = (memberships ?? []) as { org_id: string; role: string; invite_status: string }[]
 
       if (isHub) {

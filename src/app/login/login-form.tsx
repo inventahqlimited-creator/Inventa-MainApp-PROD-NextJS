@@ -29,11 +29,12 @@ export default function LoginForm() {
       const { data: authData, error: authErr } = await supabase.auth.signInWithPassword({ email, password })
       if (authErr) { setError('Incorrect email or password. Please try again.'); setPassword(''); setLoading(false); return }
 
-      const { data: memberships } = await supabase
+      const { data: memberships, error: memberErr } = await supabase
         .from('org_members')
         .select('org_id, role, invite_status')
         .eq('user_id', authData.user.id)
 
+      console.log('memberships', memberships, 'error', memberErr)
       const list = (memberships ?? []) as { org_id: string; role: string; invite_status: string }[]
 
       if (isHub) {
@@ -69,7 +70,7 @@ export default function LoginForm() {
     e.preventDefault()
     setLoading(true)
     const { error: resetErr } = await supabase.auth.resetPasswordForEmail(forgotEmail, {
-      redirectTo: `${window.location.origin}/auth/callback`,
+      redirectTo: `${window.location.origin}/auth/confirm`,
     })
     setLoading(false)
     if (resetErr) { setError(resetErr.message); return }

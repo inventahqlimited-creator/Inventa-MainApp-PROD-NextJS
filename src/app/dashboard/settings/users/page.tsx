@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import MembersTable from '@/components/app/members-table'
 
@@ -7,10 +7,12 @@ export default async function UsersSettingsPage() {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
 
-  // Get caller's membership
-  const { data: membership } = await supabase
+  const adminClient = createAdminClient()
+
+  // Use admin client to bypass RLS recursion
+  const { data: membership } = await adminClient
     .from('org_members')
-    .select('id, user_id, first_name, last_name, email, role, invite_status, invited_at, accepted_at')
+    .select('role, org_id')
     .eq('user_id', user.id)
     .eq('invite_status', 'accepted')
     .single()
@@ -19,16 +21,19 @@ export default async function UsersSettingsPage() {
   if (!m) redirect('/login')
 
   // Fetch all members for this org
-  const { data: members } = await supabase
+  const { data: members } = await adminClient
     .from('org_members')
-    .select('id, first_name, last_name, email, role, invite_status, invited_at, accepted_at')
+    .select('id, user_id, first_name, last_name, email, role, invite_status, invited_at, accepted_at')
     .eq('org_id', m.org_id)
     .order('accepted_at', { ascending: false })
 
   return (
     <div className="max-w-4xl mx-auto px-6 py-10">
       <div className="mb-8">
-        <h1 className="text-2xl font-semibold text-white" style={{ fontFamily: 'var(--font-display)' }}>
+        <h1
+          className="text-2xl font-semibold text-white"
+          style={{ fontFamily: 'var(--font-display)' }}
+        >
           Team
         </h1>
         <p className="mt-1 text-sm text-slate-400">

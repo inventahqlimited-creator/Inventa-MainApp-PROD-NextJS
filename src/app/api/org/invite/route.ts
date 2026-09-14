@@ -35,8 +35,9 @@ export async function POST(request: Request) {
     .eq('email', email)
     .maybeSingle()
 
-  if (existing) {
-    const msg = existing.invite_status === 'pending'
+  const existingMember = existing as { id: string; invite_status: string } | null
+  if (existingMember) {
+    const msg = existingMember.invite_status === 'pending'
       ? 'An invite is already pending for this email'
       : 'This email is already a member of your organisation'
     return NextResponse.json({ error: msg }, { status: 409 })

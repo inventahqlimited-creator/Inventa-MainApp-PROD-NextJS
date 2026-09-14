@@ -22,7 +22,7 @@ export default async function ContactsPage() {
 
   const { data: contacts } = await adminClient
     .from('contacts')
-    .select('id, name, type, email, phone, bill_city, bill_country, currency, tier, terms, tax_rate, balance_owing, credit_limit, disc_type, disc_value, tax_number, is_active, status')
+    .select('id, name, type, email, phone, bill_street, bill_city, bill_postcode, bill_country, ship_name, ship_street, ship_city, ship_postcode, ship_country, currency, tier, terms, tax_rate, balance_owing, credit_limit, disc_type, disc_value, tax_number, website, notes, is_active, status')
     .eq('org_id', m.org_id)
     .order('name', { ascending: true })
 

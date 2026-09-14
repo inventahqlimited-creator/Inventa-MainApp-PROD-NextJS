@@ -1,5 +1,4 @@
-import { createAdminClient } from '@/lib/supabase/server'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import AppSidebar from '@/components/app/app-sidebar'
 import AppTopbar from '@/components/app/app-topbar'
@@ -10,6 +9,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   if (!user) redirect('/login')
 
   const adminClient = createAdminClient()
+
   const { data: membership } = await adminClient
     .from('org_members')
     .select('role, org_id, first_name, last_name')

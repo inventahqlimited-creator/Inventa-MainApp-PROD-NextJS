@@ -1,59 +1,46 @@
-import { createServerClient } from '@supabase/ssr'
-import { createAdminClient } from '@/lib/supabase/server'
-import { cookies } from 'next/headers'
-import { NextResponse } from 'next/server'
-import type { NextRequest } from 'next/server'
+'use client'
 
-export async function GET(request: NextRequest) {
-  const { searchParams, origin } = new URL(request.url)
-  const code  = searchParams.get('code')
-  const next  = searchParams.get('next') ?? '/'
-  const error = searchParams.get('error')
+import { useEffect } from 'react'
+import { useRouter } from 'next/navigation'
+import { createBrowserClient } from '@supabase/ssr'
 
-  if (error) return NextResponse.redirect(`${origin}/login?error=${error}`)
+export default function AuthConfirmPage() {
+  const router = useRouter()
 
-  if (code) {
-    const cookieStore = await cookies()
-    const supabase = createServerClient(
+  useEffect(() => {
+    const supabase = createBrowserClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          getAll() { return cookieStore.getAll() },
-          setAll(cookiesToSet) {
-            cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
-            )
-          },
-        },
-      }
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     )
 
-    const { data, error: exchangeError } = await supabase.auth.exchangeCodeForSession(code)
-    if (exchangeError) return NextResponse.redirect(`${origin}/login?error=auth_callback_failed`)
+    const hash = window.location.hash.substring(1)
+    const params = new URLSearchParams(hash)
+    const accessToken = params.get('access_token')
+    const refreshToken = params.get('refresh_token')
+    const type = params.get('type')
 
-    const user = data?.user
-    if (user) {
-      const meta = user.user_metadata as { org_id?: string; role?: string } | null
-
-      if (meta?.org_id) {
-        const admin = createAdminClient()
-
-        await admin
-          .from('org_members')
-          .update({
-            user_id:       user.id,
-            invite_status: 'accepted',
-            accepted_at:   new Date().toISOString(),
-          })
-          .eq('org_id', meta.org_id)
-          .eq('email', user.email)
-          .eq('invite_status', 'pending')
-      }
+    if (!accessToken || !refreshToken) {
+      router.replace('/login?error=invalid_link')
+      return
     }
 
-    return NextResponse.redirect(`${origin}${next}`)
-  }
+    supabase.auth.setSession({ access_token: accessToken, refresh_token: refreshToken })
+      .then(({ error }) => {
+        if (error) {
+          router.replace('/login?error=session_failed')
+          return
+        }
+        if (type === 'recovery') {
+          router.replace('/auth/update-password')
+        } else {
+          router.replace('/dashboard')
+        }
+      })
+  }, [router])
 
-  return NextResponse.redirect(`${origin}/login?error=auth_callback_failed`)
+  return (
+    <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--slate)' }}>
+      <p className="text-slate-400 text-sm">Setting up your account…</p>
+    </div>
+  )
 }

@@ -14,8 +14,9 @@ async function getCallerMembership(supabase: Awaited<ReturnType<typeof createCli
     .eq('invite_status', 'accepted')
     .single()
 
-  if (!membership || membership.role !== 'admin') return null
-  return { user, membership: membership as { role: string; org_id: string; user_id: string } }
+  const m = membership as { role: string; org_id: string; user_id: string } | null
+  if (!m || m.role !== 'admin') return null
+  return { user, membership: m }
 }
 
 export async function PATCH(request: Request, { params }: Params) {

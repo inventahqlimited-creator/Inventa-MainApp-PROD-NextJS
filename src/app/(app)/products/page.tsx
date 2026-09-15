@@ -20,10 +20,10 @@ export default async function ProductsPage() {
   if (!membership) redirect('/login')
   const m = membership as { org_id: string; role: string }
 
-  const [{ data: products }, { data: stockLevels }, { data: locations }] = await Promise.all([
+  const [{ data: products }, { data: stockLevels }, { data: locations }, { data: suppliers }] = await Promise.all([
     adminClient
       .from('products')
-      .select('id, name, sku, description, type, unit, sell_price, cost_price, is_active, track_stock, low_stock_threshold, barcode, default_supplier_id, last_cost, avg_cost, batch_tracking, serial_tracking, expiry_tracking')
+      .select('id, name, sku, description, type, unit, unit_sell, unit_buy, unit_buy_qty, unit_sell_qty, sell_price, cost_price, is_active, track_stock, low_stock_threshold, barcode, default_supplier_id, last_cost, avg_cost, batch_tracking, serial_tracking, expiry_tracking, supplier_code, lead_time_days, min_order_qty, notes, tax_rate')
       .eq('org_id', m.org_id)
       .order('name', { ascending: true }),
     adminClient
@@ -35,6 +35,12 @@ export default async function ProductsPage() {
       .select('id, name')
       .eq('org_id', m.org_id)
       .eq('active', true),
+    adminClient
+      .from('contacts')
+      .select('id, name')
+      .eq('org_id', m.org_id)
+      .eq('type', 'supplier')
+      .eq('is_active', true),
   ])
 
   return (
@@ -42,6 +48,7 @@ export default async function ProductsPage() {
       products={products ?? []}
       stockLevels={stockLevels ?? []}
       locations={locations ?? []}
+      suppliers={suppliers ?? []}
       orgId={m.org_id}
       isAdmin={m.role === 'admin'}
     />

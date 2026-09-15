@@ -21,10 +21,10 @@ type Product = {
   batch_tracking: boolean | null
   serial_tracking: boolean | null
   expiry_tracking: boolean | null
-  unit_sell: string | null
-  unit_buy: string | null
-  unit_buy_qty: number | null
-  unit_sell_qty: number | null
+  sell_uom: string | null
+  buy_uom: string | null
+  buy_uom_qty: number | null
+  sell_uom_qty: number | null
   supplier_code: string | null
   lead_time_days: number | null
   min_order_qty: number | null

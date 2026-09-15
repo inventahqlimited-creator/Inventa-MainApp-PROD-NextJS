@@ -254,7 +254,7 @@ export default function PurchasesTable({
               {paginated.map(o => {
                 const overdue = isOverdue(o.expected_date, o.status)
                 return (
-                  <tr key={o.id}>
+                  <tr key={o.id} onClick={() => router.push(`/purchases/${o.id}`)}>
                     <td>
                       <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, color: 'var(--slate)', fontSize: 13 }}>
                         {o.po_number ?? '—'}

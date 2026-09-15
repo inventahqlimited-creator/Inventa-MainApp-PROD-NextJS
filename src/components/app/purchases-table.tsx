@@ -71,7 +71,6 @@ export default function PurchasesTable({
   orgId: string
 }) {
   const router = useRouter()
-  const router = useRouter()
   const [search, setSearch] = useState('')
   const [tab, setTab] = useState<Tab>('all')
   const [supplierFilter, setSupplierFilter] = useState('')

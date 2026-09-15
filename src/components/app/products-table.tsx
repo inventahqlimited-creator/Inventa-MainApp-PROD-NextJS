@@ -68,11 +68,11 @@ type ModalForm = {
   tax_rate: string
   description: string
   cost_price: string
-  unit_buy: string
-  unit_buy_qty: string
+  buy_uom: string
+  buy_uom_qty: string
   sell_price: string
-  unit_sell: string
-  unit_sell_qty: string
+  sell_uom: string
+  sell_uom_qty: string
   serial_tracking: boolean
   batch_tracking: boolean
   expiry_tracking: boolean
@@ -87,8 +87,8 @@ type ModalForm = {
 
 const EMPTY_FORM: ModalForm = {
   sku: '', name: '', type: 'Stock', barcode: '', low_stock_threshold: '',
-  tax_rate: '', description: '', cost_price: '', unit_buy: 'Each', unit_buy_qty: '1',
-  sell_price: '', unit_sell: 'Each', unit_sell_qty: '1',
+  tax_rate: '', description: '', cost_price: '', buy_uom: 'Each', buy_uom_qty: '1',
+  sell_price: '', sell_uom: 'Each', sell_uom_qty: '1',
   serial_tracking: false, batch_tracking: false, expiry_tracking: false,
   default_supplier_id: '', supplier_code: '', lead_time_days: '', min_order_qty: '',
   notes: '', is_active: true, track_stock: true,
@@ -250,7 +250,6 @@ export default function ProductsTable({
   const [taxOpen, setTaxOpen] = useState(false)
   const [supplierOpen, setSupplierOpen] = useState(false)
 
-  // Modal
   const [modal, setModal] = useState<'closed' | 'view' | 'add' | 'edit'>('closed')
   const [activeProduct, setActiveProduct] = useState<Product | null>(null)
   const [form, setForm] = useState<ModalForm>(EMPTY_FORM)
@@ -285,14 +284,20 @@ export default function ProductsTable({
   function openEdit(p: Product) {
     setForm({
       sku: p.sku ?? '', name: p.name, type: p.type,
-      barcode: p.barcode ?? '', low_stock_threshold: p.low_stock_threshold != null ? String(p.low_stock_threshold) : '',
+      barcode: p.barcode ?? '',
+      low_stock_threshold: p.low_stock_threshold != null ? String(p.low_stock_threshold) : '',
       tax_rate: p.tax_rate ?? '', description: p.description ?? '',
       cost_price: p.cost_price != null ? String(p.cost_price) : '',
-      unit_buy: p.buy_uom ?? 'Each', unit_buy_qty: p.buy_uom_qty != null ? String(p.buy_uom_qty) : '1',
+      buy_uom: p.buy_uom ?? 'Each',
+      buy_uom_qty: p.buy_uom_qty != null ? String(p.buy_uom_qty) : '1',
       sell_price: p.sell_price != null ? String(p.sell_price) : '',
-      unit_sell: p.sell_uom ?? 'Each', unit_sell_qty: p.sell_uom_qty != null ? String(p.sell_uom_qty) : '1',
-      serial_tracking: p.serial_tracking ?? false, batch_tracking: p.batch_tracking ?? false, expiry_tracking: p.expiry_tracking ?? false,
-      default_supplier_id: p.default_supplier_id ?? '', supplier_code: p.supplier_code ?? '',
+      sell_uom: p.sell_uom ?? 'Each',
+      sell_uom_qty: p.sell_uom_qty != null ? String(p.sell_uom_qty) : '1',
+      serial_tracking: p.serial_tracking ?? false,
+      batch_tracking: p.batch_tracking ?? false,
+      expiry_tracking: p.expiry_tracking ?? false,
+      default_supplier_id: p.default_supplier_id ?? '',
+      supplier_code: p.supplier_code ?? '',
       lead_time_days: p.lead_time_days != null ? String(p.lead_time_days) : '',
       min_order_qty: p.min_order_qty != null ? String(p.min_order_qty) : '',
       notes: p.notes ?? '', is_active: p.is_active ?? true, track_stock: p.track_stock ?? true,
@@ -326,18 +331,25 @@ export default function ProductsTable({
       name: form.name.trim(), sku: form.sku.trim(), type: form.type,
       barcode: form.barcode || null,
       low_stock_threshold: form.low_stock_threshold ? parseInt(form.low_stock_threshold) : null,
-      tax_rate: form.tax_rate || null, description: form.description || null,
+      tax_rate: form.tax_rate || null,
+      description: form.description || null,
       cost_price: form.cost_price ? parseFloat(form.cost_price) : null,
-      buy_uom: form.unit_buy, buy_uom_qty: parseInt(form.unit_buy_qty) || 1,
+      buy_uom: form.buy_uom,
+      buy_uom_qty: parseInt(form.buy_uom_qty) || 1,
       sell_price: form.sell_price ? parseFloat(form.sell_price) : null,
-      sell_uom: form.unit_sell, sell_uom_qty: parseInt(form.unit_sell_qty) || 1,
-      serial_tracking: form.serial_tracking, batch_tracking: form.batch_tracking, expiry_tracking: form.expiry_tracking,
+      sell_uom: form.sell_uom,
+      sell_uom_qty: parseInt(form.sell_uom_qty) || 1,
+      unit: form.sell_uom,
+      serial_tracking: form.serial_tracking,
+      batch_tracking: form.batch_tracking,
+      expiry_tracking: form.expiry_tracking,
       default_supplier_id: form.default_supplier_id || null,
       supplier_code: form.supplier_code || null,
       lead_time_days: form.lead_time_days ? parseInt(form.lead_time_days) : null,
       min_order_qty: form.min_order_qty ? parseInt(form.min_order_qty) : null,
-      notes: form.notes || null, is_active: form.is_active, track_stock: form.track_stock,
-      unit: form.unit_sell,
+      notes: form.notes || null,
+      is_active: form.is_active,
+      track_stock: form.track_stock,
     }
 
     const isEdit = modal === 'edit' && activeProduct
@@ -373,7 +385,6 @@ export default function ProductsTable({
     setSelectedIds(new Set())
   }
 
-  // Stock aggregation
   const stockMap = useMemo(() => {
     const map: Record<string, { onHand: number; onOrder: number; committed: number; available: number }> = {}
     for (const s of stockLevels) {
@@ -436,16 +447,13 @@ export default function ProductsTable({
   }
 
   const v = visibleCols
-
   const isView = modal === 'view'
   const curProduct = isView ? activeProduct : null
-
   const supplierName = (id: string) => suppliers?.find(s => s.id === id)?.name ?? 'Select supplier…'
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }} onClick={() => { setTypeOpen(false); setColOpen(false); setActionsOpen(false); setTaxOpen(false); setSupplierOpen(false) }}>
 
-      {/* Page header */}
       <div className="page-header-card">
         <div className="page-header-top">
           <div>
@@ -486,13 +494,11 @@ export default function ProductsTable({
         </div>
       </div>
 
-      {/* Filter bar */}
       <div className="filter-bar-card" onClick={e => e.stopPropagation()}>
         <div className="filter-search-wrap">
           <svg className="filter-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           <input className="filter-search" placeholder="Search products…" value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} />
         </div>
-
         <div style={{ position: 'relative' }}>
           <button className={`filter-dd-btn${typeFilter ? ' active-filter' : ''}`} onClick={() => setTypeOpen(o => !o)}>
             <span>{typeFilter || 'All Types'}</span>
@@ -501,25 +507,21 @@ export default function ProductsTable({
           {typeOpen && (
             <div className="inv-dropdown" style={{ display: 'block', minWidth: 160 }}>
               <div className="col-dropdown-title">Type</div>
-              {['', 'Stock', 'NonStock', 'Service'].map(v => (
-                <div key={v} className={`fp-item${typeFilter === v ? ' active' : ''}`} onClick={() => { setTypeFilter(v); setPage(1); setTypeOpen(false) }}>{v || 'All Types'}</div>
+              {['', 'Stock', 'NonStock', 'Service'].map(val => (
+                <div key={val} className={`fp-item${typeFilter === val ? ' active' : ''}`} onClick={() => { setTypeFilter(val); setPage(1); setTypeOpen(false) }}>{val || 'All Types'}</div>
               ))}
             </div>
           )}
         </div>
-
         <button className={`filter-btn${advOpen ? ' active' : ''}`} onClick={() => setAdvOpen(o => !o)}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
           Advanced{(advType || advSupplier || advStock) ? ' •' : ''}
         </button>
-
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: 'var(--gray-400)', cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}>
           <input type="checkbox" checked={showInactive} onChange={e => { setShowInactive(e.target.checked); setPage(1) }} style={{ accentColor: 'var(--teal)', cursor: 'pointer', width: 14, height: 14 }} />
           Show inactive
         </label>
-
         <div className="filter-spacer" />
-
         <div style={{ position: 'relative' }}>
           <button className="col-selector-btn" onClick={() => setColOpen(o => !o)}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
@@ -541,7 +543,6 @@ export default function ProductsTable({
         </div>
       </div>
 
-      {/* Advanced filters */}
       {advOpen && (
         <div className="adv-filter-panel open">
           <div className="adv-filter-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
@@ -583,7 +584,6 @@ export default function ProductsTable({
         </div>
       )}
 
-      {/* Table */}
       <div className="table-container">
         <div className="table-toolbar">
           {selectedIds.size > 0 ? (
@@ -683,12 +683,10 @@ export default function ProductsTable({
         </div>
       </div>
 
-      {/* ── MODAL ── */}
       {modal !== 'closed' && (
         <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) closeModal() }}>
           <div className="modal-box" style={{ maxWidth: 780 }}>
 
-            {/* Header */}
             <div className="modal-header">
               <div>
                 <div className="modal-title">{isView ? curProduct?.name : modal === 'edit' ? 'Edit Product' : 'Add Product'}</div>
@@ -696,11 +694,7 @@ export default function ProductsTable({
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                 <span style={{ fontSize: 12, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)' }}>Status</span>
-                <Toggle
-                  active={isView ? (curProduct?.is_active ?? true) : form.is_active}
-                  onChange={v => setF('is_active', v)}
-                  disabled={isView}
-                />
+                <Toggle active={isView ? (curProduct?.is_active ?? true) : form.is_active} onChange={val => setF('is_active', val)} disabled={isView} />
                 <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--teal)', fontFamily: 'var(--font-ui)' }}>
                   {(isView ? curProduct?.is_active : form.is_active) ? 'Active' : 'Inactive'}
                 </span>
@@ -717,7 +711,6 @@ export default function ProductsTable({
               </div>
             </div>
 
-            {/* Tabs */}
             <div className="modal-tab-bar">
               {(['details', 'pricing', 'stock', 'orders'] as const).map(t => (
                 <div key={t} className={`modal-tab${modalTab === t ? ' active' : ''}`} onClick={() => {
@@ -731,25 +724,21 @@ export default function ProductsTable({
 
             <div className="modal-body">
 
-              {/* ── DETAILS ── */}
               {modalTab === 'details' && (
                 <>
-                  {/* §1 Product Details */}
                   <Section title="Product Details">
                     <div className="modal-grid-3">
                       <Field label="Product #" hint="*">
-                        <MInput value={isView ? (curProduct?.sku ?? '') : form.sku} onChange={v => setF('sku', v)} placeholder="e.g. PRD-001" disabled={isView} />
+                        <MInput value={isView ? (curProduct?.sku ?? '') : form.sku} onChange={val => setF('sku', val)} placeholder="e.g. PRD-001" disabled={isView} />
                       </Field>
                       <div className="modal-field" style={{ gridColumn: 'span 2' }}>
                         <label className="modal-label">Product Name <span className="req">*</span></label>
-                        <MInput value={isView ? (curProduct?.name ?? '') : form.name} onChange={v => setF('name', v)} placeholder="e.g. Wireless Headphones Pro" disabled={isView} />
+                        <MInput value={isView ? (curProduct?.name ?? '') : form.name} onChange={val => setF('name', val)} placeholder="e.g. Wireless Headphones Pro" disabled={isView} />
                       </div>
                     </div>
                     <div className="modal-grid-2">
                       <Field label="Product Type">
-                        {isView ? (
-                          typeBadge(curProduct?.type ?? 'Stock')
-                        ) : (
+                        {isView ? typeBadge(curProduct?.type ?? 'Stock') : (
                           <div className="modal-seg">
                             {['Stock', 'NonStock', 'Service'].map(t => (
                               <button key={t} type="button" className={`seg-btn${form.type === t ? ' active' : ''}`} onClick={() => setF('type', t)}>{t === 'NonStock' ? 'Non-Stock' : t}</button>
@@ -760,10 +749,10 @@ export default function ProductsTable({
                     </div>
                     <div className="modal-grid-2">
                       <Field label="Barcode">
-                        <MInput value={isView ? (curProduct?.barcode ?? '') : form.barcode} onChange={v => setF('barcode', v)} placeholder="e.g. 9300675000959" disabled={isView} mono />
+                        <MInput value={isView ? (curProduct?.barcode ?? '') : form.barcode} onChange={val => setF('barcode', val)} placeholder="e.g. 9300675000959" disabled={isView} mono />
                       </Field>
                       <Field label="Min Stock Alert" hint="— alert below this qty">
-                        <MInput value={isView ? String(curProduct?.low_stock_threshold ?? '') : form.low_stock_threshold} onChange={v => setF('low_stock_threshold', v)} type="number" placeholder="e.g. 5" disabled={isView} />
+                        <MInput value={isView ? String(curProduct?.low_stock_threshold ?? '') : form.low_stock_threshold} onChange={val => setF('low_stock_threshold', val)} type="number" placeholder="e.g. 5" disabled={isView} />
                       </Field>
                     </div>
                     <Field label="Tax Rate">
@@ -791,19 +780,18 @@ export default function ProductsTable({
                     </Field>
                   </Section>
 
-                  {/* §2 Buying Details */}
                   <Section title="Buying Details">
                     <div className="modal-grid-2">
                       <Field label="Cost Price (Buy)">
-                        <MInput value={isView ? String(curProduct?.cost_price ?? '') : form.cost_price} onChange={v => setF('cost_price', v)} type="number" placeholder="0.00" prefix="$" disabled={isView} />
+                        <MInput value={isView ? String(curProduct?.cost_price ?? '') : form.cost_price} onChange={val => setF('cost_price', val)} type="number" placeholder="0.00" prefix="$" disabled={isView} />
                       </Field>
                       <Field label="Buy UOM">
-                        <UomSelect value={isView ? (curProduct?.unit_buy ?? 'Each') : form.unit_buy} onChange={v => setF('unit_buy', v)} disabled={isView} label="Buy UOM" />
+                        <UomSelect value={isView ? (curProduct?.buy_uom ?? 'Each') : form.buy_uom} onChange={val => setF('buy_uom', val)} disabled={isView} label="Buy UOM" />
                       </Field>
                     </div>
                     <div className="modal-grid-2">
                       <Field label="Units per Buy UOM" hint="e.g. 24 if 1 Carton = 24 Each">
-                        <MInput value={isView ? String(curProduct?.unit_buy_qty ?? 1) : form.unit_buy_qty} onChange={v => setF('unit_buy_qty', v)} type="number" placeholder="1" disabled={isView} />
+                        <MInput value={isView ? String(curProduct?.buy_uom_qty ?? 1) : form.buy_uom_qty} onChange={val => setF('buy_uom_qty', val)} type="number" placeholder="1" disabled={isView} />
                       </Field>
                     </div>
                     {(modal === 'edit' || isView) && activeProduct && (
@@ -818,24 +806,22 @@ export default function ProductsTable({
                     )}
                   </Section>
 
-                  {/* §3 Selling Details */}
                   <Section title="Selling Details">
                     <div className="modal-grid-2">
                       <Field label="Unit Price (Sell)">
-                        <MInput value={isView ? String(curProduct?.sell_price ?? '') : form.sell_price} onChange={v => setF('sell_price', v)} type="number" placeholder="0.00" prefix="$" disabled={isView} />
+                        <MInput value={isView ? String(curProduct?.sell_price ?? '') : form.sell_price} onChange={val => setF('sell_price', val)} type="number" placeholder="0.00" prefix="$" disabled={isView} />
                       </Field>
                       <Field label="Sell UOM">
-                        <UomSelect value={isView ? (curProduct?.unit_sell ?? 'Each') : form.unit_sell} onChange={v => setF('unit_sell', v)} disabled={isView} label="Sell UOM" />
+                        <UomSelect value={isView ? (curProduct?.sell_uom ?? 'Each') : form.sell_uom} onChange={val => setF('sell_uom', val)} disabled={isView} label="Sell UOM" />
                       </Field>
                     </div>
                     <div className="modal-grid-2">
                       <Field label="Units per Sell UOM" hint="usually 1">
-                        <MInput value={isView ? String(curProduct?.unit_sell_qty ?? 1) : form.unit_sell_qty} onChange={v => setF('unit_sell_qty', v)} type="number" placeholder="1" disabled={isView} />
+                        <MInput value={isView ? String(curProduct?.sell_uom_qty ?? 1) : form.sell_uom_qty} onChange={val => setF('sell_uom_qty', val)} type="number" placeholder="1" disabled={isView} />
                       </Field>
                     </div>
                   </Section>
 
-                  {/* §4 Tracking */}
                   <Section title="Tracking">
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                       {[
@@ -850,7 +836,7 @@ export default function ProductsTable({
                           </div>
                           <Toggle
                             active={isView ? !!(curProduct as Record<string, unknown>)?.[key] : form[key] as boolean}
-                            onChange={v => setF(key, v)}
+                            onChange={val => setF(key, val)}
                             disabled={isView}
                           />
                         </div>
@@ -858,7 +844,6 @@ export default function ProductsTable({
                     </div>
                   </Section>
 
-                  {/* §5 Supplier */}
                   <Section title="Supplier">
                     <div className="modal-grid-2">
                       <Field label="Supplier">
@@ -883,30 +868,26 @@ export default function ProductsTable({
                         )}
                       </Field>
                       <Field label="Supplier / Product Code">
-                        <MInput value={isView ? (curProduct?.supplier_code ?? '') : form.supplier_code} onChange={v => setF('supplier_code', v)} placeholder="Supplier's SKU or part #" disabled={isView} />
+                        <MInput value={isView ? (curProduct?.supplier_code ?? '') : form.supplier_code} onChange={val => setF('supplier_code', val)} placeholder="Supplier's SKU or part #" disabled={isView} />
                       </Field>
                     </div>
                     <div className="modal-grid-2">
                       <Field label="Lead Time (days)">
-                        <MInput value={isView ? String(curProduct?.lead_time_days ?? '') : form.lead_time_days} onChange={v => setF('lead_time_days', v)} type="number" placeholder="e.g. 7" disabled={isView} />
+                        <MInput value={isView ? String(curProduct?.lead_time_days ?? '') : form.lead_time_days} onChange={val => setF('lead_time_days', val)} type="number" placeholder="e.g. 7" disabled={isView} />
                       </Field>
                       <Field label="Min Order Qty">
-                        <MInput value={isView ? String(curProduct?.min_order_qty ?? '') : form.min_order_qty} onChange={v => setF('min_order_qty', v)} type="number" placeholder="e.g. 10" disabled={isView} />
+                        <MInput value={isView ? String(curProduct?.min_order_qty ?? '') : form.min_order_qty} onChange={val => setF('min_order_qty', val)} type="number" placeholder="e.g. 10" disabled={isView} />
                       </Field>
                     </div>
                   </Section>
 
-                  {/* §6 Notes */}
                   <div className="pm-section" style={{ borderBottom: 'none', paddingBottom: 0 }}>
                     <div className="pm-section-hd">Notes</div>
-                    <Field label="">
-                      <textarea className="modal-input" value={isView ? (curProduct?.notes ?? '') : form.notes} onChange={e => setF('notes', e.target.value)} placeholder="Internal notes about this product…" rows={3} disabled={isView} style={{ resize: 'vertical', height: 80, lineHeight: 1.6, opacity: isView ? 0.7 : 1 }} />
-                    </Field>
+                    <textarea className="modal-input" value={isView ? (curProduct?.notes ?? '') : form.notes} onChange={e => setF('notes', e.target.value)} placeholder="Internal notes about this product…" rows={3} disabled={isView} style={{ resize: 'vertical', height: 80, lineHeight: 1.6, opacity: isView ? 0.7 : 1 }} />
                   </div>
                 </>
               )}
 
-              {/* ── PRICE LEVELS ── */}
               {modalTab === 'pricing' && (
                 <>
                   <div style={{ background: 'var(--white)', border: '1.5px solid var(--gray-200)', borderRadius: 12, overflow: 'hidden' }}>
@@ -923,28 +904,10 @@ export default function ProductsTable({
                           <tr key={row.price_level} style={{ borderBottom: '1px solid var(--gray-100)' }}>
                             <td className="li-td" style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{row.price_level}</td>
                             <td className="li-td" style={{ textAlign: 'right' }}>
-                              <input
-                                className="li-input right"
-                                type="number"
-                                step="0.01"
-                                value={row.price || ''}
-                                onChange={e => { const a = [...pricing]; a[i].price = parseFloat(e.target.value) || 0; setPricing(a) }}
-                                placeholder="0.00"
-                                disabled={isView}
-                                style={{ textAlign: 'right', width: 100 }}
-                              />
+                              <input className="li-input right" type="number" step="0.01" value={row.price || ''} onChange={e => { const a = [...pricing]; a[i].price = parseFloat(e.target.value) || 0; setPricing(a) }} placeholder="0.00" disabled={isView} style={{ textAlign: 'right', width: 100 }} />
                             </td>
                             <td className="li-td" style={{ textAlign: 'right' }}>
-                              <input
-                                className="li-input right"
-                                type="number"
-                                step="1"
-                                value={row.break_qty || ''}
-                                onChange={e => { const a = [...pricing]; a[i].break_qty = parseInt(e.target.value) || 1; setPricing(a) }}
-                                placeholder="1"
-                                disabled={isView}
-                                style={{ textAlign: 'right', width: 80 }}
-                              />
+                              <input className="li-input right" type="number" step="1" value={row.break_qty || ''} onChange={e => { const a = [...pricing]; a[i].break_qty = parseInt(e.target.value) || 1; setPricing(a) }} placeholder="1" disabled={isView} style={{ textAlign: 'right', width: 80 }} />
                             </td>
                           </tr>
                         ))}
@@ -958,13 +921,10 @@ export default function ProductsTable({
                 </>
               )}
 
-              {/* ── STOCK DETAILS ── */}
               {modalTab === 'stock' && (
                 <div>
                   {locations.length === 0 ? (
-                    <div style={{ textAlign: 'center', padding: '32px', color: 'var(--gray-400)', fontSize: 13, background: 'var(--gray-50)', borderRadius: 12 }}>
-                      No locations configured for this organisation.
-                    </div>
+                    <div style={{ textAlign: 'center', padding: '32px', color: 'var(--gray-400)', fontSize: 13, background: 'var(--gray-50)', borderRadius: 12 }}>No locations configured for this organisation.</div>
                   ) : (
                     <div style={{ background: 'var(--white)', border: '1.5px solid var(--gray-200)', borderRadius: 12, overflow: 'hidden' }}>
                       <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -1001,7 +961,6 @@ export default function ProductsTable({
                 </div>
               )}
 
-              {/* ── ORDERS ── */}
               {modalTab === 'orders' && (
                 <div>
                   {ordersLoading ? (
@@ -1042,7 +1001,6 @@ export default function ProductsTable({
               )}
             </div>
 
-            {/* Footer */}
             <div className="modal-footer">
               {isView ? (
                 <button className="btn btn-outline" onClick={closeModal}>Close</button>
@@ -1059,7 +1017,6 @@ export default function ProductsTable({
         </div>
       )}
 
-      {/* pm-section CSS */}
       <style>{`
         .pm-section { padding-bottom: 16px; margin-bottom: 16px; border-bottom: 1px solid var(--gray-100); display: flex; flex-direction: column; gap: 12px; }
         .pm-section-hd { font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--gray-400); font-family: var(--font-ui); }

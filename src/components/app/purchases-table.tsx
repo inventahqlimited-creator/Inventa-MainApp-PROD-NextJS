@@ -71,6 +71,7 @@ export default function PurchasesTable({
   orgId: string
 }) {
   const router = useRouter()
+  const router = useRouter()
   const [search, setSearch] = useState('')
   const [tab, setTab] = useState<Tab>('all')
   const [supplierFilter, setSupplierFilter] = useState('')
@@ -126,9 +127,9 @@ export default function PurchasesTable({
             <div className="page-subtitle">Purchase orders from your suppliers</div>
           </div>
           <div className="page-header-actions">
-            <button className="btn btn-primary">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              New Purchase Order
+            <button className="btn btn-primary" onClick={() => router.push('/purchases/new')}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                New Purchase Order
             </button>
           </div>
         </div>

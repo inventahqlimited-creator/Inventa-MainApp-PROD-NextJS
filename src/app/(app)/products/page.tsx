@@ -23,7 +23,7 @@ export default async function ProductsPage() {
   const [{ data: products }, { data: stockLevels }, { data: locations }, { data: suppliers }] = await Promise.all([
     adminClient
       .from('products')
-      .select('id, name, sku, description, type, unit, unit_sell, unit_buy, unit_buy_qty, unit_sell_qty, sell_price, cost_price, is_active, track_stock, low_stock_threshold, barcode, default_supplier_id, last_cost, avg_cost, batch_tracking, serial_tracking, expiry_tracking, supplier_code, lead_time_days, min_order_qty, notes, tax_rate')
+      .select('id, name, sku, description, type, unit, sell_uom, buy_uom, buy_uom_qty, sell_uom_qty, sell_price, cost_price, is_active, track_stock, low_stock_threshold, barcode, default_supplier_id, last_cost, avg_cost, batch_tracking, serial_tracking, expiry_tracking, supplier_code, lead_time_days, min_order_qty, notes, tax_rate')
       .eq('org_id', m.org_id)
       .order('name', { ascending: true }),
     adminClient

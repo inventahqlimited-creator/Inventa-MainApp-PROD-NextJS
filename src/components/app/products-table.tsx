@@ -21,6 +21,15 @@ type Product = {
   batch_tracking: boolean | null
   serial_tracking: boolean | null
   expiry_tracking: boolean | null
+  unit_sell: string | null
+  unit_buy: string | null
+  unit_buy_qty: number | null
+  unit_sell_qty: number | null
+  supplier_code: string | null
+  lead_time_days: number | null
+  min_order_qty: number | null
+  notes: string | null
+  tax_rate: string | null
 }
 
 type StockLevel = {
@@ -38,15 +47,83 @@ type Location = {
   name: string
 }
 
-function fmt(n: number | null | undefined, prefix = '$') {
-  if (n == null) return '—'
-  return `${prefix}${Number(n).toFixed(2)}`
+type Supplier = {
+  id: string
+  name: string
 }
 
-function stockBadge(onHand: number, threshold: number | null) {
-  if (onHand <= 0) return <span className="badge" style={{ background: '#FEE2E2', color: '#991B1B' }}>No Stock</span>
-  if (threshold && onHand <= threshold) return <span className="badge" style={{ background: '#FEF3C7', color: '#92400E' }}>Low</span>
-  return <span className="badge" style={{ background: '#D1FAE5', color: '#065F46' }}>In Stock</span>
+type PricingRow = {
+  id?: string
+  price_level: string
+  price: number
+  break_qty: number
+}
+
+type ModalForm = {
+  sku: string
+  name: string
+  type: string
+  barcode: string
+  low_stock_threshold: string
+  tax_rate: string
+  description: string
+  cost_price: string
+  unit_buy: string
+  unit_buy_qty: string
+  sell_price: string
+  unit_sell: string
+  unit_sell_qty: string
+  serial_tracking: boolean
+  batch_tracking: boolean
+  expiry_tracking: boolean
+  default_supplier_id: string
+  supplier_code: string
+  lead_time_days: string
+  min_order_qty: string
+  notes: string
+  is_active: boolean
+  track_stock: boolean
+}
+
+const EMPTY_FORM: ModalForm = {
+  sku: '', name: '', type: 'Stock', barcode: '', low_stock_threshold: '',
+  tax_rate: '', description: '', cost_price: '', unit_buy: 'Each', unit_buy_qty: '1',
+  sell_price: '', unit_sell: 'Each', unit_sell_qty: '1',
+  serial_tracking: false, batch_tracking: false, expiry_tracking: false,
+  default_supplier_id: '', supplier_code: '', lead_time_days: '', min_order_qty: '',
+  notes: '', is_active: true, track_stock: true,
+}
+
+const UOM_OPTIONS = ['Each','Box','Carton','Kg','g','L','mL','m','Pair','Pack','Set','Dozen','Roll','Sheet','Unit']
+
+const TAX_OPTIONS = [
+  { value: '', label: 'No Tax (0%)' },
+  { value: '0% — Tax Exempt', label: '0% — Tax Exempt' },
+  { value: '10% — GST (AU)', label: '10% — GST (AU)' },
+  { value: '15% — GST (NZ)', label: '15% — GST (NZ)' },
+  { value: '20% — VAT (UK)', label: '20% — VAT (UK)' },
+]
+
+const PRICE_LEVELS = ['Retail', 'Wholesale', 'VIP']
+
+const COLS = [
+  { key: 'type', label: 'Type' },
+  { key: 'status', label: 'Status' },
+  { key: 'unit', label: 'Unit' },
+  { key: 'barcode', label: 'Barcode' },
+  { key: 'sell_price', label: 'Sale Price' },
+  { key: 'cost_price', label: 'Cost Price' },
+  { key: 'on_hand', label: 'On Hand' },
+  { key: 'on_order', label: 'On Order' },
+  { key: 'committed', label: 'Committed' },
+  { key: 'available', label: 'Available' },
+]
+
+const DEFAULT_VISIBLE = new Set(['type', 'status', 'unit', 'sell_price', 'on_hand', 'on_order', 'committed', 'available'])
+
+function fmt(n: number | null | undefined) {
+  if (n == null) return '—'
+  return `$${Number(n).toFixed(2)}`
 }
 
 function typeBadge(type: string) {
@@ -55,39 +132,258 @@ function typeBadge(type: string) {
   return <span className="badge" style={{ background: 'var(--teal-pale)', color: '#0B7A6E' }}>Stock</span>
 }
 
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <div className="pm-section">
+      <div className="pm-section-hd">{title}</div>
+      {children}
+    </div>
+  )
+}
+
+function Field({ label, hint, children }: { label: string; hint?: string; children: React.ReactNode }) {
+  return (
+    <div className="modal-field">
+      <label className="modal-label">
+        {label}
+        {hint && <span style={{ fontSize: 10, color: 'var(--gray-400)', fontWeight: 400, marginLeft: 4 }}>{hint}</span>}
+      </label>
+      {children}
+    </div>
+  )
+}
+
+function MInput({ value, onChange, placeholder, type = 'text', disabled, prefix, mono }: {
+  value: string; onChange?: (v: string) => void; placeholder?: string; type?: string; disabled?: boolean; prefix?: string; mono?: boolean
+}) {
+  return (
+    <div style={{ position: 'relative' }}>
+      {prefix && <span style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', fontSize: 13, color: 'var(--gray-400)', pointerEvents: 'none' }}>{prefix}</span>}
+      <input
+        className="modal-input"
+        type={type}
+        value={value}
+        onChange={e => onChange?.(e.target.value)}
+        placeholder={placeholder}
+        disabled={disabled}
+        style={{
+          opacity: disabled ? 0.7 : 1,
+          cursor: disabled ? 'default' : 'text',
+          paddingLeft: prefix ? 24 : undefined,
+          fontFamily: mono ? 'monospace' : undefined,
+        }}
+      />
+    </div>
+  )
+}
+
+function UomSelect({ value, onChange, disabled, label }: { value: string; onChange?: (v: string) => void; disabled?: boolean; label: string }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div style={{ position: 'relative' }}>
+      <button
+        className="modal-dd-btn"
+        onClick={() => !disabled && setOpen(o => !o)}
+        type="button"
+        style={{ opacity: disabled ? 0.7 : 1, cursor: disabled ? 'default' : 'pointer' }}
+      >
+        <span>{value || label}</span>
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+      </button>
+      {open && (
+        <div className="inv-dropdown" style={{ display: 'block', minWidth: 160 }}>
+          <div className="col-dropdown-title">{label}</div>
+          {UOM_OPTIONS.map(u => (
+            <div key={u} className={`fp-item${value === u ? ' active' : ''}`} onClick={() => { onChange?.(u); setOpen(false) }}>{u}</div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
+function Toggle({ active, onChange, disabled }: { active: boolean; onChange?: (v: boolean) => void; disabled?: boolean }) {
+  return (
+    <button
+      className="status-toggle"
+      data-active={String(active)}
+      onClick={() => !disabled && onChange?.(!active)}
+      type="button"
+      style={{ cursor: disabled ? 'default' : 'pointer', opacity: disabled ? 0.8 : 1 }}
+    >
+      <div className="status-toggle-knob" />
+    </button>
+  )
+}
+
 export default function ProductsTable({
-  products,
+  products: initialProducts,
   stockLevels,
   locations,
   orgId,
   isAdmin,
+  suppliers,
 }: {
   products: Product[]
   stockLevels: StockLevel[]
   locations: Location[]
   orgId: string
   isAdmin: boolean
+  suppliers?: Supplier[]
 }) {
+  const [products, setProducts] = useState(initialProducts)
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
   const [tab, setTab] = useState<'all' | 'instock' | 'nostock'>('all')
   const [showInactive, setShowInactive] = useState(false)
-  const [typeOpen, setTypeOpen] = useState(false)
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(25)
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
+  const [visibleCols, setVisibleCols] = useState<Set<string>>(DEFAULT_VISIBLE)
+  const [typeOpen, setTypeOpen] = useState(false)
+  const [colOpen, setColOpen] = useState(false)
+  const [actionsOpen, setActionsOpen] = useState(false)
+  const [advOpen, setAdvOpen] = useState(false)
+  const [advType, setAdvType] = useState('')
+  const [advSupplier, setAdvSupplier] = useState('')
+  const [advStock, setAdvStock] = useState('')
+  const [taxOpen, setTaxOpen] = useState(false)
+  const [supplierOpen, setSupplierOpen] = useState(false)
 
-  // Aggregate stock per product
+  // Modal
+  const [modal, setModal] = useState<'closed' | 'view' | 'add' | 'edit'>('closed')
+  const [activeProduct, setActiveProduct] = useState<Product | null>(null)
+  const [form, setForm] = useState<ModalForm>(EMPTY_FORM)
+  const [modalTab, setModalTab] = useState<'details' | 'pricing' | 'stock' | 'orders'>('details')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [pricing, setPricing] = useState<PricingRow[]>(PRICE_LEVELS.map(l => ({ price_level: l, price: 0, break_qty: 1 })))
+  const [productOrders, setProductOrders] = useState<Record<string, unknown>[]>([])
+  const [ordersLoading, setOrdersLoading] = useState(false)
+
+  function setF(field: keyof ModalForm, value: string | boolean) {
+    setForm(f => ({ ...f, [field]: value }))
+  }
+
+  function openView(p: Product) {
+    setActiveProduct(p)
+    setModal('view')
+    setModalTab('details')
+    setError(null)
+    setProductOrders([])
+  }
+
+  function openAdd() {
+    setForm(EMPTY_FORM)
+    setActiveProduct(null)
+    setModal('add')
+    setModalTab('details')
+    setError(null)
+    setPricing(PRICE_LEVELS.map(l => ({ price_level: l, price: 0, break_qty: 1 })))
+  }
+
+  function openEdit(p: Product) {
+    setForm({
+      sku: p.sku ?? '', name: p.name, type: p.type,
+      barcode: p.barcode ?? '', low_stock_threshold: p.low_stock_threshold != null ? String(p.low_stock_threshold) : '',
+      tax_rate: p.tax_rate ?? '', description: p.description ?? '',
+      cost_price: p.cost_price != null ? String(p.cost_price) : '',
+      unit_buy: p.unit_buy ?? 'Each', unit_buy_qty: p.unit_buy_qty != null ? String(p.unit_buy_qty) : '1',
+      sell_price: p.sell_price != null ? String(p.sell_price) : '',
+      unit_sell: p.unit_sell ?? 'Each', unit_sell_qty: p.unit_sell_qty != null ? String(p.unit_sell_qty) : '1',
+      serial_tracking: p.serial_tracking ?? false, batch_tracking: p.batch_tracking ?? false, expiry_tracking: p.expiry_tracking ?? false,
+      default_supplier_id: p.default_supplier_id ?? '', supplier_code: p.supplier_code ?? '',
+      lead_time_days: p.lead_time_days != null ? String(p.lead_time_days) : '',
+      min_order_qty: p.min_order_qty != null ? String(p.min_order_qty) : '',
+      notes: p.notes ?? '', is_active: p.is_active ?? true, track_stock: p.track_stock ?? true,
+    })
+    setActiveProduct(p)
+    setModal('edit')
+    setModalTab('details')
+    setError(null)
+  }
+
+  function closeModal() {
+    setModal('closed')
+    setActiveProduct(null)
+    setError(null)
+  }
+
+  async function loadOrders(productId: string) {
+    setOrdersLoading(true)
+    const res = await fetch(`/api/org/products/${productId}/orders`)
+    if (res.ok) setProductOrders(await res.json())
+    setOrdersLoading(false)
+  }
+
+  async function handleSave() {
+    if (!form.name.trim()) { setError('Product name is required.'); return }
+    if (!form.sku.trim()) { setError('Product # (SKU) is required.'); return }
+    setSaving(true)
+    setError(null)
+
+    const payload = {
+      name: form.name.trim(), sku: form.sku.trim(), type: form.type,
+      barcode: form.barcode || null,
+      low_stock_threshold: form.low_stock_threshold ? parseInt(form.low_stock_threshold) : null,
+      tax_rate: form.tax_rate || null, description: form.description || null,
+      cost_price: form.cost_price ? parseFloat(form.cost_price) : null,
+      unit_buy: form.unit_buy, unit_buy_qty: parseInt(form.unit_buy_qty) || 1,
+      sell_price: form.sell_price ? parseFloat(form.sell_price) : null,
+      unit_sell: form.unit_sell, unit_sell_qty: parseInt(form.unit_sell_qty) || 1,
+      serial_tracking: form.serial_tracking, batch_tracking: form.batch_tracking, expiry_tracking: form.expiry_tracking,
+      default_supplier_id: form.default_supplier_id || null,
+      supplier_code: form.supplier_code || null,
+      lead_time_days: form.lead_time_days ? parseInt(form.lead_time_days) : null,
+      min_order_qty: form.min_order_qty ? parseInt(form.min_order_qty) : null,
+      notes: form.notes || null, is_active: form.is_active, track_stock: form.track_stock,
+      unit: form.unit_sell,
+    }
+
+    const isEdit = modal === 'edit' && activeProduct
+    const url = isEdit ? `/api/org/products/${activeProduct.id}` : '/api/org/products'
+    const res = await fetch(url, {
+      method: isEdit ? 'PATCH' : 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    const data = await res.json()
+    setSaving(false)
+
+    if (!res.ok) { setError(data.error ?? 'Something went wrong'); return }
+
+    if (isEdit) {
+      setProducts(prev => prev.map(p => p.id === activeProduct.id ? { ...p, ...payload } : p))
+    } else {
+      setProducts(prev => [...prev, { ...payload, id: data.id, last_cost: null, avg_cost: null } as Product])
+    }
+    closeModal()
+  }
+
+  async function bulkAction(action: 'active' | 'inactive') {
+    const ids = Array.from(selectedIds)
+    await Promise.all(ids.map(id =>
+      fetch(`/api/org/products/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ is_active: action === 'active' }),
+      })
+    ))
+    setProducts(prev => prev.map(p => selectedIds.has(p.id) ? { ...p, is_active: action === 'active' } : p))
+    setSelectedIds(new Set())
+  }
+
+  // Stock aggregation
   const stockMap = useMemo(() => {
-    const map: Record<string, { onHand: number; onOrder: number; committed: number; onHold: number; available: number }> = {}
+    const map: Record<string, { onHand: number; onOrder: number; committed: number; available: number }> = {}
     for (const s of stockLevels) {
-      if (!map[s.product_id]) map[s.product_id] = { onHand: 0, onOrder: 0, committed: 0, onHold: 0, available: 0 }
+      if (!map[s.product_id]) map[s.product_id] = { onHand: 0, onOrder: 0, committed: 0, available: 0 }
       map[s.product_id].onHand += s.quantity
       map[s.product_id].onOrder += s.on_order
       map[s.product_id].committed += s.committed
-      map[s.product_id].onHold += s.on_hold
     }
     for (const id in map) {
-      map[id].available = map[id].onHand - map[id].committed - map[id].onHold
+      map[id].available = map[id].onHand - map[id].committed
     }
     return map
   }, [stockLevels])
@@ -96,22 +392,22 @@ export default function ProductsTable({
     return products.filter(p => {
       if (!showInactive && !p.is_active) return false
       if (typeFilter && p.type !== typeFilter) return false
+      if (advType && p.type !== advType) return false
+      if (advSupplier && p.default_supplier_id !== advSupplier) return false
       const stock = stockMap[p.id]
       const onHand = stock?.onHand ?? 0
       if (tab === 'instock' && onHand <= 0) return false
       if (tab === 'nostock' && onHand > 0) return false
+      if (advStock === 'Low Stock' && p.low_stock_threshold && onHand > p.low_stock_threshold) return false
+      if (advStock === 'Out of Stock' && onHand > 0) return false
+      if (advStock === 'In Stock' && onHand <= 0) return false
       if (search) {
         const q = search.toLowerCase()
-        return (
-          p.name.toLowerCase().includes(q) ||
-          (p.sku ?? '').toLowerCase().includes(q) ||
-          (p.description ?? '').toLowerCase().includes(q) ||
-          (p.barcode ?? '').toLowerCase().includes(q)
-        )
+        return p.name.toLowerCase().includes(q) || (p.sku ?? '').toLowerCase().includes(q) || (p.barcode ?? '').toLowerCase().includes(q)
       }
       return true
     })
-  }, [products, search, typeFilter, tab, showInactive, stockMap])
+  }, [products, search, typeFilter, tab, showInactive, stockMap, advType, advSupplier, advStock])
 
   const counts = useMemo(() => ({
     all: products.filter(p => showInactive || p.is_active).length,
@@ -121,9 +417,33 @@ export default function ProductsTable({
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / perPage))
   const paginated = filtered.slice((page - 1) * perPage, page * perPage)
+  const allPageSelected = paginated.length > 0 && paginated.every(p => selectedIds.has(p.id))
+
+  function toggleAll(checked: boolean) {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      paginated.forEach(p => checked ? next.add(p.id) : next.delete(p.id))
+      return next
+    })
+  }
+
+  function toggleOne(id: string) {
+    setSelectedIds(prev => {
+      const next = new Set(prev)
+      next.has(id) ? next.delete(id) : next.add(id)
+      return next
+    })
+  }
+
+  const v = visibleCols
+
+  const isView = modal === 'view'
+  const curProduct = isView ? activeProduct : null
+
+  const supplierName = (id: string) => suppliers?.find(s => s.id === id)?.name ?? 'Select supplier…'
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }} onClick={() => { setTypeOpen(false); setColOpen(false); setActionsOpen(false); setTaxOpen(false); setSupplierOpen(false) }}>
 
       {/* Page header */}
       <div className="page-header-card">
@@ -133,158 +453,204 @@ export default function ProductsTable({
             <div className="page-subtitle">Stock items, non-stock and services</div>
           </div>
           <div className="page-header-actions">
-            <button className="btn btn-primary">
+            <div style={{ position: 'relative' }}>
+              <button className="btn btn-outline" onClick={e => { e.stopPropagation(); setActionsOpen(o => !o) }}>
+                Actions
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+              </button>
+              {actionsOpen && (
+                <div className="inv-dropdown" style={{ display: 'block', minWidth: 190, padding: 6 }} onClick={e => e.stopPropagation()}>
+                  <div className="dd-item" onClick={() => setActionsOpen(false)}>
+                    <div className="dd-icon-wrap"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></div>
+                    Export Products
+                  </div>
+                  <div className="dd-item" onClick={() => setActionsOpen(false)}>
+                    <div className="dd-icon-wrap"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div>
+                    Import Products
+                  </div>
+                </div>
+              )}
+            </div>
+            <button className="btn btn-primary" onClick={openAdd}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               Add Product
             </button>
           </div>
         </div>
         <div className="tab-bar">
-          {([
-            { key: 'all', label: 'All' },
-            { key: 'instock', label: 'In Stock' },
-            { key: 'nostock', label: 'No Stock' },
-          ] as const).map(t => (
-            <div
-              key={t.key}
-              className={`tab-item${tab === t.key ? ' active' : ''}`}
-              onClick={() => { setTab(t.key); setPage(1) }}
-            >
-              {t.label}
-              <span className="tab-count">{counts[t.key]}</span>
+          {([{ key: 'all', label: 'All' }, { key: 'instock', label: 'In Stock' }, { key: 'nostock', label: 'No Stock' }] as const).map(t => (
+            <div key={t.key} className={`tab-item${tab === t.key ? ' active' : ''}`} onClick={() => { setTab(t.key); setPage(1) }}>
+              {t.label}<span className="tab-count">{counts[t.key]}</span>
             </div>
           ))}
         </div>
       </div>
 
       {/* Filter bar */}
-      <div className="filter-bar-card">
+      <div className="filter-bar-card" onClick={e => e.stopPropagation()}>
         <div className="filter-search-wrap">
           <svg className="filter-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-          <input
-            className="filter-search"
-            placeholder="Search products…"
-            value={search}
-            onChange={e => { setSearch(e.target.value); setPage(1) }}
-          />
+          <input className="filter-search" placeholder="Search products…" value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} />
         </div>
 
-        {/* Type filter */}
         <div style={{ position: 'relative' }}>
-          <button
-            className={`filter-dd-btn${typeFilter ? ' active-filter' : ''}`}
-            onClick={() => setTypeOpen(o => !o)}
-          >
+          <button className={`filter-dd-btn${typeFilter ? ' active-filter' : ''}`} onClick={() => setTypeOpen(o => !o)}>
             <span>{typeFilter || 'All Types'}</span>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
           {typeOpen && (
             <div className="inv-dropdown" style={{ display: 'block', minWidth: 160 }}>
               <div className="col-dropdown-title">Type</div>
-              {[
-                { value: '', label: 'All Types' },
-                { value: 'Stock', label: 'Stock' },
-                { value: 'NonStock', label: 'Non-Stock' },
-                { value: 'Service', label: 'Service' },
-              ].map(opt => (
-                <div
-                  key={opt.value}
-                  className={`fp-item${typeFilter === opt.value ? ' active' : ''}`}
-                  onClick={() => { setTypeFilter(opt.value); setPage(1); setTypeOpen(false) }}
-                >
-                  {opt.label}
-                </div>
+              {['', 'Stock', 'NonStock', 'Service'].map(v => (
+                <div key={v} className={`fp-item${typeFilter === v ? ' active' : ''}`} onClick={() => { setTypeFilter(v); setPage(1); setTypeOpen(false) }}>{v || 'All Types'}</div>
               ))}
             </div>
           )}
         </div>
 
-        {/* Show inactive */}
+        <button className={`filter-btn${advOpen ? ' active' : ''}`} onClick={() => setAdvOpen(o => !o)}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
+          Advanced{(advType || advSupplier || advStock) ? ' •' : ''}
+        </button>
+
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: 'var(--gray-400)', cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}>
-          <input
-            type="checkbox"
-            checked={showInactive}
-            onChange={e => { setShowInactive(e.target.checked); setPage(1) }}
-            style={{ accentColor: 'var(--teal)', cursor: 'pointer', width: 14, height: 14 }}
-          />
+          <input type="checkbox" checked={showInactive} onChange={e => { setShowInactive(e.target.checked); setPage(1) }} style={{ accentColor: 'var(--teal)', cursor: 'pointer', width: 14, height: 14 }} />
           Show inactive
         </label>
 
         <div className="filter-spacer" />
 
-        <span style={{ fontSize: 13, color: 'var(--gray-400)' }}>
-          <strong style={{ color: 'var(--slate)' }}>{filtered.length}</strong> products
-        </span>
+        <div style={{ position: 'relative' }}>
+          <button className="col-selector-btn" onClick={() => setColOpen(o => !o)}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+            Columns
+          </button>
+          {colOpen && (
+            <div className="inv-dropdown col-dropdown" style={{ display: 'block' }}>
+              <div className="col-dropdown-title">Show / Hide Columns</div>
+              {COLS.map(col => (
+                <label key={col.key} className="col-check-item">
+                  <input type="checkbox" checked={v.has(col.key)} onChange={e => {
+                    setVisibleCols(prev => { const next = new Set(prev); e.target.checked ? next.add(col.key) : next.delete(col.key); return next })
+                  }} style={{ accentColor: 'var(--teal)', width: 14, height: 14, cursor: 'pointer' }} />
+                  {col.label}
+                </label>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
+
+      {/* Advanced filters */}
+      {advOpen && (
+        <div className="adv-filter-panel open">
+          <div className="adv-filter-title" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <span>Advanced Filters</span>
+            <button onClick={() => setAdvOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--gray-400)', display: 'flex', alignItems: 'center', gap: 4, fontSize: 13 }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              Close
+            </button>
+          </div>
+          <div className="adv-filter-grid">
+            <div className="adv-field">
+              <label>Product Type</label>
+              <select className="adv-input" value={advType} onChange={e => setAdvType(e.target.value)} style={{ cursor: 'pointer' }}>
+                <option value="">Any</option>
+                {['Stock', 'NonStock', 'Service'].map(t => <option key={t}>{t}</option>)}
+              </select>
+            </div>
+            {suppliers && suppliers.length > 0 && (
+              <div className="adv-field">
+                <label>Supplier</label>
+                <select className="adv-input" value={advSupplier} onChange={e => setAdvSupplier(e.target.value)} style={{ cursor: 'pointer' }}>
+                  <option value="">Any</option>
+                  {suppliers.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
+                </select>
+              </div>
+            )}
+            <div className="adv-field">
+              <label>Stock Status</label>
+              <select className="adv-input" value={advStock} onChange={e => setAdvStock(e.target.value)} style={{ cursor: 'pointer' }}>
+                <option value="">Any</option>
+                {['In Stock', 'Out of Stock', 'Low Stock'].map(s => <option key={s}>{s}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="adv-filter-actions">
+            <button className="btn-sm btn-sm-primary" onClick={() => setAdvOpen(false)}>Apply</button>
+            <button className="btn-sm btn-sm-ghost" onClick={() => { setAdvType(''); setAdvSupplier(''); setAdvStock('') }}>Clear all</button>
+          </div>
+        </div>
+      )}
 
       {/* Table */}
       <div className="table-container">
+        <div className="table-toolbar">
+          {selectedIds.size > 0 ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--slate)' }}>{selectedIds.size} selected</span>
+              <div style={{ width: 1, height: 18, background: 'var(--gray-200)', margin: '0 4px' }} />
+              <button className="btn-sm btn-sm-primary" onClick={() => bulkAction('active')}>Set Active</button>
+              <button className="btn-sm btn-sm-ghost" onClick={() => bulkAction('inactive')}>Set Inactive</button>
+              <button className="btn-sm btn-sm-ghost" style={{ marginLeft: 'auto' }} onClick={() => setSelectedIds(new Set())}>✕ Clear</button>
+            </div>
+          ) : (
+            <span className="table-count"><strong>{filtered.length}</strong> products</span>
+          )}
+        </div>
         <div className="table-wrap">
           <table>
             <thead>
               <tr>
-                <th>Product</th>
-                <th>Type</th>
-                <th>Status</th>
-                <th>Unit</th>
-                <th style={{ textAlign: 'right' }}>Sale Price</th>
-                <th style={{ textAlign: 'right' }}>On Hand</th>
-                <th style={{ textAlign: 'right' }}>On Order</th>
-                <th style={{ textAlign: 'right' }}>Committed</th>
-                <th style={{ textAlign: 'right' }}>Available</th>
-                <th style={{ width: 40 }}></th>
+                <th style={{ width: 36 }}>
+                  <input type="checkbox" checked={allPageSelected} onChange={e => toggleAll(e.target.checked)} style={{ accentColor: 'var(--teal)', cursor: 'pointer' }} />
+                </th>
+                <th className="sortable">Product</th>
+                {v.has('type') && <th>Type</th>}
+                {v.has('status') && <th>Status</th>}
+                {v.has('unit') && <th>Unit</th>}
+                {v.has('barcode') && <th>Barcode</th>}
+                {v.has('sell_price') && <th style={{ textAlign: 'right' }}>Sale Price</th>}
+                {v.has('cost_price') && <th style={{ textAlign: 'right' }}>Cost Price</th>}
+                {v.has('on_hand') && <th style={{ textAlign: 'right' }}>On Hand</th>}
+                {v.has('on_order') && <th style={{ textAlign: 'right' }}>On Order</th>}
+                {v.has('committed') && <th style={{ textAlign: 'right' }}>Committed</th>}
+                {v.has('available') && <th style={{ textAlign: 'right' }}>Available</th>}
+                <th style={{ width: 40 }} />
               </tr>
             </thead>
             <tbody>
               {paginated.length === 0 && (
                 <tr>
-                  <td colSpan={10} style={{ textAlign: 'center', padding: '48px 0', color: 'var(--gray-400)', fontSize: 13 }}>
+                  <td colSpan={20} style={{ textAlign: 'center', padding: '48px 0', color: 'var(--gray-400)', fontSize: 13 }}>
                     {search ? 'No products match your search.' : 'No products yet. Add one to get started.'}
                   </td>
                 </tr>
               )}
               {paginated.map(p => {
-                const stock = stockMap[p.id] ?? { onHand: 0, onOrder: 0, committed: 0, onHold: 0, available: 0 }
+                const stock = stockMap[p.id] ?? { onHand: 0, onOrder: 0, committed: 0, available: 0 }
                 return (
-                  <tr key={p.id}>
+                  <tr key={p.id} onClick={() => openView(p)}>
+                    <td onClick={e => e.stopPropagation()}>
+                      <input type="checkbox" checked={selectedIds.has(p.id)} onChange={() => toggleOne(p.id)} style={{ accentColor: 'var(--teal)', cursor: 'pointer' }} />
+                    </td>
                     <td>
-                      <div style={{ fontFamily: 'var(--font-display)', fontSize: 13, fontWeight: 600, color: 'var(--slate)', letterSpacing: '-0.01em' }}>
-                        {p.name}
-                      </div>
-                      {p.sku && (
-                        <div style={{ fontSize: 11, color: 'var(--gray-400)', fontFamily: 'monospace', marginTop: 1 }}>
-                          {p.sku}
-                        </div>
-                      )}
+                      <div style={{ fontFamily: 'var(--font-display)', fontSize: 13, fontWeight: 600, color: 'var(--slate)', letterSpacing: '-0.01em' }}>{p.name}</div>
+                      {p.sku && <div style={{ fontSize: 11, color: 'var(--gray-400)', fontFamily: 'monospace', marginTop: 1 }}>{p.sku}</div>}
                     </td>
-                    <td>{typeBadge(p.type)}</td>
-                    <td>
-                      {p.is_active
-                        ? <span className="badge" style={{ background: '#D1FAE5', color: '#065F46' }}>Active</span>
-                        : <span className="badge" style={{ background: '#F3F4F6', color: '#6B7280' }}>Inactive</span>
-                      }
-                    </td>
-                    <td className="td-muted">{p.unit ?? '—'}</td>
-                    <td style={{ textAlign: 'right' }} className="td-muted">{fmt(p.sell_price)}</td>
-                    <td style={{ textAlign: 'right' }}>
-                      {p.track_stock ? (
-                        <span style={{ fontWeight: 600, color: stock.onHand <= 0 ? 'var(--danger)' : 'var(--slate)' }}>
-                          {stock.onHand}
-                        </span>
-                      ) : <span className="td-muted">—</span>}
-                    </td>
-                    <td style={{ textAlign: 'right' }} className="td-muted">{p.track_stock ? stock.onOrder : '—'}</td>
-                    <td style={{ textAlign: 'right' }} className="td-muted">{p.track_stock ? stock.committed : '—'}</td>
-                    <td style={{ textAlign: 'right' }}>
-                      {p.track_stock ? (
-                        <span style={{ fontWeight: 600, color: stock.available <= 0 ? 'var(--danger)' : '#059669' }}>
-                          {stock.available}
-                        </span>
-                      ) : <span className="td-muted">—</span>}
-                    </td>
+                    {v.has('type') && <td>{typeBadge(p.type)}</td>}
+                    {v.has('status') && <td>{p.is_active ? <span className="badge" style={{ background: '#D1FAE5', color: '#065F46' }}>Active</span> : <span className="badge" style={{ background: '#F3F4F6', color: '#6B7280' }}>Inactive</span>}</td>}
+                    {v.has('unit') && <td className="td-muted">{p.unit ?? '—'}</td>}
+                    {v.has('barcode') && <td className="td-mono">{p.barcode ?? '—'}</td>}
+                    {v.has('sell_price') && <td style={{ textAlign: 'right' }} className="td-muted">{fmt(p.sell_price)}</td>}
+                    {v.has('cost_price') && <td style={{ textAlign: 'right' }} className="td-muted">{fmt(p.cost_price)}</td>}
+                    {v.has('on_hand') && <td style={{ textAlign: 'right' }}>{p.track_stock ? <span style={{ fontWeight: 600, color: stock.onHand <= 0 ? 'var(--danger)' : 'var(--slate)' }}>{stock.onHand}</span> : <span className="td-muted">—</span>}</td>}
+                    {v.has('on_order') && <td style={{ textAlign: 'right' }} className="td-muted">{p.track_stock ? stock.onOrder : '—'}</td>}
+                    {v.has('committed') && <td style={{ textAlign: 'right' }} className="td-muted">{p.track_stock ? stock.committed : '—'}</td>}
+                    {v.has('available') && <td style={{ textAlign: 'right' }}>{p.track_stock ? <span style={{ fontWeight: 600, color: stock.available <= 0 ? 'var(--danger)' : '#059669' }}>{stock.available}</span> : <span className="td-muted">—</span>}</td>}
                     <td>
                       <div className="row-actions">
-                        <button className="row-action-btn" title="Edit">
+                        <button className="row-action-btn" onClick={e => { e.stopPropagation(); openEdit(p) }} title="Edit">
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                         </button>
                       </div>
@@ -295,16 +661,10 @@ export default function ProductsTable({
             </tbody>
           </table>
         </div>
-
-        {/* Footer */}
         <div className="table-footer">
           <div className="footer-left">
             <span className="per-page-label">Rows per page</span>
-            <select
-              className="per-page-select"
-              value={perPage}
-              onChange={e => { setPerPage(Number(e.target.value)); setPage(1) }}
-            >
+            <select className="per-page-select" value={perPage} onChange={e => { setPerPage(Number(e.target.value)); setPage(1) }}>
               {[10, 25, 50, 100].map(n => <option key={n} value={n}>{n}</option>)}
             </select>
           </div>
@@ -314,9 +674,7 @@ export default function ProductsTable({
             </button>
             {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
               const p = totalPages <= 5 ? i + 1 : page <= 3 ? i + 1 : page >= totalPages - 2 ? totalPages - 4 + i : page - 2 + i
-              return (
-                <button key={p} className={`page-btn${page === p ? ' active' : ''}`} onClick={() => setPage(p)}>{p}</button>
-              )
+              return <button key={p} className={`page-btn${page === p ? ' active' : ''}`} onClick={() => setPage(p)}>{p}</button>
             })}
             <button className="page-btn" disabled={page === totalPages} onClick={() => setPage(p => p + 1)}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="9 18 15 12 9 6"/></svg>
@@ -324,6 +682,391 @@ export default function ProductsTable({
           </div>
         </div>
       </div>
+
+      {/* ── MODAL ── */}
+      {modal !== 'closed' && (
+        <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) closeModal() }}>
+          <div className="modal-box" style={{ maxWidth: 780 }}>
+
+            {/* Header */}
+            <div className="modal-header">
+              <div>
+                <div className="modal-title">{isView ? curProduct?.name : modal === 'edit' ? 'Edit Product' : 'Add Product'}</div>
+                <div className="modal-subtitle">{isView ? `${curProduct?.type} · ${curProduct?.is_active ? 'Active' : 'Inactive'}` : modal === 'edit' ? 'Update product details' : 'Fill in the product details'}</div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <span style={{ fontSize: 12, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)' }}>Status</span>
+                <Toggle
+                  active={isView ? (curProduct?.is_active ?? true) : form.is_active}
+                  onChange={v => setF('is_active', v)}
+                  disabled={isView}
+                />
+                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--teal)', fontFamily: 'var(--font-ui)' }}>
+                  {(isView ? curProduct?.is_active : form.is_active) ? 'Active' : 'Inactive'}
+                </span>
+                <div style={{ width: 1, height: 20, background: 'var(--gray-100)', margin: '0 4px' }} />
+                {isView && (
+                  <button className="btn btn-outline" style={{ height: 32 }} onClick={() => activeProduct && openEdit(activeProduct)}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                    Edit Product
+                  </button>
+                )}
+                <button className="modal-close" onClick={closeModal}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                </button>
+              </div>
+            </div>
+
+            {/* Tabs */}
+            <div className="modal-tab-bar">
+              {(['details', 'pricing', 'stock', 'orders'] as const).map(t => (
+                <div key={t} className={`modal-tab${modalTab === t ? ' active' : ''}`} onClick={() => {
+                  setModalTab(t)
+                  if (t === 'orders' && activeProduct && productOrders.length === 0) loadOrders(activeProduct.id)
+                }}>
+                  {t === 'details' ? 'Details' : t === 'pricing' ? 'Price Levels' : t === 'stock' ? 'Stock Details' : 'Orders'}
+                </div>
+              ))}
+            </div>
+
+            <div className="modal-body">
+
+              {/* ── DETAILS ── */}
+              {modalTab === 'details' && (
+                <>
+                  {/* §1 Product Details */}
+                  <Section title="Product Details">
+                    <div className="modal-grid-3">
+                      <Field label="Product #" hint="*">
+                        <MInput value={isView ? (curProduct?.sku ?? '') : form.sku} onChange={v => setF('sku', v)} placeholder="e.g. PRD-001" disabled={isView} />
+                      </Field>
+                      <div className="modal-field" style={{ gridColumn: 'span 2' }}>
+                        <label className="modal-label">Product Name <span className="req">*</span></label>
+                        <MInput value={isView ? (curProduct?.name ?? '') : form.name} onChange={v => setF('name', v)} placeholder="e.g. Wireless Headphones Pro" disabled={isView} />
+                      </div>
+                    </div>
+                    <div className="modal-grid-2">
+                      <Field label="Product Type">
+                        {isView ? (
+                          typeBadge(curProduct?.type ?? 'Stock')
+                        ) : (
+                          <div className="modal-seg">
+                            {['Stock', 'NonStock', 'Service'].map(t => (
+                              <button key={t} type="button" className={`seg-btn${form.type === t ? ' active' : ''}`} onClick={() => setF('type', t)}>{t === 'NonStock' ? 'Non-Stock' : t}</button>
+                            ))}
+                          </div>
+                        )}
+                      </Field>
+                    </div>
+                    <div className="modal-grid-2">
+                      <Field label="Barcode">
+                        <MInput value={isView ? (curProduct?.barcode ?? '') : form.barcode} onChange={v => setF('barcode', v)} placeholder="e.g. 9300675000959" disabled={isView} mono />
+                      </Field>
+                      <Field label="Min Stock Alert" hint="— alert below this qty">
+                        <MInput value={isView ? String(curProduct?.low_stock_threshold ?? '') : form.low_stock_threshold} onChange={v => setF('low_stock_threshold', v)} type="number" placeholder="e.g. 5" disabled={isView} />
+                      </Field>
+                    </div>
+                    <Field label="Tax Rate">
+                      {isView ? (
+                        <MInput value={curProduct?.tax_rate ?? 'No Tax (0%)'} disabled />
+                      ) : (
+                        <div style={{ position: 'relative' }}>
+                          <button className="modal-dd-btn" onClick={e => { e.stopPropagation(); setTaxOpen(o => !o) }} type="button">
+                            <span>{form.tax_rate ? TAX_OPTIONS.find(t => t.value === form.tax_rate)?.label : 'Select tax rate…'}</span>
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+                          </button>
+                          {taxOpen && (
+                            <div className="inv-dropdown filter-pick-dropdown" style={{ display: 'block', minWidth: 220 }}>
+                              <div className="col-dropdown-title">Tax Rate</div>
+                              {TAX_OPTIONS.map(opt => (
+                                <div key={opt.value} className={`fp-item${form.tax_rate === opt.value ? ' active' : ''}`} onClick={() => { setF('tax_rate', opt.value); setTaxOpen(false) }}>{opt.label}</div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </Field>
+                    <Field label="Description">
+                      <textarea className="modal-input" value={isView ? (curProduct?.description ?? '') : form.description} onChange={e => setF('description', e.target.value)} placeholder="Short product description…" rows={2} disabled={isView} style={{ resize: 'vertical', height: 56, lineHeight: 1.5, opacity: isView ? 0.7 : 1 }} />
+                    </Field>
+                  </Section>
+
+                  {/* §2 Buying Details */}
+                  <Section title="Buying Details">
+                    <div className="modal-grid-2">
+                      <Field label="Cost Price (Buy)">
+                        <MInput value={isView ? String(curProduct?.cost_price ?? '') : form.cost_price} onChange={v => setF('cost_price', v)} type="number" placeholder="0.00" prefix="$" disabled={isView} />
+                      </Field>
+                      <Field label="Buy UOM">
+                        <UomSelect value={isView ? (curProduct?.unit_buy ?? 'Each') : form.unit_buy} onChange={v => setF('unit_buy', v)} disabled={isView} label="Buy UOM" />
+                      </Field>
+                    </div>
+                    <div className="modal-grid-2">
+                      <Field label="Units per Buy UOM" hint="e.g. 24 if 1 Carton = 24 Each">
+                        <MInput value={isView ? String(curProduct?.unit_buy_qty ?? 1) : form.unit_buy_qty} onChange={v => setF('unit_buy_qty', v)} type="number" placeholder="1" disabled={isView} />
+                      </Field>
+                    </div>
+                    {(modal === 'edit' || isView) && activeProduct && (
+                      <div className="modal-grid-2">
+                        <Field label="Last Cost" hint="(most recent PO)">
+                          <div className="modal-input" style={{ background: 'var(--gray-50)', color: 'var(--gray-400)', cursor: 'default' }}>{activeProduct.last_cost ? `$${Number(activeProduct.last_cost).toFixed(2)}` : '—'}</div>
+                        </Field>
+                        <Field label="Average Cost" hint="(weighted avg)">
+                          <div className="modal-input" style={{ background: 'var(--gray-50)', color: 'var(--gray-400)', cursor: 'default' }}>{activeProduct.avg_cost ? `$${Number(activeProduct.avg_cost).toFixed(2)}` : '—'}</div>
+                        </Field>
+                      </div>
+                    )}
+                  </Section>
+
+                  {/* §3 Selling Details */}
+                  <Section title="Selling Details">
+                    <div className="modal-grid-2">
+                      <Field label="Unit Price (Sell)">
+                        <MInput value={isView ? String(curProduct?.sell_price ?? '') : form.sell_price} onChange={v => setF('sell_price', v)} type="number" placeholder="0.00" prefix="$" disabled={isView} />
+                      </Field>
+                      <Field label="Sell UOM">
+                        <UomSelect value={isView ? (curProduct?.unit_sell ?? 'Each') : form.unit_sell} onChange={v => setF('unit_sell', v)} disabled={isView} label="Sell UOM" />
+                      </Field>
+                    </div>
+                    <div className="modal-grid-2">
+                      <Field label="Units per Sell UOM" hint="usually 1">
+                        <MInput value={isView ? String(curProduct?.unit_sell_qty ?? 1) : form.unit_sell_qty} onChange={v => setF('unit_sell_qty', v)} type="number" placeholder="1" disabled={isView} />
+                      </Field>
+                    </div>
+                  </Section>
+
+                  {/* §4 Tracking */}
+                  <Section title="Tracking">
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                      {[
+                        { key: 'serial_tracking' as keyof ModalForm, label: 'Serial Number Tracking', sub: 'Track individual serial numbers per unit' },
+                        { key: 'batch_tracking' as keyof ModalForm, label: 'Batch / Lot Tracking', sub: 'Group items into batches for traceability' },
+                        { key: 'expiry_tracking' as keyof ModalForm, label: 'Expiry Date Tracking', sub: 'Record and alert on expiry dates' },
+                      ].map(({ key, label, sub }) => (
+                        <div key={key} className="pm-toggle-row">
+                          <div>
+                            <div className="pm-toggle-lbl">{label}</div>
+                            <div className="pm-toggle-sub">{sub}</div>
+                          </div>
+                          <Toggle
+                            active={isView ? !!(curProduct as Record<string, unknown>)?.[key] : form[key] as boolean}
+                            onChange={v => setF(key, v)}
+                            disabled={isView}
+                          />
+                        </div>
+                      ))}
+                    </div>
+                  </Section>
+
+                  {/* §5 Supplier */}
+                  <Section title="Supplier">
+                    <div className="modal-grid-2">
+                      <Field label="Supplier">
+                        {isView ? (
+                          <MInput value={curProduct?.default_supplier_id ? supplierName(curProduct.default_supplier_id) : 'None'} disabled />
+                        ) : (
+                          <div style={{ position: 'relative' }}>
+                            <button className="modal-dd-btn" onClick={e => { e.stopPropagation(); setSupplierOpen(o => !o) }} type="button">
+                              <span>{form.default_supplier_id ? supplierName(form.default_supplier_id) : 'Select supplier…'}</span>
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+                            </button>
+                            {supplierOpen && (
+                              <div className="inv-dropdown filter-pick-dropdown" style={{ display: 'block', minWidth: 260 }}>
+                                <div className="col-dropdown-title">Supplier Contacts</div>
+                                <div className={`fp-item${!form.default_supplier_id ? ' active' : ''}`} onClick={() => { setF('default_supplier_id', ''); setSupplierOpen(false) }}>None</div>
+                                {(suppliers ?? []).map(s => (
+                                  <div key={s.id} className={`fp-item${form.default_supplier_id === s.id ? ' active' : ''}`} onClick={() => { setF('default_supplier_id', s.id); setSupplierOpen(false) }}>{s.name}</div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
+                      </Field>
+                      <Field label="Supplier / Product Code">
+                        <MInput value={isView ? (curProduct?.supplier_code ?? '') : form.supplier_code} onChange={v => setF('supplier_code', v)} placeholder="Supplier's SKU or part #" disabled={isView} />
+                      </Field>
+                    </div>
+                    <div className="modal-grid-2">
+                      <Field label="Lead Time (days)">
+                        <MInput value={isView ? String(curProduct?.lead_time_days ?? '') : form.lead_time_days} onChange={v => setF('lead_time_days', v)} type="number" placeholder="e.g. 7" disabled={isView} />
+                      </Field>
+                      <Field label="Min Order Qty">
+                        <MInput value={isView ? String(curProduct?.min_order_qty ?? '') : form.min_order_qty} onChange={v => setF('min_order_qty', v)} type="number" placeholder="e.g. 10" disabled={isView} />
+                      </Field>
+                    </div>
+                  </Section>
+
+                  {/* §6 Notes */}
+                  <div className="pm-section" style={{ borderBottom: 'none', paddingBottom: 0 }}>
+                    <div className="pm-section-hd">Notes</div>
+                    <Field label="">
+                      <textarea className="modal-input" value={isView ? (curProduct?.notes ?? '') : form.notes} onChange={e => setF('notes', e.target.value)} placeholder="Internal notes about this product…" rows={3} disabled={isView} style={{ resize: 'vertical', height: 80, lineHeight: 1.6, opacity: isView ? 0.7 : 1 }} />
+                    </Field>
+                  </div>
+                </>
+              )}
+
+              {/* ── PRICE LEVELS ── */}
+              {modalTab === 'pricing' && (
+                <>
+                  <div style={{ background: 'var(--white)', border: '1.5px solid var(--gray-200)', borderRadius: 12, overflow: 'hidden' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                      <thead>
+                        <tr style={{ background: 'var(--gray-50)' }}>
+                          <th className="li-th">Price Level</th>
+                          <th className="li-th" style={{ textAlign: 'right' }}>Price</th>
+                          <th className="li-th" style={{ textAlign: 'right' }}>Break Qty</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {pricing.map((row, i) => (
+                          <tr key={row.price_level} style={{ borderBottom: '1px solid var(--gray-100)' }}>
+                            <td className="li-td" style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{row.price_level}</td>
+                            <td className="li-td" style={{ textAlign: 'right' }}>
+                              <input
+                                className="li-input right"
+                                type="number"
+                                step="0.01"
+                                value={row.price || ''}
+                                onChange={e => { const a = [...pricing]; a[i].price = parseFloat(e.target.value) || 0; setPricing(a) }}
+                                placeholder="0.00"
+                                disabled={isView}
+                                style={{ textAlign: 'right', width: 100 }}
+                              />
+                            </td>
+                            <td className="li-td" style={{ textAlign: 'right' }}>
+                              <input
+                                className="li-input right"
+                                type="number"
+                                step="1"
+                                value={row.break_qty || ''}
+                                onChange={e => { const a = [...pricing]; a[i].break_qty = parseInt(e.target.value) || 1; setPricing(a) }}
+                                placeholder="1"
+                                disabled={isView}
+                                style={{ textAlign: 'right', width: 80 }}
+                              />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <div style={{ background: 'var(--teal-surface)', border: '1px solid var(--teal-pale)', borderRadius: 9, padding: '10px 14px', fontSize: 12.5, color: 'var(--teal)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                    Price levels are configured in Settings → Products. Set the price and break qty for each level here.
+                  </div>
+                </>
+              )}
+
+              {/* ── STOCK DETAILS ── */}
+              {modalTab === 'stock' && (
+                <div>
+                  {locations.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '32px', color: 'var(--gray-400)', fontSize: 13, background: 'var(--gray-50)', borderRadius: 12 }}>
+                      No locations configured for this organisation.
+                    </div>
+                  ) : (
+                    <div style={{ background: 'var(--white)', border: '1.5px solid var(--gray-200)', borderRadius: 12, overflow: 'hidden' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                        <thead>
+                          <tr style={{ background: 'var(--gray-50)' }}>
+                            <th className="li-th">Location</th>
+                            <th className="li-th" style={{ textAlign: 'right' }}>On Hand</th>
+                            <th className="li-th" style={{ textAlign: 'right' }}>On Order</th>
+                            <th className="li-th" style={{ textAlign: 'right' }}>Committed</th>
+                            <th className="li-th" style={{ textAlign: 'right' }}>Available</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {locations.map(loc => {
+                            const s = stockLevels.find(sl => sl.product_id === activeProduct?.id && sl.location_id === loc.id)
+                            const onHand = s?.quantity ?? 0
+                            const onOrder = s?.on_order ?? 0
+                            const committed = s?.committed ?? 0
+                            const available = onHand - committed
+                            return (
+                              <tr key={loc.id} style={{ borderBottom: '1px solid var(--gray-100)' }}>
+                                <td className="li-td" style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{loc.name}</td>
+                                <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: onHand <= 0 ? 'var(--danger)' : 'var(--slate)' }}>{onHand}</td>
+                                <td className="li-td" style={{ textAlign: 'right', color: 'var(--gray-400)' }}>{onOrder}</td>
+                                <td className="li-td" style={{ textAlign: 'right', color: 'var(--gray-400)' }}>{committed}</td>
+                                <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: available <= 0 ? 'var(--danger)' : '#059669' }}>{available}</td>
+                              </tr>
+                            )
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* ── ORDERS ── */}
+              {modalTab === 'orders' && (
+                <div>
+                  {ordersLoading ? (
+                    <div style={{ textAlign: 'center', padding: '40px 0', color: 'var(--gray-400)', fontSize: 13 }}>Loading…</div>
+                  ) : productOrders.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '40px', color: 'var(--gray-400)', fontSize: 13, background: 'var(--gray-50)', borderRadius: 12 }}>No orders found for this product.</div>
+                  ) : (
+                    <div style={{ background: 'var(--white)', border: '1.5px solid var(--gray-200)', borderRadius: 12, overflow: 'hidden' }}>
+                      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                        <thead>
+                          <tr style={{ background: 'var(--gray-50)' }}>
+                            <th className="li-th">Order #</th>
+                            <th className="li-th">Type</th>
+                            <th className="li-th">Date</th>
+                            <th className="li-th">Status</th>
+                            <th className="li-th" style={{ textAlign: 'right' }}>Qty</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {productOrders.map((o: Record<string, unknown>) => (
+                            <tr key={o.id as string} style={{ borderBottom: '1px solid var(--gray-100)' }}>
+                              <td className="li-td" style={{ fontWeight: 600, color: 'var(--slate)' }}>{(o.order_number ?? '—') as string}</td>
+                              <td className="li-td"><span className="badge badge-draft">{(o.order_type ?? '—') as string}</span></td>
+                              <td className="li-td" style={{ color: 'var(--gray-400)' }}>{o.order_date ? new Date(o.order_date as string).toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}</td>
+                              <td className="li-td"><span className="badge badge-draft">{(o.status ?? '—') as string}</span></td>
+                              <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: 'var(--slate)' }}>{(o.quantity ?? '—') as string | number}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {error && (
+                <div style={{ background: '#FEF2F2', border: '1.5px solid #FECACA', borderRadius: 9, padding: '10px 14px', fontSize: 13, color: '#B91C1C' }}>{error}</div>
+              )}
+            </div>
+
+            {/* Footer */}
+            <div className="modal-footer">
+              {isView ? (
+                <button className="btn btn-outline" onClick={closeModal}>Close</button>
+              ) : (
+                <>
+                  <button className="btn btn-outline" onClick={closeModal}>Cancel</button>
+                  <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+                    {saving ? 'Saving…' : modal === 'edit' ? 'Save Changes' : 'Add Product'}
+                  </button>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* pm-section CSS */}
+      <style>{`
+        .pm-section { padding-bottom: 16px; margin-bottom: 16px; border-bottom: 1px solid var(--gray-100); display: flex; flex-direction: column; gap: 12px; }
+        .pm-section-hd { font-size: 10.5px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--gray-400); font-family: var(--font-ui); }
+        .pm-toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; background: var(--gray-50); border: 1.5px solid var(--gray-100); border-radius: 9px; }
+        .pm-toggle-lbl { font-size: 13px; font-weight: 600; color: var(--slate); }
+        .pm-toggle-sub { font-size: 12px; color: var(--gray-400); margin-top: 1px; }
+      `}</style>
     </div>
   )
 }

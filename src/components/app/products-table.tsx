@@ -231,6 +231,7 @@ export default function ProductsTable({
   isAdmin: boolean
   suppliers?: Supplier[]
 }) {
+  const router = useRouter()
   const [products, setProducts] = useState(initialProducts)
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('')

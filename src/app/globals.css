@@ -286,3 +286,6 @@ textarea.modal-input{padding:9px 11px;height:auto;}
 ::-webkit-scrollbar{width:5px;height:5px;}
 ::-webkit-scrollbar-track{background:transparent;}
 ::-webkit-scrollbar-thumb{background:var(--gray-200);border-radius:9999px;}
+
+/* Settings */
+.settings-card-sub { font-size: 12.5px; color: var(--gray-400); margin-top: 2px; }

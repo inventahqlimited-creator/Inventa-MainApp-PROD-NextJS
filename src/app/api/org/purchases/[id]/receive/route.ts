@@ -49,9 +49,9 @@ export async function POST(request: Request, { params }: Params) {
     .eq('po_id', id)
     .eq('org_id', orgId)
 
-  const allReceived = allLines?.every(l => (l.quantity_received ?? 0) >= l.quantity_ordered)
-  const anyReceived = allLines?.some(l => (l.quantity_received ?? 0) > 0)
-
+  const allReceived = allLines?.every((l: { quantity_ordered: number; quantity_received: number | null }) => (l.quantity_received ?? 0) >= l.quantity_ordered)
+  const anyReceived = allLines?.some((l: { quantity_received: number | null }) => (l.quantity_received ?? 0) > 0)
+  
   const newStatus = allReceived ? 'Closed' : anyReceived ? 'Partially Received' : 'Open'
 
   // Update PO status

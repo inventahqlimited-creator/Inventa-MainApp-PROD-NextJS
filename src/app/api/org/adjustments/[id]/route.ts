@@ -21,12 +21,22 @@ export async function PATCH(request: Request, { params }: Params) {
   const { id } = await params
   const ctx = await getOrg()
   if (!ctx) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+
   const body = await request.json()
+
   const { error } = await ctx.adminClient
-    .from('adjustment_orders')
+    .from('sales_orders')
     .update(body)
     .eq('id', id)
     .eq('org_id', ctx.org_id)
+
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+
+  // Apply stock movement when delivered
+  if (body.status === 'Delivered') {
+    const { error: fnError } = await ctx.adminClient.rpc('apply_so_ship', { p_so_id: id })
+    if (fnError) console.error('apply_so_ship error:', fnError.message)
+  }
+
   return NextResponse.json({ success: true })
 }

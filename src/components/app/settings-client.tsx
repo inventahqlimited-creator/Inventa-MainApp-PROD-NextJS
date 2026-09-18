@@ -19,6 +19,7 @@ type Bin = { id: string; name: string; description: string | null }
 type TaxRate = { id: string; name: string; code: string; rate: number; is_default: boolean }
 type Currency = { id: string; code: string; name: string; rate: number; symbol: string | null }
 type Uom = { id: string; name: string; abbr: string; in_use?: boolean }
+type PriceLevel = { id: string; name: string; is_default: boolean }
 
 const TABS = [
   { key: 'general', label: 'General' },
@@ -537,10 +538,11 @@ function InlineEditable({ value, onChange, style }: { value: string; onChange: (
   )
 }
 
-function ContactsTab({ taxRates, currencies, locations, orgId, showToast }: {
+function ContactsTab({ taxRates, currencies, locations, priceLevels, orgId, showToast }: {
   taxRates: TaxRate[]
   currencies: Currency[]
   locations: Location[]
+  priceLevels: PriceLevel[]
   orgId: string
   showToast: (type: 'success' | 'error', msg: string) => void
 }) {
@@ -548,7 +550,7 @@ function ContactsTab({ taxRates, currencies, locations, orgId, showToast }: {
   const [defCurrency, setDefCurrency] = useState('')
   const [defLocation, setDefLocation] = useState('')
   const [defPaymentTerms, setDefPaymentTerms] = useState('Net 30')
-  const [defPriceTier, setDefPriceTier] = useState('Retail')
+  const [defPriceTier, setDefPriceTier] = useState('')
   const [saving, setSaving] = useState(false)
 
   // Custom Fields — loaded from DB
@@ -701,7 +703,7 @@ function ContactsTab({ taxRates, currencies, locations, orgId, showToast }: {
             <Select value={defPaymentTerms} onChange={setDefPaymentTerms} options={['Net 7','Net 14','Net 30','Net 60','COD','Prepaid'].map(t => ({ value: t, label: t }))} />
           </Field>
           <Field label="Default Price Tier">
-            <Select value={defPriceTier} onChange={setDefPriceTier} options={['Retail','Wholesale','VIP'].map(t => ({ value: t, label: t }))} />
+            <Select value={defPriceTier} onChange={setDefPriceTier} options={[{ value: '', label: '— None —' }, ...priceLevels.map(pl => ({ value: pl.id, label: pl.name }))]} />
           </Field>
         </div>
       </Card>
@@ -933,6 +935,40 @@ export default function SettingsClient({
   async function deleteUom(id: string) {
     setUoms(prev => prev.filter(u => u.id !== id))
     await fetch(`/api/org/uoms/${id}`, { method: 'DELETE' })
+  }
+
+  // Price Levels
+  const [priceLevels, setPriceLevels] = useState<PriceLevel[]>([])
+
+  useEffect(() => {
+    fetch('/api/org/price-levels').then(r => r.json()).then(data => { if (Array.isArray(data)) setPriceLevels(data) })
+  }, [])
+
+  async function addPriceLevel() {
+    const name = `Price Level ${priceLevels.length + 1}`
+    const res = await fetch('/api/org/price-levels', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    })
+    const data = await res.json()
+    if (res.ok) setPriceLevels(prev => [...prev, data])
+    else showToast('error', data.error ?? 'Failed to add price level')
+  }
+
+  async function renamePriceLevel(id: string, name: string) {
+    setPriceLevels(prev => prev.map(pl => pl.id === id ? { ...pl, name } : pl))
+    await fetch(`/api/org/price-levels/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) })
+  }
+
+  async function setDefaultPriceLevel(id: string) {
+    setPriceLevels(prev => prev.map(pl => ({ ...pl, is_default: pl.id === id })))
+    await fetch(`/api/org/price-levels/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ is_default: true }) })
+    showToast('success', 'Default price level updated')
+  }
+
+  async function deletePriceLevel(id: string) {
+    setPriceLevels(prev => prev.filter(pl => pl.id !== id))
+    await fetch(`/api/org/price-levels/${id}`, { method: 'DELETE' })
   }
 
   // Purchases settings
@@ -1320,6 +1356,7 @@ export default function SettingsClient({
             taxRates={taxRates}
             currencies={currencies}
             locations={locations}
+            priceLevels={priceLevels}
             orgId={orgId}
             showToast={showToast}
           />
@@ -1380,6 +1417,40 @@ export default function SettingsClient({
                       </button>
                     ) : (
                       <div style={{ width: 36, marginLeft: 8 }} />
+                    )}
+                  </div>
+                ))}
+              </div>
+            </Card>
+
+            {/* Price Levels */}
+            <Card title="Price Levels" subtitle="Define pricing tiers used across products — set per-product prices in the product's Pricing tab" action={
+              <button className="btn btn-primary" style={{ height: 32, fontSize: 12.5 }} onClick={addPriceLevel}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Add Level
+              </button>
+            }>
+              <div style={{ padding: '8px 0' }}>
+                {priceLevels.length === 0 && <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--gray-300)', fontSize: 12.5 }}>No price levels yet.</div>}
+                {priceLevels.map(pl => (
+                  <div key={pl.id} style={{ display: 'flex', alignItems: 'center', padding: '12px 20px', borderBottom: '1px solid var(--gray-100)', background: pl.is_default ? 'var(--teal-surface)' : 'var(--white)' }}>
+                    <div style={{ width: 32, height: 32, borderRadius: 8, background: pl.is_default ? 'var(--teal)' : 'var(--gray-100)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginRight: 12, flexShrink: 0 }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke={pl.is_default ? 'white' : 'var(--gray-400)'} strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                    </div>
+                    <InlineEditable value={pl.name} onChange={name => renamePriceLevel(pl.id, name)} style={{ flex: 1, fontWeight: 600, fontSize: 14, color: 'var(--slate)' }} />
+                    {pl.is_default ? (
+                      <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--teal)', background: 'rgba(13,148,136,0.12)', padding: '3px 10px', borderRadius: 20, marginRight: 8 }}>Default</span>
+                    ) : (
+                      <button onClick={() => setDefaultPriceLevel(pl.id)} style={{ fontSize: 12, color: 'var(--gray-400)', background: 'var(--gray-50)', border: '1.5px solid var(--gray-200)', borderRadius: 20, padding: '3px 10px', cursor: 'pointer', marginRight: 8, fontWeight: 500 }}
+                        onMouseOver={e => (e.currentTarget.style.borderColor = 'var(--teal)')}
+                        onMouseOut={e => (e.currentTarget.style.borderColor = 'var(--gray-200)')}>Set default</button>
+                    )}
+                    {!pl.is_default && (
+                      <button onClick={() => deletePriceLevel(pl.id)} style={{ width: 28, height: 28, borderRadius: 7, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--gray-300)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                        onMouseOver={e => (e.currentTarget.style.color = 'var(--danger)')}
+                        onMouseOut={e => (e.currentTarget.style.color = 'var(--gray-300)')}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+                      </button>
                     )}
                   </div>
                 ))}

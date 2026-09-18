@@ -15,15 +15,15 @@ export async function GET() {
   const auth = await getAuth()
   if (!auth) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  let { data } = await auth.adminClient.from('price_levels').select('*').eq('org_id', auth.orgId).order('sort_order').order('created_at')
+  let { data } = await auth.adminClient.from('price_levels').select('*').eq('org_id', auth.orgId).order('created_at')
 
   // Seed defaults if none exist
   if (!data || data.length === 0) {
     const defaults = [
-      { name: 'Retail', is_default: true, sort_order: 1 },
-      { name: 'Wholesale', is_default: false, sort_order: 2 },
-      { name: 'VIP', is_default: false, sort_order: 3 },
-    ].map(d => ({ ...d, org_id: auth.orgId }))
+      { name: 'Retail', is_default: true, org_id: auth.orgId },
+      { name: 'Wholesale', is_default: false, org_id: auth.orgId },
+      { name: 'VIP', is_default: false, org_id: auth.orgId },
+    ]
     const { data: seeded } = await auth.adminClient.from('price_levels').insert(defaults).select()
     data = seeded
   }
@@ -34,10 +34,10 @@ export async function GET() {
 export async function POST(req: Request) {
   const auth = await getAuth()
   if (!auth) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const { name, sort_order } = await req.json()
+  const { name } = await req.json()
   if (!name?.trim()) return NextResponse.json({ error: 'Name is required' }, { status: 400 })
   const { data, error } = await auth.adminClient.from('price_levels')
-    .insert({ org_id: auth.orgId, name: name.trim(), is_default: false, sort_order: sort_order ?? 0 })
+    .insert({ org_id: auth.orgId, name: name.trim(), is_default: false })
     .select().single()
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json(data)

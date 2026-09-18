@@ -503,6 +503,7 @@ function ImportModal({ orgId, customFields, customLists, taxRates, suppliers, pr
       if (res.ok) {
         const newProduct = await res.json()
         created.push(newProduct)
+        console.log('[import] created product:', newProduct)
         // Insert price level rows directly if any
         if (pricingData.length > 0 && newProduct?.id) {
           const sb = createClient()
@@ -530,14 +531,22 @@ function ImportModal({ orgId, customFields, customLists, taxRates, suppliers, pr
           const errBody = await res.json()
           errMsg = errBody?.error || errBody?.message || JSON.stringify(errBody)
         } catch { /* body wasn't JSON */ }
+        console.error('[import] row failed:', name, res.status, errMsg)
         rowErrors.push(`"${name}": ${errMsg}`)
+        // Stop after first error so we can see what's wrong
+        if (rowErrors.length >= 3) break
       }
     }
 
     setImporting(false)
-    if (rowErrors.length > 0) setErrors(rowErrors)
-    setImported(created.length)
-    if (created.length > 0) onImported(created)
+    if (created.length > 0) {
+      setImported(created.length)
+      onImported(created)
+    } else {
+      // Stay on the upload screen and show errors (or a generic message)
+      if (rowErrors.length === 0) rowErrors.push('No products were imported. Check that your CSV matches the template format.')
+      setErrors(rowErrors)
+    }
   }
 
   if (imported !== null) {

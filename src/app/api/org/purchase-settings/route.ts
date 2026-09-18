@@ -18,6 +18,8 @@ const ALLOWED_KEYS = [
   'po_suffix',
   'po_start',
   'po_digits',
+  'po_default_payment_terms',
+  'po_default_deliver_to',
 ]
 
 export async function PATCH(req: Request) {

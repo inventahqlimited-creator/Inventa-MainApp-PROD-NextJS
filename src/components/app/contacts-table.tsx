@@ -139,10 +139,18 @@ const COLS = [
 
 const DEFAULT_VISIBLE = new Set(['type','status','currency','tier','terms','taxrate','address','phone','email','balance'])
 
+type ContactPermissions = {
+  create_contacts: boolean
+  edit_contacts: boolean
+  export_contacts: boolean
+  import_contacts: boolean
+}
+
 export default function ContactsTable({
   contacts: initialContacts,
   orgId,
   isAdmin,
+  permissions = { create_contacts: true, edit_contacts: true, export_contacts: true, import_contacts: true },
   priceLevels = [],
   currencies = [],
   baseCurrency = 'NZD',
@@ -154,6 +162,7 @@ export default function ContactsTable({
   contacts: Contact[]
   orgId: string
   isAdmin: boolean
+  permissions?: ContactPermissions
   priceLevels?: { id: string; name: string; is_default: boolean }[]
   currencies?: { id: string; code: string; name: string; symbol: string | null }[]
   baseCurrency?: string
@@ -320,6 +329,16 @@ export default function ContactsTable({
 
   async function handleSave() {
     if (!form.name.trim()) { setError('Contact name is required.'); return }
+
+    // Permission guards (defence-in-depth)
+    if (modal === 'add' && !permissions.create_contacts) {
+      setError('You do not have permission to create contacts.')
+      return
+    }
+    if (modal === 'edit' && !permissions.edit_contacts) {
+      setError('You do not have permission to edit contacts.')
+      return
+    }
 
     // Duplicate email check (client-side across loaded contacts)
     if (form.email.trim()) {
@@ -506,28 +525,36 @@ export default function ContactsTable({
             <div className="page-subtitle">Customers &amp; suppliers in one place</div>
           </div>
           <div className="page-header-actions">
-            <div style={{ position: 'relative' }}>
-              <button className="btn btn-outline" onClick={e => { e.stopPropagation(); setActionsOpen(o => !o) }}>
-                Actions
-                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+            {(permissions.export_contacts || permissions.import_contacts) && (
+              <div style={{ position: 'relative' }}>
+                <button className="btn btn-outline" onClick={e => { e.stopPropagation(); setActionsOpen(o => !o) }}>
+                  Actions
+                  <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+                {actionsOpen && (
+                  <div className="inv-dropdown" style={{ display: 'block', minWidth: 190, padding: 6 }} onClick={e => e.stopPropagation()}>
+                    {permissions.export_contacts && (
+                      <div className="dd-item" onClick={() => { setActionsOpen(false) }}>
+                        <div className="dd-icon-wrap"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></div>
+                        Export Contacts
+                      </div>
+                    )}
+                    {permissions.import_contacts && (
+                      <div className="dd-item" onClick={() => { setActionsOpen(false) }}>
+                        <div className="dd-icon-wrap"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div>
+                        Import Contacts
+                      </div>
+                    )}
+                  </div>
+                )}
+              </div>
+            )}
+            {permissions.create_contacts && (
+              <button className="btn btn-primary" onClick={openAdd}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Add Contact
               </button>
-              {actionsOpen && (
-                <div className="inv-dropdown" style={{ display: 'block', minWidth: 190, padding: 6 }} onClick={e => e.stopPropagation()}>
-                  <div className="dd-item" onClick={() => { setActionsOpen(false) }}>
-                    <div className="dd-icon-wrap"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></div>
-                    Export Contacts
-                  </div>
-                  <div className="dd-item" onClick={() => { setActionsOpen(false) }}>
-                    <div className="dd-icon-wrap"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div>
-                    Import Contacts
-                  </div>
-                </div>
-              )}
-            </div>
-            <button className="btn btn-primary" onClick={openAdd}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              Add Contact
-            </button>
+            )}
           </div>
         </div>
         <div className="tab-bar">
@@ -736,9 +763,11 @@ export default function ContactsTable({
                   {v.has('discount') && <td className="td-muted">{c.disc_value ? `${c.disc_value}${c.disc_type === 'percent' ? '%' : '$'}` : '—'}</td>}
                   <td>
                     <div className="row-actions">
+                      {permissions.edit_contacts && (
                       <button className="row-action-btn" onClick={e => { e.stopPropagation(); openEdit(c) }} title="Edit">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                       </button>
+                      )}
                     </div>
                   </td>
                 </tr>
@@ -791,7 +820,7 @@ export default function ContactsTable({
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                {modal === 'view' && (
+                {modal === 'view' && permissions.edit_contacts && (
                   <button className="btn btn-outline" style={{ height: 34 }} onClick={() => activeContact && openEdit(activeContact)}>
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                     Edit Contact

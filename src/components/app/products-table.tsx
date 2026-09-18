@@ -147,8 +147,8 @@ function Field({ label, hint, children }: { label: string; hint?: string; childr
   )
 }
 
-function MInput({ value, onChange, placeholder, type = 'text', disabled, prefix, mono }: {
-  value: string; onChange?: (v: string) => void; placeholder?: string; type?: string; disabled?: boolean; prefix?: string; mono?: boolean
+function MInput({ value, onChange, onBlur, placeholder, type = 'text', disabled, prefix, mono }: {
+  value: string; onChange?: (v: string) => void; onBlur?: (v: string) => void; placeholder?: string; type?: string; disabled?: boolean; prefix?: string; mono?: boolean
 }) {
   return (
     <div style={{ position: 'relative' }}>
@@ -158,6 +158,7 @@ function MInput({ value, onChange, placeholder, type = 'text', disabled, prefix,
         type={type}
         value={value}
         onChange={e => onChange?.(e.target.value)}
+        onBlur={e => onBlur?.(e.target.value)}
         placeholder={placeholder}
         disabled={disabled}
         style={{
@@ -223,10 +224,11 @@ type OrgSettings = {
 }
 
 // ── Export Modal ──────────────────────────────────────────────────────────────
-function ExportModal({ products, customFields, decimalPlaces, onClose }: {
+function ExportModal({ products, customFields, decimalPlaces, taxRates, onClose }: {
   products: Product[]
   customFields: CustomField[]
   decimalPlaces: number
+  taxRates: TaxRate[]
   onClose: () => void
 }) {
   const [includeInactive, setIncludeInactive] = useState(false)
@@ -250,7 +252,7 @@ function ExportModal({ products, customFields, decimalPlaces, onClose }: {
           p.id, p.name, p.sku ?? '', p.type, p.description ?? '', p.barcode ?? '',
           p.sell_price != null ? Number(p.sell_price).toFixed(decimalPlaces) : '',
           p.cost_price != null ? Number(p.cost_price).toFixed(decimalPlaces) : '',
-          p.tax_rate ?? '', p.sell_uom ?? '', p.buy_uom ?? '',
+          (() => { const stored = Number(p.tax_rate); const m = taxRates.find(t => t.rate === stored); return m ? `${m.rate}% — ${m.name}` : (p.tax_rate ? String(p.tax_rate) : '') })(), p.sell_uom ?? '', p.buy_uom ?? '',
           p.track_stock ? 'Yes' : 'No',
           p.serial_tracking ? 'Yes' : 'No',
           p.batch_tracking ? 'Yes' : 'No',
@@ -481,9 +483,11 @@ export default function ProductsTable({
   const searchParams = useSearchParams()
 
   // Derived from props
+  // TAX_OPTIONS: value = tax_rate_id (UUID), so we store the id and resolve display text
+  // For DB: we store just the numeric rate (t.rate), display the full label in UI
   const TAX_OPTIONS = [
-    { value: '', label: 'No Tax (0%)' },
-    ...taxRates.map(t => ({ value: `${t.rate}% — ${t.name}`, label: `${t.rate}% — ${t.name}` })),
+    { value: '', label: 'No Tax (0%)', rate: 0 },
+    ...taxRates.map(t => ({ value: t.id, label: `${t.rate}% — ${t.name}`, rate: t.rate })),
   ]
   const dp = decimalPlaces
   const priceStep = dp > 0 ? `0.${'0'.repeat(dp - 1)}1` : '1'
@@ -533,10 +537,15 @@ export default function ProductsTable({
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [customFieldValues, setCustomFieldValues] = useState<Record<string, string>>({})
-  const defaultPricingLevels = priceLevels.length > 0 ? priceLevels.map(pl => pl.name) : PRICE_LEVELS
-  const [pricing, setPricing] = useState<PricingRow[]>(defaultPricingLevels.map(l => ({ price_level: l, price: 0, break_qty: 1 })))
+  const [pricing, setPricing] = useState<PricingRow[]>([])
   const [productOrders, setProductOrders] = useState<Record<string, unknown>[]>([])
   const [ordersLoading, setOrdersLoading] = useState(false)
+
+  // Initialize pricing rows from priceLevels prop
+  useEffect(() => {
+    setPricing(PRICE_LEVEL_NAMES.map(l => ({ price_level: l, price: 0, break_qty: 1 })))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [priceLevels])
 
   // Auto-open modal when ?new=1 param is present (runs on mount AND when already on page)
   useEffect(() => {
@@ -577,7 +586,13 @@ export default function ProductsTable({
       sku: p.sku ?? '', name: p.name, type: p.type,
       barcode: p.barcode ?? '',
       low_stock_threshold: p.low_stock_threshold != null ? String(p.low_stock_threshold) : '',
-      tax_rate: p.tax_rate ?? '', description: p.description ?? '',
+      tax_rate: (() => {
+        // tax_rate stored as numeric in DB; find matching tax rate id by rate value
+        if (!p.tax_rate) return ''
+        const stored = Number(p.tax_rate)
+        const match = taxRates.find(t => t.rate === stored)
+        return match ? match.id : ''
+      })(), description: p.description ?? '',
       cost_price: p.cost_price != null ? String(p.cost_price) : '',
       buy_uom: p.buy_uom ?? 'Each',
       buy_uom_qty: p.buy_uom_qty != null ? String(p.buy_uom_qty) : '1',
@@ -598,6 +613,7 @@ export default function ProductsTable({
     setModalTab('details')
     setError(null)
     setCustomFieldValues(p.custom_fields ?? {})
+    setPricing(PRICE_LEVEL_NAMES.map(l => ({ price_level: l, price: 0, break_qty: 1 })))
   }
 
   function closeModal() {
@@ -624,7 +640,7 @@ export default function ProductsTable({
       name: form.name.trim(), sku: form.sku.trim(), type: form.type,
       barcode: form.barcode || null,
       low_stock_threshold: form.low_stock_threshold ? parseInt(form.low_stock_threshold) : null,
-      tax_rate: form.tax_rate || null,
+      tax_rate: form.tax_rate ? (TAX_OPTIONS.find(t => t.value === form.tax_rate)?.rate ?? null) : null,
       description: form.description || null,
       cost_price: form.cost_price ? parseFloat(form.cost_price) : null,
       buy_uom: form.buy_uom,
@@ -827,7 +843,7 @@ export default function ProductsTable({
           {typeOpen && (
             <div className="inv-dropdown" style={{ display: 'block', minWidth: 160 }}>
               <div className="col-dropdown-title">Type</div>
-              {[{ val: '', label: 'All Types' }, { val: 'Stock', label: 'Stock' }, { val: 'NonStock', label: 'Non Stock' }].map(({ val, label }) => (
+              {[{ val: '', label: 'All Types' }, { val: 'Stock', label: 'Stock' }, { val: 'NonStock', label: 'Non Stock' }, { val: 'Service', label: 'Service' }].map(({ val, label }) => (
                 <div key={val} className={`fp-item${typeFilter === val ? ' active' : ''}`} onClick={() => { setTypeFilter(val); setPage(1); setTypeOpen(false) }}>{label}</div>
               ))}
             </div>
@@ -1026,8 +1042,8 @@ export default function ProductsTable({
       </div>
 
       {modal !== 'closed' && (
-        <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) closeModal() }}>
-          <div className="modal-box" style={{ maxWidth: 780 }}>
+        <div className="modal-backdrop" onClick={e => { e.stopPropagation(); if (e.target === e.currentTarget) closeModal() }}>
+          <div className="modal-box" style={{ maxWidth: 780 }} onClick={e => { e.stopPropagation(); setTaxOpen(false); setSupplierOpen(false) }}>
 
             <div className="modal-header">
               <div>
@@ -1105,7 +1121,11 @@ export default function ProductsTable({
                     </div>
                     <Field label="Tax Rate">
                       {isView ? (
-                        <MInput value={curProduct?.tax_rate ?? 'No Tax (0%)'} disabled />
+                        <MInput value={(() => {
+                          const stored = Number(curProduct?.tax_rate)
+                          const match = TAX_OPTIONS.find(t => t.rate === stored && t.value !== '')
+                          return match ? match.label : 'No Tax (0%)'
+                        })()} disabled />
                       ) : (
                         <div style={{ position: 'relative' }}>
                           <button className="modal-dd-btn" onClick={e => { e.stopPropagation(); setTaxOpen(o => !o) }} type="button">
@@ -1131,7 +1151,7 @@ export default function ProductsTable({
                   <Section title="Buying Details">
                     <div className="modal-grid-2">
                       <Field label="Cost Price (Buy)">
-                        <MInput value={isView ? String(curProduct?.cost_price ?? '') : form.cost_price} onChange={val => setF('cost_price', val)} type="number" placeholder={Number(0).toFixed(dp)} prefix="$" disabled={isView} />
+                        <MInput value={isView ? String(curProduct?.cost_price ?? '') : form.cost_price} onChange={val => setF('cost_price', val)} onBlur={val => { if (val && !isView) setF('cost_price', Number(val).toFixed(dp)) }} type="number" placeholder={Number(0).toFixed(dp)} prefix="$" disabled={isView} />
                       </Field>
                       <Field label="Buy UOM">
                         <UomSelect value={isView ? (curProduct?.buy_uom ?? 'Each') : form.buy_uom} onChange={val => setF('buy_uom', val)} disabled={isView} label="Buy UOM" options={UOM_LIST} />
@@ -1142,6 +1162,18 @@ export default function ProductsTable({
                         <MInput value={isView ? String(curProduct?.buy_uom_qty ?? 1) : form.buy_uom_qty} onChange={val => setF('buy_uom_qty', val)} type="number" placeholder="1" disabled={isView} />
                       </Field>
                     </div>
+                    {(() => {
+                      const buyQty = isView ? (curProduct?.buy_uom_qty ?? 1) : parseInt(form.buy_uom_qty) || 1
+                      const buyUom = isView ? (curProduct?.buy_uom ?? 'Each') : form.buy_uom
+                      const sellUom = isView ? (curProduct?.sell_uom ?? 'Each') : form.sell_uom
+                      if (buyQty > 1) return (
+                        <div style={{ background: 'var(--teal-surface)', border: '1px solid var(--teal-pale)', borderRadius: 9, padding: '10px 14px', fontSize: 12.5, color: 'var(--teal)', display: 'flex', alignItems: 'center', gap: 8 }}>
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                          1 {buyUom} = {buyQty} {sellUom} / Receiving 1 {buyUom} will add {buyQty} {sellUom} to stock
+                        </div>
+                      )
+                      return null
+                    })()}
                     {(modal === 'edit' || isView) && activeProduct && (
                       <div className="modal-grid-2">
                         <Field label="Last Cost" hint="(most recent PO)">
@@ -1157,7 +1189,7 @@ export default function ProductsTable({
                   <Section title="Selling Details">
                     <div className="modal-grid-2">
                       <Field label="Unit Price (Sell)">
-                        <MInput value={isView ? String(curProduct?.sell_price ?? '') : form.sell_price} onChange={val => setF('sell_price', val)} type="number" placeholder={Number(0).toFixed(dp)} prefix="$" disabled={isView} />
+                        <MInput value={isView ? String(curProduct?.sell_price ?? '') : form.sell_price} onChange={val => setF('sell_price', val)} onBlur={val => { if (val && !isView) setF('sell_price', Number(val).toFixed(dp)) }} type="number" placeholder={Number(0).toFixed(dp)} prefix="$" disabled={isView} />
                       </Field>
                       <Field label="Sell UOM">
                         <UomSelect value={isView ? (curProduct?.sell_uom ?? 'Each') : form.sell_uom} onChange={val => setF('sell_uom', val)} disabled={isView} label="Sell UOM" options={UOM_LIST} />
@@ -1427,8 +1459,8 @@ export default function ProductsTable({
 
       {/* ── Export Modal ── */}
       {showExport && (
-        <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) setShowExport(false) }}>
-          <div className="modal-box" style={{ maxWidth: 440 }}>
+        <div className="modal-backdrop" onClick={e => { e.stopPropagation(); if (e.target === e.currentTarget) setShowExport(false) }}>
+          <div className="modal-box" style={{ maxWidth: 440 }} onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <div>
                 <div className="modal-title">Export Products</div>
@@ -1438,15 +1470,15 @@ export default function ProductsTable({
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
               </button>
             </div>
-            <ExportModal products={products} customFields={customFields} decimalPlaces={dp} onClose={() => setShowExport(false)} />
+            <ExportModal products={products} customFields={customFields} decimalPlaces={dp} taxRates={taxRates} onClose={() => setShowExport(false)} />
           </div>
         </div>
       )}
 
       {/* ── Import Modal ── */}
       {showImport && (
-        <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) setShowImport(false) }}>
-          <div className="modal-box" style={{ maxWidth: 500 }}>
+        <div className="modal-backdrop" onClick={e => { e.stopPropagation(); if (e.target === e.currentTarget) setShowImport(false) }}>
+          <div className="modal-box" style={{ maxWidth: 500 }} onClick={e => e.stopPropagation()}>
             <div className="modal-header">
               <div>
                 <div className="modal-title">Import Products</div>

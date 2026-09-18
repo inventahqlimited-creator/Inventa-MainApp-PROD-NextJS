@@ -16,9 +16,9 @@ export async function GET() {
   if (!auth) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { data: lists } = await auth.adminClient.from('contact_custom_lists').select('*').eq('org_id', auth.orgId).order('sort_order').order('created_at')
   const { data: options } = await auth.adminClient.from('contact_custom_list_options').select('*').eq('org_id', auth.orgId).order('sort_order').order('created_at')
-  const result = (lists ?? []).map(l => ({
+  const result = (lists ?? []).map((l: Record<string, unknown>) => ({
     ...l,
-    options: (options ?? []).filter(o => o.list_id === l.id).map(o => ({ id: o.id, value: o.value }))
+    options: (options ?? []).filter((o: Record<string, unknown>) => o.list_id === l.id).map((o: Record<string, unknown>) => ({ id: o.id, value: o.value }))
   }))
   return NextResponse.json(result)
 }

@@ -773,7 +773,7 @@ export default function ProductsTable({
   const supplierName = (id: string) => suppliers?.find(s => s.id === id)?.name ?? 'Select supplier…'
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }} onClick={() => { setTypeOpen(false); setColOpen(false); setActionsOpen(false); setTaxOpen(false); setSupplierOpen(false); setShowExport(false); setShowImport(false) }}>
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }} onClick={() => { setTypeOpen(false); setColOpen(false); setActionsOpen(false); setTaxOpen(false); setSupplierOpen(false) }}>
 
       <div className="page-header-card">
         <div className="page-header-top">
@@ -1042,8 +1042,8 @@ export default function ProductsTable({
       </div>
 
       {modal !== 'closed' && (
-        <div className="modal-backdrop" onClick={e => { e.stopPropagation(); if (e.target === e.currentTarget) closeModal() }}>
-          <div className="modal-box" style={{ maxWidth: 780 }} onClick={e => { e.stopPropagation(); setTaxOpen(false); setSupplierOpen(false) }}>
+        <div className="modal-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) closeModal() }}>
+          <div className="modal-box" style={{ maxWidth: 780 }} onMouseDown={e => e.stopPropagation()} onClick={() => { setTaxOpen(false); setSupplierOpen(false) }}>
 
             <div className="modal-header">
               <div>
@@ -1070,7 +1070,7 @@ export default function ProductsTable({
             </div>
 
             <div className="modal-tab-bar">
-              {(['details', 'pricing', 'stock', 'orders', 'custom'] as const)
+              {(['details', 'pricing', 'custom', 'stock', 'orders'] as const)
                 .filter(t => {
                   if (t === 'stock' || t === 'orders') return isView
                   if (t === 'custom') return customFields.length > 0 || customLists.length > 0
@@ -1459,8 +1459,8 @@ export default function ProductsTable({
 
       {/* ── Export Modal ── */}
       {showExport && (
-        <div className="modal-backdrop" onClick={e => { e.stopPropagation(); if (e.target === e.currentTarget) setShowExport(false) }}>
-          <div className="modal-box" style={{ maxWidth: 440 }} onClick={e => e.stopPropagation()}>
+        <div className="modal-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) setShowExport(false) }}>
+          <div className="modal-box" style={{ maxWidth: 440 }} onMouseDown={e => e.stopPropagation()}>
             <div className="modal-header">
               <div>
                 <div className="modal-title">Export Products</div>
@@ -1477,8 +1477,8 @@ export default function ProductsTable({
 
       {/* ── Import Modal ── */}
       {showImport && (
-        <div className="modal-backdrop" onClick={e => { e.stopPropagation(); if (e.target === e.currentTarget) setShowImport(false) }}>
-          <div className="modal-box" style={{ maxWidth: 500 }} onClick={e => e.stopPropagation()}>
+        <div className="modal-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) setShowImport(false) }}>
+          <div className="modal-box" style={{ maxWidth: 500 }} onMouseDown={e => e.stopPropagation()}>
             <div className="modal-header">
               <div>
                 <div className="modal-title">Import Products</div>

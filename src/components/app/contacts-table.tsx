@@ -120,13 +120,6 @@ function MSelect({ value, onChange, options, disabled }: { value: string; onChan
   )
 }
 
-const COUNTRY_OPTIONS = [
-  { value: 'New Zealand', label: 'New Zealand' },
-  { value: 'Australia', label: 'Australia' },
-  { value: 'United Kingdom', label: 'United Kingdom' },
-  { value: 'United States', label: 'United States' },
-  { value: 'Other', label: 'Other' },
-]
 
 const COLS = [
   { key: 'type', label: 'Type' },
@@ -150,10 +143,24 @@ export default function ContactsTable({
   contacts: initialContacts,
   orgId,
   isAdmin,
+  priceLevels = [],
+  currencies = [],
+  baseCurrency = 'NZD',
+  taxRates = [],
+  locations = [],
+  customFields = [],
+  customLists = [],
 }: {
   contacts: Contact[]
   orgId: string
   isAdmin: boolean
+  priceLevels?: { id: string; name: string; is_default: boolean }[]
+  currencies?: { id: string; code: string; name: string; symbol: string | null }[]
+  baseCurrency?: string
+  taxRates?: { id: string; name: string; rate: number }[]
+  locations?: { id: string; name: string; active: boolean }[]
+  customFields?: { id: string; name: string; field_type: string }[]
+  customLists?: { id: string; name: string; options: { id: string; value: string }[] }[]
 }) {
   const searchParams = useSearchParams()
   const router = useRouter()
@@ -165,7 +172,13 @@ export default function ContactsTable({
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(25)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-  const [visibleCols, setVisibleCols] = useState<Set<string>>(DEFAULT_VISIBLE)
+  const [visibleCols, setVisibleCols] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem('contacts_visible_cols')
+      if (saved) return new Set(JSON.parse(saved) as string[])
+    } catch {}
+    return DEFAULT_VISIBLE
+  })
 
   // Dropdowns
   const [typeOpen, setTypeOpen] = useState(false)
@@ -178,21 +191,43 @@ export default function ContactsTable({
   const [advTaxRate, setAdvTaxRate] = useState('')
   const [advCity, setAdvCity] = useState('')
   const [advCountry, setAdvCountry] = useState('')
-  const [advBalance, setAdvBalance] = useState('')
-  const [advCredit, setAdvCredit] = useState('')
-  const [advDiscount, setAdvDiscount] = useState('')
+  const [advCurrency, setAdvCurrency] = useState('')
+  const [advLocation, setAdvLocation] = useState('')
+  const [advCustom, setAdvCustom] = useState<Record<string, string>>({})
 
   // Modal
   const [modal, setModal] = useState<'closed' | 'view' | 'add' | 'edit'>('closed')
   const [activeContact, setActiveContact] = useState<Contact | null>(null)
   const [form, setForm] = useState<ModalForm>(EMPTY_FORM)
-  const [modalTab, setModalTab] = useState<'details' | 'address' | 'orders'>('details')
+  const [modalTab, setModalTab] = useState<'details' | 'address' | 'custom' | 'orders'>('details')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [sameAddress, setSameAddress] = useState(false)
   const [additionalAddresses, setAdditionalAddresses] = useState<AdditionalAddress[]>([])
   const [orders, setOrders] = useState<Record<string, unknown>[]>([])
   const [ordersLoading, setOrdersLoading] = useState(false)
+  const [customFieldValues, setCustomFieldValues] = useState<Record<string, string>>({})
+
+  // Derived option arrays from settings props
+  const currencyOptions = useMemo(() => {
+    const codes = [baseCurrency, ...currencies.map(c => c.code).filter(c => c !== baseCurrency)]
+    return codes.map(c => ({ value: c, label: c }))
+  }, [baseCurrency, currencies])
+
+  const tierOptions = useMemo(() =>
+    priceLevels.length > 0
+      ? priceLevels.map(p => ({ value: p.name, label: p.name }))
+      : [{ value: 'Retail', label: 'Retail' }]
+  , [priceLevels])
+
+  const taxRateOptions = useMemo(() => [
+    { value: '', label: 'None' },
+    ...taxRates.map(t => ({ value: `${t.rate}% — ${t.name}`, label: `${t.rate}% — ${t.name}` })),
+  ], [taxRates])
+
+  // Default values derived from settings
+  const defaultCurrency = baseCurrency
+  const defaultTier = priceLevels.find(p => p.is_default)?.name ?? priceLevels[0]?.name ?? 'Retail'
 
   // Auto-open modal when ?new=1 param is present (runs on mount AND when already on page)
   useEffect(() => {
@@ -209,22 +244,15 @@ export default function ContactsTable({
     setForm(f => ({ ...f, [field]: value }))
   }
 
-  function openView(c: Contact) {
-    setActiveContact(c)
-    setModal('view')
-    setModalTab('details')
-    setError(null)
-    setOrders([])
-  }
-
   function openAdd() {
-    setForm(EMPTY_FORM)
+    setForm({ ...EMPTY_FORM, currency: defaultCurrency, tier: defaultTier, tax_rate: taxRateOptions.length > 1 ? taxRateOptions[1].value : '' })
     setActiveContact(null)
     setModal('add')
     setModalTab('details')
     setError(null)
     setSameAddress(false)
     setAdditionalAddresses([])
+    setCustomFieldValues({})
   }
 
   function openEdit(c: Contact) {
@@ -248,6 +276,18 @@ export default function ContactsTable({
     setError(null)
     setSameAddress(false)
     loadAdditionalAddresses(c.id)
+    const existing = (c as Record<string, unknown>).custom_fields as Record<string, string> | null
+    setCustomFieldValues(existing ?? {})
+  }
+
+  function openView(c: Contact) {
+    setActiveContact(c)
+    setModal('view')
+    setModalTab('details')
+    setError(null)
+    setOrders([])
+    const existing = (c as Record<string, unknown>).custom_fields as Record<string, string> | null
+    setCustomFieldValues(existing ?? {})
   }
 
   function closeModal() {
@@ -256,6 +296,7 @@ export default function ContactsTable({
     setError(null)
     setAdditionalAddresses([])
     setOrders([])
+    setCustomFieldValues({})
   }
 
   async function loadAdditionalAddresses(contactId: string) {
@@ -278,6 +319,28 @@ export default function ContactsTable({
 
   async function handleSave() {
     if (!form.name.trim()) { setError('Contact name is required.'); return }
+
+    // Duplicate email check (client-side across loaded contacts)
+    if (form.email.trim()) {
+      const emailLower = form.email.trim().toLowerCase()
+      const duplicate = contacts.find(c =>
+        c.email?.toLowerCase() === emailLower &&
+        (modal !== 'edit' || c.id !== activeContact?.id)
+      )
+      if (duplicate) {
+        setError(`This email is already used by "${duplicate.name}". Each contact must have a unique email address.`)
+        return
+      }
+    }
+
+    // Validate additional address emails
+    for (let i = 0; i < additionalAddresses.length; i++) {
+      if (!additionalAddresses[i].email.trim()) {
+        setError(`Address "${additionalAddresses[i].label || `#${i + 1}`}" requires an email address.`)
+        return
+      }
+    }
+
     setSaving(true)
     setError(null)
 
@@ -298,6 +361,7 @@ export default function ContactsTable({
       ship_country: sameAddress ? form.bill_country || null : form.ship_country || null,
       notes: form.notes || null, is_active: form.is_active,
       status: form.is_active ? 'active' : 'inactive',
+      custom_fields: Object.keys(customFieldValues).length > 0 ? customFieldValues : null,
     }
 
     const isEdit = modal === 'edit' && activeContact
@@ -312,24 +376,26 @@ export default function ContactsTable({
 
     if (!res.ok) { setError(data.error ?? 'Something went wrong'); return }
 
+    const contactId: string = isEdit ? activeContact.id : data.id
+
     if (isEdit) {
       setContacts(prev => prev.map(c => c.id === activeContact.id ? { ...c, ...payload } : c))
     } else {
-      setContacts(prev => [...prev, { ...payload, id: data.id, balance_owing: 0 } as Contact])
+      setContacts(prev => [...prev, { ...payload, id: contactId, balance_owing: 0 } as Contact])
     }
 
-    // Save additional addresses
-    if (isEdit && activeContact) {
-      for (const addr of additionalAddresses) {
-        if (addr.id) {
-          await fetch(`/api/org/contacts/${activeContact.id}/addresses/${addr.id}`, {
-            method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(addr),
-          })
-        } else {
-          await fetch(`/api/org/contacts/${activeContact.id}/addresses`, {
-            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(addr),
-          })
-        }
+    // Save additional addresses — runs for both new and edit
+    for (const addr of additionalAddresses) {
+      if (addr.id) {
+        // Existing address — update
+        await fetch(`/api/org/contacts/${contactId}/addresses/${addr.id}`, {
+          method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(addr),
+        })
+      } else {
+        // New address — create
+        await fetch(`/api/org/contacts/${contactId}/addresses`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(addr),
+        })
       }
     }
 
@@ -360,13 +426,14 @@ export default function ContactsTable({
       if (advTerms && c.terms !== advTerms) return false
       if (advTaxRate && c.tax_rate !== advTaxRate) return false
       if (advCity && !(c.bill_city ?? '').toLowerCase().includes(advCity.toLowerCase())) return false
-      if (advCountry && c.bill_country !== advCountry) return false
-      if (advBalance === 'Has balance' && !(c.balance_owing && c.balance_owing > 0)) return false
-      if (advBalance === 'Clear (zero)' && (c.balance_owing ?? 0) !== 0) return false
-      if (advCredit === 'Has credit limit' && !(c.credit_limit && c.credit_limit > 0)) return false
-      if (advCredit === 'No limit set' && (c.credit_limit ?? 0) > 0) return false
-      if (advDiscount === 'Has discount' && !(c.disc_value && c.disc_value > 0)) return false
-      if (advDiscount === 'No discount' && (c.disc_value ?? 0) > 0) return false
+      if (advCountry && !(c.bill_country ?? '').toLowerCase().includes(advCountry.toLowerCase())) return false
+      if (advCurrency && c.currency !== advCurrency) return false
+      if (advLocation && (c as Record<string, unknown>).default_location !== advLocation) return false
+      for (const [fieldId, val] of Object.entries(advCustom)) {
+        if (!val) continue
+        const cf = (c as Record<string, unknown>).custom_fields as Record<string, string> | null
+        if (!cf || cf[fieldId] !== val) return false
+      }
       if (search) {
         const q = search.toLowerCase()
         return (
@@ -379,7 +446,7 @@ export default function ContactsTable({
       }
       return true
     })
-  }, [contacts, search, typeFilter, tab, showInactive, advTerms, advTaxRate, advCity, advCountry, advBalance, advCredit, advDiscount])
+  }, [contacts, search, typeFilter, tab, showInactive, advTerms, advTaxRate, advCity, advCountry, advCurrency, advLocation, advCustom])
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / perPage))
   const paginated = filtered.slice((page - 1) * perPage, page * perPage)
@@ -412,16 +479,17 @@ export default function ContactsTable({
     setVisibleCols(prev => {
       const next = new Set(prev)
       on ? next.add(key) : next.delete(key)
+      try { localStorage.setItem('contacts_visible_cols', JSON.stringify([...next])) } catch {}
       return next
     })
   }
 
   function clearAdvFilter() {
     setAdvTerms(''); setAdvTaxRate(''); setAdvCity(''); setAdvCountry('')
-    setAdvBalance(''); setAdvCredit(''); setAdvDiscount('')
+    setAdvCurrency(''); setAdvLocation(''); setAdvCustom({})
   }
 
-  const hasAdvFilter = !!(advTerms || advTaxRate || advCity || advCountry || advBalance || advCredit || advDiscount)
+  const hasAdvFilter = !!(advTerms || advTaxRate || advCity || advCountry || advCurrency || advLocation || Object.values(advCustom).some(Boolean))
 
   const v = visibleCols
 
@@ -477,17 +545,17 @@ export default function ContactsTable({
           <input className="filter-search" placeholder="Search contacts…" value={search} onChange={e => { setSearch(e.target.value); setPage(1) }} />
         </div>
 
-        {/* Type */}
+        {/* Currency filter */}
         <div style={{ position: 'relative' }}>
-          <button className={`filter-dd-btn${typeFilter ? ' active-filter' : ''}`} onClick={() => setTypeOpen(o => !o)}>
-            <span>{typeFilter || 'All Types'}</span>
+          <button className={`filter-dd-btn${advCurrency ? ' active-filter' : ''}`} onClick={() => setTypeOpen(o => !o)}>
+            <span>{advCurrency || 'All Currencies'}</span>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
           {typeOpen && (
             <div className="inv-dropdown" style={{ display: 'block', minWidth: 160 }}>
-              <div className="col-dropdown-title">Type</div>
-              {['', 'Customer', 'Supplier'].map(v => (
-                <div key={v} className={`fp-item${typeFilter === v ? ' active' : ''}`} onClick={() => { setTypeFilter(v); setPage(1); setTypeOpen(false) }}>{v || 'All Types'}</div>
+              <div className="col-dropdown-title">Currency</div>
+              {[{ value: '', label: 'All Currencies' }, ...currencyOptions].map(o => (
+                <div key={o.value} className={`fp-item${advCurrency === o.value ? ' active' : ''}`} onClick={() => { setAdvCurrency(o.value); setPage(1); setTypeOpen(false) }}>{o.label}</div>
               ))}
             </div>
           )}
@@ -549,7 +617,14 @@ export default function ContactsTable({
               <label>Tax Rate</label>
               <select className="adv-input" value={advTaxRate} onChange={e => setAdvTaxRate(e.target.value)} style={{ cursor: 'pointer' }}>
                 <option value="">Any</option>
-                {['0% — Tax Exempt','10% — GST (AU)','15% — GST (NZ)','20% — VAT (UK)'].map(t => <option key={t}>{t}</option>)}
+                {taxRateOptions.filter(o => o.value).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+              </select>
+            </div>
+            <div className="adv-field">
+              <label>Default Location</label>
+              <select className="adv-input" value={advLocation} onChange={e => setAdvLocation(e.target.value)} style={{ cursor: 'pointer' }}>
+                <option value="">Any</option>
+                {locations.filter(l => l.active).map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
               </select>
             </div>
             <div className="adv-field">
@@ -558,32 +633,23 @@ export default function ContactsTable({
             </div>
             <div className="adv-field">
               <label>Country</label>
-              <select className="adv-input" value={advCountry} onChange={e => setAdvCountry(e.target.value)} style={{ cursor: 'pointer' }}>
-                <option value="">Any</option>
-                {['New Zealand','Australia','United States','United Kingdom'].map(c => <option key={c}>{c}</option>)}
-              </select>
+              <input className="adv-input" placeholder="e.g. New Zealand" value={advCountry} onChange={e => setAdvCountry(e.target.value)} />
             </div>
-            <div className="adv-field">
-              <label>Balance Owing</label>
-              <select className="adv-input" value={advBalance} onChange={e => setAdvBalance(e.target.value)} style={{ cursor: 'pointer' }}>
-                <option value="">Any</option>
-                {['Has balance','Clear (zero)'].map(v => <option key={v}>{v}</option>)}
-              </select>
-            </div>
-            <div className="adv-field">
-              <label>Credit Limit</label>
-              <select className="adv-input" value={advCredit} onChange={e => setAdvCredit(e.target.value)} style={{ cursor: 'pointer' }}>
-                <option value="">Any</option>
-                {['Has credit limit','No limit set'].map(v => <option key={v}>{v}</option>)}
-              </select>
-            </div>
-            <div className="adv-field">
-              <label>Has Discount</label>
-              <select className="adv-input" value={advDiscount} onChange={e => setAdvDiscount(e.target.value)} style={{ cursor: 'pointer' }}>
-                <option value="">Any</option>
-                {['Has discount','No discount'].map(v => <option key={v}>{v}</option>)}
-              </select>
-            </div>
+            {customLists.map(cl => (
+              <div key={cl.id} className="adv-field">
+                <label>{cl.name}</label>
+                <select className="adv-input" value={advCustom[cl.id] ?? ''} onChange={e => setAdvCustom(prev => ({ ...prev, [cl.id]: e.target.value }))} style={{ cursor: 'pointer' }}>
+                  <option value="">Any</option>
+                  {cl.options.map(o => <option key={o.id} value={o.value}>{o.value}</option>)}
+                </select>
+              </div>
+            ))}
+            {customFields.filter(f => f.field_type === 'text' || f.field_type === 'number').map(cf => (
+              <div key={cf.id} className="adv-field">
+                <label>{cf.name}</label>
+                <input className="adv-input" placeholder={`Filter by ${cf.name}`} value={advCustom[cf.id] ?? ''} onChange={e => setAdvCustom(prev => ({ ...prev, [cf.id]: e.target.value }))} />
+              </div>
+            ))}
           </div>
           <div className="adv-filter-actions">
             <button className="btn-sm btn-sm-primary" onClick={() => setAdvOpen(false)}>Apply</button>
@@ -745,21 +811,26 @@ export default function ContactsTable({
 
             {/* Tabs */}
             <div className="modal-tab-bar">
-              {(['details', 'address', 'orders'] as const).map(t => (
+              {([
+                { key: 'details', label: 'Details' },
+                { key: 'address', label: 'Addresses' },
+                { key: 'custom', label: 'Custom Fields' },
+                ...(modal === 'view' ? [{ key: 'orders', label: 'Orders' }] : []),
+              ] as { key: typeof modalTab; label: string }[]).map(t => (
                 <div
-                  key={t}
-                  className={`modal-tab${modalTab === t ? ' active' : ''}`}
+                  key={t.key}
+                  className={`modal-tab${modalTab === t.key ? ' active' : ''}`}
                   onClick={() => {
-                    setModalTab(t)
-                    if (t === 'orders' && modal === 'view' && activeContact && orders.length === 0) {
+                    setModalTab(t.key)
+                    if (t.key === 'orders' && modal === 'view' && activeContact && orders.length === 0) {
                       loadOrders(activeContact)
                     }
-                    if (t === 'address' && modal === 'edit' && activeContact) {
+                    if (t.key === 'address' && modal === 'edit' && activeContact) {
                       loadAdditionalAddresses(activeContact.id)
                     }
                   }}
                 >
-                  {t === 'details' ? 'Details' : t === 'address' ? 'Addresses' : 'Orders'}
+                  {t.label}
                 </div>
               ))}
             </div>
@@ -809,16 +880,16 @@ export default function ContactsTable({
                   <div style={{ height: 1, background: 'var(--gray-100)', margin: '4px 0' }} />
                   <div className="modal-grid-3">
                     <Field label="Currency">
-                      <MSelect value={modal === 'view' ? (activeContact?.currency ?? 'NZD') : form.currency} onChange={v => set('currency', v)} options={[{value:'NZD',label:'NZD'},{value:'AUD',label:'AUD'},{value:'USD',label:'USD'},{value:'GBP',label:'GBP'},{value:'EUR',label:'EUR'}]} disabled={modal === 'view'} />
+                      <MSelect value={modal === 'view' ? (activeContact?.currency ?? defaultCurrency) : form.currency} onChange={v => set('currency', v)} options={currencyOptions} disabled={modal === 'view'} />
                     </Field>
                     <Field label="Price Tier">
-                      <MSelect value={modal === 'view' ? (activeContact?.tier ?? 'Retail') : form.tier} onChange={v => set('tier', v)} options={[{value:'Retail',label:'Retail'},{value:'Wholesale',label:'Wholesale'},{value:'VIP',label:'VIP'}]} disabled={modal === 'view'} />
+                      <MSelect value={modal === 'view' ? (activeContact?.tier ?? defaultTier) : form.tier} onChange={v => set('tier', v)} options={tierOptions} disabled={modal === 'view'} />
                     </Field>
                     <Field label="Payment Terms">
                       <MSelect value={modal === 'view' ? (activeContact?.terms ?? 'Net 30') : form.terms} onChange={v => set('terms', v)} options={['Net 7','Net 14','Net 30','Net 60','COD','Prepaid'].map(t=>({value:t,label:t}))} disabled={modal === 'view'} />
                     </Field>
                     <Field label="Tax Rate">
-                      <MSelect value={modal === 'view' ? (activeContact?.tax_rate ?? '') : form.tax_rate} onChange={v => set('tax_rate', v)} options={[{value:'',label:'None'},{value:'0% — Tax Exempt',label:'0% — Tax Exempt'},{value:'10% — GST (AU)',label:'10% — GST (AU)'},{value:'15% — GST (NZ)',label:'15% — GST (NZ)'},{value:'20% — VAT (UK)',label:'20% — VAT (UK)'}]} disabled={modal === 'view'} />
+                      <MSelect value={modal === 'view' ? (activeContact?.tax_rate ?? '') : form.tax_rate} onChange={v => set('tax_rate', v)} options={taxRateOptions} disabled={modal === 'view'} />
                     </Field>
                     <Field label="Credit Limit">
                       <MInput value={modal === 'view' ? String(activeContact?.credit_limit ?? 0) : form.credit_limit} onChange={v => set('credit_limit', v)} type="number" disabled={modal === 'view'} />
@@ -854,7 +925,7 @@ export default function ContactsTable({
                     <Field label="Street"><MInput value={modal === 'view' ? (activeContact?.bill_street ?? '') : form.bill_street} onChange={v => set('bill_street', v)} placeholder="123 Main St" disabled={modal === 'view'} /></Field>
                     <Field label="City"><MInput value={modal === 'view' ? (activeContact?.bill_city ?? '') : form.bill_city} onChange={v => set('bill_city', v)} placeholder="Auckland" disabled={modal === 'view'} /></Field>
                     <Field label="Postcode"><MInput value={modal === 'view' ? (activeContact?.bill_postcode ?? '') : form.bill_postcode} onChange={v => set('bill_postcode', v)} placeholder="1010" disabled={modal === 'view'} /></Field>
-                    <Field label="Country"><MSelect value={modal === 'view' ? (activeContact?.bill_country ?? 'New Zealand') : form.bill_country} onChange={v => set('bill_country', v)} options={COUNTRY_OPTIONS} disabled={modal === 'view'} /></Field>
+                    <Field label="Country"><MInput value={modal === 'view' ? (activeContact?.bill_country ?? '') : form.bill_country} onChange={v => set('bill_country', v)} placeholder="e.g. New Zealand" disabled={modal === 'view'} /></Field>
                   </div>
 
                   {modal !== 'view' && (
@@ -873,7 +944,7 @@ export default function ContactsTable({
                         <Field label="Street"><MInput value={modal === 'view' ? (activeContact?.ship_street ?? '') : form.ship_street} onChange={v => set('ship_street', v)} placeholder="123 Main St" disabled={modal === 'view'} /></Field>
                         <Field label="City"><MInput value={modal === 'view' ? (activeContact?.ship_city ?? '') : form.ship_city} onChange={v => set('ship_city', v)} placeholder="Auckland" disabled={modal === 'view'} /></Field>
                         <Field label="Postcode"><MInput value={modal === 'view' ? (activeContact?.ship_postcode ?? '') : form.ship_postcode} onChange={v => set('ship_postcode', v)} placeholder="1010" disabled={modal === 'view'} /></Field>
-                        <Field label="Country"><MSelect value={modal === 'view' ? (activeContact?.ship_country ?? 'New Zealand') : form.ship_country} onChange={v => set('ship_country', v)} options={COUNTRY_OPTIONS} disabled={modal === 'view'} /></Field>
+                        <Field label="Country"><MInput value={modal === 'view' ? (activeContact?.ship_country ?? '') : form.ship_country} onChange={v => set('ship_country', v)} placeholder="e.g. New Zealand" disabled={modal === 'view'} /></Field>
                       </div>
                     </>
                   )}
@@ -900,15 +971,26 @@ export default function ContactsTable({
                             )}
                           </div>
                           <div className="modal-grid-2">
-                            {(['street','city','postcode'] as const).map(f => (
-                              <Field key={f} label={f.charAt(0).toUpperCase() + f.slice(1)}>
-                                <input className="modal-input" value={addr[f]} onChange={e => { const a = [...additionalAddresses]; a[idx][f] = e.target.value; setAdditionalAddresses(a) }} disabled={modal === 'view'} style={{ opacity: modal === 'view' ? 0.7 : 1 }} />
-                              </Field>
-                            ))}
+                            <Field label="Contact Name">
+                              <input className="modal-input" value={addr.contact_name} onChange={e => { const a = [...additionalAddresses]; a[idx].contact_name = e.target.value; setAdditionalAddresses(a) }} placeholder="e.g. Receiving Team" disabled={modal === 'view'} style={{ opacity: modal === 'view' ? 0.7 : 1 }} />
+                            </Field>
+                            <Field label="Email" required>
+                              <input className="modal-input" type="email" value={addr.email} onChange={e => { const a = [...additionalAddresses]; a[idx].email = e.target.value; setAdditionalAddresses(a) }} placeholder="warehouse@example.com" disabled={modal === 'view'} style={{ opacity: modal === 'view' ? 0.7 : 1, borderColor: !addr.email.trim() && modal !== 'view' ? 'var(--red, #EF4444)' : undefined }} />
+                            </Field>
+                            <Field label="Phone">
+                              <input className="modal-input" value={addr.phone} onChange={e => { const a = [...additionalAddresses]; a[idx].phone = e.target.value; setAdditionalAddresses(a) }} placeholder="+64 9 000 0000" disabled={modal === 'view'} style={{ opacity: modal === 'view' ? 0.7 : 1 }} />
+                            </Field>
+                            <Field label="Street">
+                              <input className="modal-input" value={addr.street} onChange={e => { const a = [...additionalAddresses]; a[idx].street = e.target.value; setAdditionalAddresses(a) }} placeholder="123 Main St" disabled={modal === 'view'} style={{ opacity: modal === 'view' ? 0.7 : 1 }} />
+                            </Field>
+                            <Field label="City">
+                              <input className="modal-input" value={addr.city} onChange={e => { const a = [...additionalAddresses]; a[idx].city = e.target.value; setAdditionalAddresses(a) }} placeholder="Auckland" disabled={modal === 'view'} style={{ opacity: modal === 'view' ? 0.7 : 1 }} />
+                            </Field>
+                            <Field label="Postcode">
+                              <input className="modal-input" value={addr.postcode} onChange={e => { const a = [...additionalAddresses]; a[idx].postcode = e.target.value; setAdditionalAddresses(a) }} placeholder="1010" disabled={modal === 'view'} style={{ opacity: modal === 'view' ? 0.7 : 1 }} />
+                            </Field>
                             <Field label="Country">
-                              <select className="modal-input" value={addr.country} onChange={e => { const a = [...additionalAddresses]; a[idx].country = e.target.value; setAdditionalAddresses(a) }} disabled={modal === 'view'} style={{ cursor: modal === 'view' ? 'default' : 'pointer', opacity: modal === 'view' ? 0.7 : 1 }}>
-                                {COUNTRY_OPTIONS.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-                              </select>
+                              <input className="modal-input" value={addr.country} onChange={e => { const a = [...additionalAddresses]; a[idx].country = e.target.value; setAdditionalAddresses(a) }} placeholder="e.g. New Zealand" disabled={modal === 'view'} style={{ opacity: modal === 'view' ? 0.7 : 1 }} />
                             </Field>
                           </div>
                         </div>
@@ -926,6 +1008,64 @@ export default function ContactsTable({
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                       Add Address
                     </button>
+                  )}
+                </>
+              )}
+
+              {/* ── CUSTOM FIELDS TAB ── */}
+              {modalTab === 'custom' && (
+                <>
+                  {customFields.length === 0 && customLists.length === 0 ? (
+                    <div style={{ textAlign: 'center', padding: '40px 20px' }}>
+                      <div style={{ fontSize: 13.5, color: 'var(--gray-400)', lineHeight: 1.6 }}>
+                        No custom fields or lists configured yet.<br />
+                        Go to <strong style={{ color: 'var(--teal)' }}>Settings → Contacts</strong> to add some.
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="modal-grid-2">
+                      {customFields.map(cf => (
+                        <Field key={cf.id} label={cf.name}>
+                          {cf.field_type === 'boolean' ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8, paddingTop: 4 }}>
+                              <button
+                                className="status-toggle"
+                                data-active={String(!!(customFieldValues[cf.id] === 'true'))}
+                                onClick={() => modal !== 'view' && setCustomFieldValues(prev => ({ ...prev, [cf.id]: customFieldValues[cf.id] === 'true' ? 'false' : 'true' }))}
+                                type="button"
+                                disabled={modal === 'view'}
+                              >
+                                <div className="status-toggle-knob" />
+                              </button>
+                              <span style={{ fontSize: 12.5, color: 'var(--gray-400)' }}>{customFieldValues[cf.id] === 'true' ? 'Yes' : 'No'}</span>
+                            </div>
+                          ) : (
+                            <input
+                              className="modal-input"
+                              type={cf.field_type === 'number' ? 'number' : cf.field_type === 'date' ? 'date' : 'text'}
+                              value={customFieldValues[cf.id] ?? ''}
+                              onChange={e => setCustomFieldValues(prev => ({ ...prev, [cf.id]: e.target.value }))}
+                              disabled={modal === 'view'}
+                              style={{ opacity: modal === 'view' ? 0.7 : 1 }}
+                            />
+                          )}
+                        </Field>
+                      ))}
+                      {customLists.map(cl => (
+                        <Field key={cl.id} label={cl.name}>
+                          <select
+                            className="modal-input"
+                            value={customFieldValues[cl.id] ?? ''}
+                            onChange={e => setCustomFieldValues(prev => ({ ...prev, [cl.id]: e.target.value }))}
+                            disabled={modal === 'view'}
+                            style={{ cursor: modal === 'view' ? 'default' : 'pointer', opacity: modal === 'view' ? 0.7 : 1 }}
+                          >
+                            <option value="">— Select —</option>
+                            {cl.options.map(o => <option key={o.id} value={o.value}>{o.value}</option>)}
+                          </select>
+                        </Field>
+                      ))}
+                    </div>
                   )}
                 </>
               )}

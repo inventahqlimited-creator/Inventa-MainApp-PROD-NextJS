@@ -494,11 +494,177 @@ function AddLocationModal({ orgId, onClose, onAdd }: {
   )
 }
 
-// ── Contacts Tab ─────────────────────────────────────────────────────
+// ── Custom Fields + Lists (reusable) ─────────────────────────────────
 
 type CustomField = { id: string; name: string; field_type: 'text' | 'number' | 'date' }
 type CustomListOption = { id: string; value: string }
 type CustomList = { id: string; name: string; options: CustomListOption[] }
+
+function CustomFieldsAndLists({ apiBase, fieldLabel, listLabel, showToast }: {
+  apiBase: string
+  fieldLabel: string
+  listLabel: string
+  showToast: (type: 'success' | 'error', msg: string) => void
+}) {
+  const [customFields, setCustomFields] = useState<CustomField[]>([])
+  const [customLists, setCustomLists] = useState<CustomList[]>([])
+  const [expandedList, setExpandedList] = useState<string | null>(null)
+  const [newOptionText, setNewOptionText] = useState<Record<string, string>>({})
+
+  useEffect(() => {
+    fetch(`${apiBase}-fields`).then(r => r.json()).then(d => { if (Array.isArray(d)) setCustomFields(d) })
+    fetch(`${apiBase}-lists`).then(r => r.json()).then(d => { if (Array.isArray(d)) setCustomLists(d) })
+  }, [apiBase])
+
+  async function addField() {
+    const name = `Custom Field ${customFields.length + 1}`
+    const res = await fetch(`${apiBase}-fields`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, field_type: 'text' }) })
+    const data = await res.json()
+    if (res.ok) setCustomFields(prev => [...prev, { id: data.id, name: data.name, field_type: data.field_type }])
+    else showToast('error', data.error ?? 'Failed to add field')
+  }
+  async function renameField(id: string, name: string) {
+    setCustomFields(prev => prev.map(f => f.id === id ? { ...f, name } : f))
+    await fetch(`${apiBase}-fields/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) })
+  }
+  async function setFieldType(id: string, field_type: CustomField['field_type']) {
+    setCustomFields(prev => prev.map(f => f.id === id ? { ...f, field_type } : f))
+    await fetch(`${apiBase}-fields/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ field_type }) })
+  }
+  async function deleteField(id: string) {
+    setCustomFields(prev => prev.filter(f => f.id !== id))
+    await fetch(`${apiBase}-fields/${id}`, { method: 'DELETE' })
+  }
+
+  async function addList() {
+    const name = `Custom List ${customLists.length + 1}`
+    const res = await fetch(`${apiBase}-lists`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) })
+    const data = await res.json()
+    if (res.ok) { setCustomLists(prev => [...prev, { id: data.id, name: data.name, options: [] }]); setExpandedList(data.id) }
+    else showToast('error', data.error ?? 'Failed to add list')
+  }
+  async function renameList(id: string, name: string) {
+    setCustomLists(prev => prev.map(l => l.id === id ? { ...l, name } : l))
+    await fetch(`${apiBase}-lists/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) })
+  }
+  async function deleteList(id: string) {
+    setCustomLists(prev => prev.filter(l => l.id !== id))
+    if (expandedList === id) setExpandedList(null)
+    await fetch(`${apiBase}-lists/${id}`, { method: 'DELETE' })
+  }
+  async function addOption(listId: string) {
+    const text = (newOptionText[listId] ?? '').trim()
+    if (!text) return
+    const res = await fetch(`${apiBase}-lists/${listId}/options`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ value: text }) })
+    const data = await res.json()
+    if (res.ok) { setCustomLists(prev => prev.map(l => l.id === listId ? { ...l, options: [...l.options, { id: data.id, value: text }] } : l)); setNewOptionText(prev => ({ ...prev, [listId]: '' })) }
+  }
+  async function deleteOption(listId: string, optionId: string) {
+    setCustomLists(prev => prev.map(l => l.id === listId ? { ...l, options: l.options.filter(o => o.id !== optionId) } : l))
+    await fetch(`${apiBase}-lists/${listId}/options`, { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ option_id: optionId }) })
+  }
+  async function renameOption(listId: string, optionId: string, value: string) {
+    setCustomLists(prev => prev.map(l => l.id === listId ? { ...l, options: l.options.map(o => o.id === optionId ? { ...o, value } : o) } : l))
+    await fetch(`${apiBase}-lists/${listId}/options`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ option_id: optionId, value }) })
+  }
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>
+      {/* Custom Fields */}
+      <div style={{ background: 'var(--white)', border: '1px solid var(--gray-100)', borderRadius: 14, boxShadow: '0 1px 4px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid var(--gray-100)' }}>
+          <div>
+            <div style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 700, color: 'var(--slate)' }}>Custom Fields</div>
+            <div style={{ fontSize: 12.5, color: 'var(--gray-400)', marginTop: 2 }}>{fieldLabel}</div>
+          </div>
+          <button className="btn btn-primary" style={{ height: 32, fontSize: 12.5 }} onClick={addField}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add Field
+          </button>
+        </div>
+        <div style={{ padding: '10px 16px', display: 'flex', flexDirection: 'column', gap: 8, minHeight: 60 }}>
+          {customFields.length === 0 && <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--gray-300)', fontSize: 12.5 }}>No custom fields yet.</div>}
+          {customFields.map(f => (
+            <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: 'var(--gray-50)', border: '1.5px solid var(--gray-200)', borderRadius: 10 }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--gray-300)" strokeWidth="2" style={{ flexShrink: 0 }}><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+              <InlineEditable value={f.name} onChange={name => renameField(f.id, name)} />
+              <div style={{ display: 'flex', gap: 4, marginLeft: 'auto' }}>
+                {(['text','number','date'] as const).map(t => (
+                  <button key={t} onClick={() => setFieldType(f.id, t)} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, border: `1.5px solid ${f.field_type === t ? 'var(--teal)' : 'var(--gray-200)'}`, background: f.field_type === t ? 'var(--teal-surface)' : 'var(--white)', color: f.field_type === t ? 'var(--teal)' : 'var(--gray-400)', cursor: 'pointer', fontWeight: f.field_type === t ? 700 : 400 }}>{t}</button>
+                ))}
+              </div>
+              <button onClick={() => deleteField(f.id)} style={{ width: 24, height: 24, borderRadius: 6, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--gray-300)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                onMouseOver={e => (e.currentTarget.style.color = 'var(--danger)')}
+                onMouseOut={e => (e.currentTarget.style.color = 'var(--gray-300)')}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+              </button>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Custom Lists */}
+      <div style={{ background: 'var(--white)', border: '1px solid var(--gray-100)', borderRadius: 14, boxShadow: '0 1px 4px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid var(--gray-100)' }}>
+          <div>
+            <div style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 700, color: 'var(--slate)' }}>Custom Lists</div>
+            <div style={{ fontSize: 12.5, color: 'var(--gray-400)', marginTop: 2 }}>{listLabel}</div>
+          </div>
+          <button className="btn btn-primary" style={{ height: 32, fontSize: 12.5 }} onClick={addList}>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            Add List
+          </button>
+        </div>
+        <div style={{ padding: '10px 16px', display: 'flex', flexDirection: 'column', gap: 8, minHeight: 60 }}>
+          {customLists.length === 0 && <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--gray-300)', fontSize: 12.5 }}>No custom lists yet.</div>}
+          {customLists.map(l => (
+            <div key={l.id} style={{ border: '1.5px solid var(--gray-200)', borderRadius: 10, overflow: 'hidden' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: 'var(--gray-50)' }}>
+                <button onClick={() => setExpandedList(expandedList === l.id ? null : l.id)}
+                  style={{ width: 24, height: 24, borderRadius: 6, border: '1.5px solid var(--gray-200)', background: 'var(--white)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: 'var(--gray-400)' }}>
+                  <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ transform: expandedList === l.id ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.15s' }}><polyline points="6 9 12 15 18 9"/></svg>
+                </button>
+                <div>
+                  <InlineEditable value={l.name} onChange={name => renameList(l.id, name)} />
+                  <div style={{ fontSize: 11.5, color: 'var(--gray-400)', marginTop: 1 }}>{l.options.length} {l.options.length === 1 ? 'option' : 'options'}</div>
+                </div>
+                <button onClick={() => deleteList(l.id)} style={{ marginLeft: 'auto', width: 24, height: 24, borderRadius: 6, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--gray-300)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                  onMouseOver={e => (e.currentTarget.style.color = 'var(--danger)')}
+                  onMouseOut={e => (e.currentTarget.style.color = 'var(--gray-300)')}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+                </button>
+              </div>
+              {expandedList === l.id && (
+                <div style={{ padding: '8px 12px 10px', background: 'var(--white)', borderTop: '1px solid var(--gray-100)' }}>
+                  {l.options.map(opt => (
+                    <div key={opt.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '5px 8px', borderRadius: 7, marginBottom: 3 }}
+                      onMouseOver={e => (e.currentTarget.style.background = 'var(--gray-50)')}
+                      onMouseOut={e => (e.currentTarget.style.background = 'transparent')}>
+                      <InlineEditable value={opt.value} onChange={v => renameOption(l.id, opt.id, v)} style={{ fontSize: 13 }} />
+                      <button onClick={() => deleteOption(l.id, opt.id)} style={{ width: 20, height: 20, borderRadius: 5, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--gray-300)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                        onMouseOver={e => (e.currentTarget.style.color = 'var(--danger)')}
+                        onMouseOut={e => (e.currentTarget.style.color = 'var(--gray-300)')}>
+                        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                      </button>
+                    </div>
+                  ))}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, padding: '2px 4px' }}>
+                    <input className="modal-input" value={newOptionText[l.id] ?? ''} onChange={e => setNewOptionText(prev => ({ ...prev, [l.id]: e.target.value }))} onKeyDown={e => { if (e.key === 'Enter') addOption(l.id) }} placeholder="+ Add option" style={{ fontSize: 12.5, height: 30, border: '1.5px dashed var(--gray-200)', background: 'transparent' }} />
+                    {(newOptionText[l.id] ?? '').trim() && (
+                      <button className="btn btn-primary" style={{ height: 30, fontSize: 12, padding: '0 10px' }} onClick={() => addOption(l.id)}>Add</button>
+                    )}
+                  </div>
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Contacts Tab ─────────────────────────────────────────────────────
 
 function InlineEditable({ value, onChange, style }: { value: string; onChange: (v: string) => void; style?: React.CSSProperties }) {
   const [editing, setEditing] = useState(false)
@@ -553,119 +719,6 @@ function ContactsTab({ taxRates, currencies, locations, priceLevels, orgId, show
   const [defPriceTier, setDefPriceTier] = useState('')
   const [saving, setSaving] = useState(false)
 
-  // Custom Fields — loaded from DB
-  const [customFields, setCustomFields] = useState<CustomField[]>([])
-  const [fieldsLoaded, setFieldsLoaded] = useState(false)
-
-  // Custom Lists — loaded from DB
-  const [customLists, setCustomLists] = useState<CustomList[]>([])
-  const [listsLoaded, setListsLoaded] = useState(false)
-  const [expandedList, setExpandedList] = useState<string | null>(null)
-  const [newOptionText, setNewOptionText] = useState<Record<string, string>>({})
-
-  // Load on mount
-  useEffect(() => {
-    fetch('/api/org/contact-custom-fields').then(r => r.json()).then(data => {
-      if (Array.isArray(data)) setCustomFields(data)
-      setFieldsLoaded(true)
-    })
-    fetch('/api/org/contact-custom-lists').then(r => r.json()).then(data => {
-      if (Array.isArray(data)) setCustomLists(data)
-      setListsLoaded(true)
-    })
-  }, [])
-
-  // Custom Fields actions — each immediately persists
-  async function addField() {
-    const name = `Custom Field ${customFields.length + 1}`
-    const res = await fetch('/api/org/contact-custom-fields', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name, field_type: 'text' }),
-    })
-    const data = await res.json()
-    if (res.ok) setCustomFields(prev => [...prev, { id: data.id, name: data.name, field_type: data.field_type }])
-    else showToast('error', data.error ?? 'Failed to add field')
-  }
-
-  async function renameField(id: string, name: string) {
-    setCustomFields(prev => prev.map(f => f.id === id ? { ...f, name } : f))
-    await fetch(`/api/org/contact-custom-fields/${id}`, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name }),
-    })
-  }
-
-  async function setFieldType(id: string, field_type: CustomField['field_type']) {
-    setCustomFields(prev => prev.map(f => f.id === id ? { ...f, field_type } : f))
-    await fetch(`/api/org/contact-custom-fields/${id}`, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ field_type }),
-    })
-  }
-
-  async function deleteField(id: string) {
-    setCustomFields(prev => prev.filter(f => f.id !== id))
-    await fetch(`/api/org/contact-custom-fields/${id}`, { method: 'DELETE' })
-  }
-
-  // Custom Lists actions
-  async function addList() {
-    const name = `Custom List ${customLists.length + 1}`
-    const res = await fetch('/api/org/contact-custom-lists', {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name }),
-    })
-    const data = await res.json()
-    if (res.ok) {
-      setCustomLists(prev => [...prev, { id: data.id, name: data.name, options: [] }])
-      setExpandedList(data.id)
-    } else showToast('error', data.error ?? 'Failed to add list')
-  }
-
-  async function renameList(id: string, name: string) {
-    setCustomLists(prev => prev.map(l => l.id === id ? { ...l, name } : l))
-    await fetch(`/api/org/contact-custom-lists/${id}`, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ name }),
-    })
-  }
-
-  async function deleteList(id: string) {
-    setCustomLists(prev => prev.filter(l => l.id !== id))
-    if (expandedList === id) setExpandedList(null)
-    await fetch(`/api/org/contact-custom-lists/${id}`, { method: 'DELETE' })
-  }
-
-  async function addOption(listId: string) {
-    const text = (newOptionText[listId] ?? '').trim()
-    if (!text) return
-    const res = await fetch(`/api/org/contact-custom-lists/${listId}/options`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ value: text }),
-    })
-    const data = await res.json()
-    if (res.ok) {
-      setCustomLists(prev => prev.map(l => l.id === listId ? { ...l, options: [...l.options, { id: data.id, value: text }] } : l))
-      setNewOptionText(prev => ({ ...prev, [listId]: '' }))
-    }
-  }
-
-  async function deleteOption(listId: string, optionId: string) {
-    setCustomLists(prev => prev.map(l => l.id === listId ? { ...l, options: l.options.filter(o => o.id !== optionId) } : l))
-    await fetch(`/api/org/contact-custom-lists/${listId}/options`, {
-      method: 'DELETE', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ option_id: optionId }),
-    })
-  }
-
-  async function renameOption(listId: string, optionId: string, value: string) {
-    setCustomLists(prev => prev.map(l => l.id === listId ? { ...l, options: l.options.map(o => o.id === optionId ? { ...o, value } : o) } : l))
-    await fetch(`/api/org/contact-custom-lists/${listId}/options`, {
-      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ option_id: optionId, value }),
-    })
-  }
-
   const taxOptions = [
     { value: '', label: '— None —' },
     ...taxRates.map(t => ({ value: t.id, label: `${t.code} — ${t.name} (${t.rate}%)` }))
@@ -708,115 +761,12 @@ function ContactsTab({ taxRates, currencies, locations, priceLevels, orgId, show
         </div>
       </Card>
 
-      {/* Custom Fields + Custom Lists side by side */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>
-
-        {/* Custom Fields */}
-        <div style={{ background: 'var(--white)', border: '1px solid var(--gray-100)', borderRadius: 14, boxShadow: '0 1px 4px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid var(--gray-100)' }}>
-            <div>
-              <div style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 700, color: 'var(--slate)' }}>Custom Fields</div>
-              <div style={{ fontSize: 12.5, color: 'var(--gray-400)', marginTop: 2 }}>Text, number or date fields for contacts</div>
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-            <button className="btn btn-primary" style={{ height: 32, fontSize: 12.5 }} onClick={addField}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              Add Field
-            </button>
-            </div>
-          </div>
-          <div style={{ padding: '10px 16px', display: 'flex', flexDirection: 'column', gap: 8, minHeight: 60 }}>
-            {customFields.length === 0 && (
-              <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--gray-300)', fontSize: 12.5 }}>No custom fields yet.</div>
-            )}
-            {customFields.map(f => (
-              <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: 'var(--gray-50)', border: '1.5px solid var(--gray-200)', borderRadius: 10 }}>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--gray-300)" strokeWidth="2" style={{ flexShrink: 0 }}><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
-                <InlineEditable value={f.name} onChange={name => renameField(f.id, name)} />
-                <div style={{ display: 'flex', gap: 4, marginLeft: 'auto' }}>
-                  {(['text','number','date'] as const).map(t => (
-                    <button key={t} onClick={() => setFieldType(f.id, t)} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, border: `1.5px solid ${f.field_type === t ? 'var(--teal)' : 'var(--gray-200)'}`, background: f.field_type === t ? 'var(--teal-surface)' : 'var(--white)', color: f.field_type === t ? 'var(--teal)' : 'var(--gray-400)', cursor: 'pointer', fontWeight: f.field_type === t ? 700 : 400 }}>{t}</button>
-                  ))}
-                </div>
-                <button onClick={() => deleteField(f.id)} style={{ width: 24, height: 24, borderRadius: 6, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--gray-300)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
-                  onMouseOver={e => (e.currentTarget.style.color = 'var(--danger)')}
-                  onMouseOut={e => (e.currentTarget.style.color = 'var(--gray-300)')}>
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
-                </button>
-              </div>
-            ))}
-          </div>
-        </div>
-
-        {/* Custom Lists */}
-        <div style={{ background: 'var(--white)', border: '1px solid var(--gray-100)', borderRadius: 14, boxShadow: '0 1px 4px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid var(--gray-100)' }}>
-            <div>
-              <div style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 700, color: 'var(--slate)' }}>Custom Lists</div>
-              <div style={{ fontSize: 12.5, color: 'var(--gray-400)', marginTop: 2 }}>Dropdown lists for contacts</div>
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button className="btn btn-primary" style={{ height: 32, fontSize: 12.5 }} onClick={addList}>
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                Add List
-              </button>
-            </div>
-          </div>
-          <div style={{ padding: '10px 16px', display: 'flex', flexDirection: 'column', gap: 8, minHeight: 60 }}>
-            {customLists.length === 0 && (
-              <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--gray-300)', fontSize: 12.5 }}>No custom lists yet.</div>
-            )}
-            {customLists.map(l => (
-              <div key={l.id} style={{ border: '1.5px solid var(--gray-200)', borderRadius: 10, overflow: 'hidden' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: 'var(--gray-50)' }}>
-                  <button onClick={() => setExpandedList(expandedList === l.id ? null : l.id)}
-                    style={{ width: 24, height: 24, borderRadius: 6, border: '1.5px solid var(--gray-200)', background: 'var(--white)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: 'var(--gray-400)', transition: 'transform 0.15s' }}>
-                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ transform: expandedList === l.id ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.15s' }}><polyline points="6 9 12 15 18 9"/></svg>
-                  </button>
-                  <div>
-                    <InlineEditable value={l.name} onChange={name => renameList(l.id, name)} />
-                    <div style={{ fontSize: 11.5, color: 'var(--gray-400)', marginTop: 1 }}>{l.options.length} {l.options.length === 1 ? 'option' : 'options'}</div>
-                  </div>
-                  <button onClick={() => deleteList(l.id)} style={{ marginLeft: 'auto', width: 24, height: 24, borderRadius: 6, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--gray-300)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
-                    onMouseOver={e => (e.currentTarget.style.color = 'var(--danger)')}
-                    onMouseOut={e => (e.currentTarget.style.color = 'var(--gray-300)')}>
-                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
-                  </button>
-                </div>
-                {expandedList === l.id && (
-                  <div style={{ padding: '8px 12px 10px', background: 'var(--white)', borderTop: '1px solid var(--gray-100)' }}>
-                    {l.options.map(opt => (
-                      <div key={opt.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '5px 8px', borderRadius: 7, marginBottom: 3 }}
-                        onMouseOver={e => (e.currentTarget.style.background = 'var(--gray-50)')}
-                        onMouseOut={e => (e.currentTarget.style.background = 'transparent')}>
-                        <InlineEditable value={opt.value} onChange={v => renameOption(l.id, opt.id, v)} style={{ fontSize: 13 }} />
-                        <button onClick={() => deleteOption(l.id, opt.id)} style={{ width: 20, height: 20, borderRadius: 5, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--gray-300)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
-                          onMouseOver={e => (e.currentTarget.style.color = 'var(--danger)')}
-                          onMouseOut={e => (e.currentTarget.style.color = 'var(--gray-300)')}>
-                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                        </button>
-                      </div>
-                    ))}
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, padding: '2px 4px' }}>
-                      <input
-                        className="modal-input"
-                        value={newOptionText[l.id] ?? ''}
-                        onChange={e => setNewOptionText(prev => ({ ...prev, [l.id]: e.target.value }))}
-                        onKeyDown={e => { if (e.key === 'Enter') addOption(l.id) }}
-                        placeholder="+ Add option"
-                        style={{ fontSize: 12.5, height: 30, border: '1.5px dashed var(--gray-200)', background: 'transparent' }}
-                      />
-                      {(newOptionText[l.id] ?? '').trim() && (
-                        <button className="btn btn-primary" style={{ height: 30, fontSize: 12, padding: '0 10px' }} onClick={() => addOption(l.id)}>Add</button>
-                      )}
-                    </div>
-                  </div>
-                )}
-              </div>
-            ))}
-          </div>
-        </div>
-      </div>
+      <CustomFieldsAndLists
+        apiBase="/api/org/contact-custom"
+        fieldLabel="Text, number or date fields for contacts"
+        listLabel="Dropdown lists for contacts"
+        showToast={showToast}
+      />
     </>
   )
 }
@@ -1456,6 +1406,13 @@ export default function SettingsClient({
                 ))}
               </div>
             </Card>
+
+            <CustomFieldsAndLists
+              apiBase="/api/org/product-custom"
+              fieldLabel="Text, number or date fields for products"
+              listLabel="Dropdown lists for products"
+              showToast={showToast}
+            />
           </>
         )}
 

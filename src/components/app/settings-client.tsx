@@ -494,8 +494,9 @@ function AddLocationModal({ orgId, onClose, onAdd }: {
 
 // ── Contacts Tab ─────────────────────────────────────────────────────
 
-type CustomField = { id: string; name: string; type: 'text' | 'number' | 'date' }
-type CustomList = { id: string; name: string; options: string[] }
+type CustomField = { id: string; name: string; field_type: 'text' | 'number' | 'date' }
+type CustomListOption = { id: string; value: string }
+type CustomList = { id: string; name: string; options: CustomListOption[] }
 
 function InlineEditable({ value, onChange, style }: { value: string; onChange: (v: string) => void; style?: React.CSSProperties }) {
   const [editing, setEditing] = useState(false)
@@ -549,50 +550,109 @@ function ContactsTab({ taxRates, currencies, locations, orgId, showToast }: {
   const [defPriceTier, setDefPriceTier] = useState('Retail')
   const [saving, setSaving] = useState(false)
 
-  // Custom Fields
+  // Custom Fields — loaded from DB
   const [customFields, setCustomFields] = useState<CustomField[]>([])
-  const nextFieldId = useRef(1)
+  const [fieldsLoaded, setFieldsLoaded] = useState(false)
 
-  function addField() {
-    const id = `cf-${nextFieldId.current++}`
-    setCustomFields(prev => [...prev, { id, name: `Custom Field ${prev.length + 1}`, type: 'text' }])
-  }
-  function renameField(id: string, name: string) {
-    setCustomFields(prev => prev.map(f => f.id === id ? { ...f, name } : f))
-  }
-  function setFieldType(id: string, type: CustomField['type']) {
-    setCustomFields(prev => prev.map(f => f.id === id ? { ...f, type } : f))
-  }
-  function deleteField(id: string) {
-    setCustomFields(prev => prev.filter(f => f.id !== id))
-  }
-
-  // Custom Lists
+  // Custom Lists — loaded from DB
   const [customLists, setCustomLists] = useState<CustomList[]>([])
-  const nextListId = useRef(1)
+  const [listsLoaded, setListsLoaded] = useState(false)
   const [expandedList, setExpandedList] = useState<string | null>(null)
   const [newOptionText, setNewOptionText] = useState<Record<string, string>>({})
 
-  function addList() {
-    const id = `cl-${nextListId.current++}`
-    setCustomLists(prev => [...prev, { id, name: `Custom List ${prev.length + 1}`, options: [] }])
-    setExpandedList(id)
+  // Load on mount
+  useEffect(() => {
+    fetch('/api/org/contact-custom-fields').then(r => r.json()).then(data => {
+      if (Array.isArray(data)) setCustomFields(data)
+      setFieldsLoaded(true)
+    })
+    fetch('/api/org/contact-custom-lists').then(r => r.json()).then(data => {
+      if (Array.isArray(data)) setCustomLists(data)
+      setListsLoaded(true)
+    })
+  }, [])
+
+  // Custom Fields actions — each immediately persists
+  async function addField() {
+    const name = `Custom Field ${customFields.length + 1}`
+    const res = await fetch('/api/org/contact-custom-fields', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, field_type: 'text' }),
+    })
+    const data = await res.json()
+    if (res.ok) setCustomFields(prev => [...prev, { id: data.id, name: data.name, field_type: data.field_type }])
+    else showToast('error', data.error ?? 'Failed to add field')
   }
-  function renameList(id: string, name: string) {
+
+  async function renameField(id: string, name: string) {
+    setCustomFields(prev => prev.map(f => f.id === id ? { ...f, name } : f))
+    await fetch(`/api/org/contact-custom-fields/${id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    })
+  }
+
+  async function setFieldType(id: string, field_type: CustomField['field_type']) {
+    setCustomFields(prev => prev.map(f => f.id === id ? { ...f, field_type } : f))
+    await fetch(`/api/org/contact-custom-fields/${id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ field_type }),
+    })
+  }
+
+  async function deleteField(id: string) {
+    setCustomFields(prev => prev.filter(f => f.id !== id))
+    await fetch(`/api/org/contact-custom-fields/${id}`, { method: 'DELETE' })
+  }
+
+  // Custom Lists actions
+  async function addList() {
+    const name = `Custom List ${customLists.length + 1}`
+    const res = await fetch('/api/org/contact-custom-lists', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    })
+    const data = await res.json()
+    if (res.ok) {
+      setCustomLists(prev => [...prev, { id: data.id, name: data.name, options: [] }])
+      setExpandedList(data.id)
+    } else showToast('error', data.error ?? 'Failed to add list')
+  }
+
+  async function renameList(id: string, name: string) {
     setCustomLists(prev => prev.map(l => l.id === id ? { ...l, name } : l))
+    await fetch(`/api/org/contact-custom-lists/${id}`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    })
   }
-  function deleteList(id: string) {
+
+  async function deleteList(id: string) {
     setCustomLists(prev => prev.filter(l => l.id !== id))
     if (expandedList === id) setExpandedList(null)
+    await fetch(`/api/org/contact-custom-lists/${id}`, { method: 'DELETE' })
   }
-  function addOption(listId: string) {
+
+  async function addOption(listId: string) {
     const text = (newOptionText[listId] ?? '').trim()
     if (!text) return
-    setCustomLists(prev => prev.map(l => l.id === listId ? { ...l, options: [...l.options, text] } : l))
-    setNewOptionText(prev => ({ ...prev, [listId]: '' }))
+    const res = await fetch(`/api/org/contact-custom-lists/${listId}/options`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ value: text }),
+    })
+    const data = await res.json()
+    if (res.ok) {
+      setCustomLists(prev => prev.map(l => l.id === listId ? { ...l, options: [...l.options, { id: data.id, value: text }] } : l))
+      setNewOptionText(prev => ({ ...prev, [listId]: '' }))
+    }
   }
-  function deleteOption(listId: string, opt: string) {
-    setCustomLists(prev => prev.map(l => l.id === listId ? { ...l, options: l.options.filter(o => o !== opt) } : l))
+
+  async function deleteOption(listId: string, optionId: string) {
+    setCustomLists(prev => prev.map(l => l.id === listId ? { ...l, options: l.options.filter(o => o.id !== optionId) } : l))
+    await fetch(`/api/org/contact-custom-lists/${listId}/options`, {
+      method: 'DELETE', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ option_id: optionId }),
+    })
   }
 
   const taxOptions = [
@@ -610,7 +670,7 @@ function ContactsTab({ taxRates, currencies, locations, orgId, showToast }: {
 
   async function save() {
     setSaving(true)
-    await new Promise(r => setTimeout(r, 400))
+    await new Promise(r => setTimeout(r, 300))
     setSaving(false)
     showToast('success', 'Contact defaults saved')
   }
@@ -648,7 +708,6 @@ function ContactsTab({ taxRates, currencies, locations, orgId, showToast }: {
               <div style={{ fontSize: 12.5, color: 'var(--gray-400)', marginTop: 2 }}>Text, number or date fields for contacts</div>
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
-              {customFields.length > 0 && <SaveBtn onClick={() => showToast('success', 'Custom fields saved')} />}
             <button className="btn btn-primary" style={{ height: 32, fontSize: 12.5 }} onClick={addField}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               Add Field
@@ -665,7 +724,7 @@ function ContactsTab({ taxRates, currencies, locations, orgId, showToast }: {
                 <InlineEditable value={f.name} onChange={name => renameField(f.id, name)} />
                 <div style={{ display: 'flex', gap: 4, marginLeft: 'auto' }}>
                   {(['text','number','date'] as const).map(t => (
-                    <button key={t} onClick={() => setFieldType(f.id, t)} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, border: `1.5px solid ${f.type === t ? 'var(--teal)' : 'var(--gray-200)'}`, background: f.type === t ? 'var(--teal-surface)' : 'var(--white)', color: f.type === t ? 'var(--teal)' : 'var(--gray-400)', cursor: 'pointer', fontWeight: f.type === t ? 700 : 400 }}>{t}</button>
+                    <button key={t} onClick={() => setFieldType(f.id, t)} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, border: `1.5px solid ${f.field_type === t ? 'var(--teal)' : 'var(--gray-200)'}`, background: f.field_type === t ? 'var(--teal-surface)' : 'var(--white)', color: f.field_type === t ? 'var(--teal)' : 'var(--gray-400)', cursor: 'pointer', fontWeight: f.field_type === t ? 700 : 400 }}>{t}</button>
                   ))}
                 </div>
                 <button onClick={() => deleteField(f.id)} style={{ width: 24, height: 24, borderRadius: 6, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--gray-300)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
@@ -686,7 +745,6 @@ function ContactsTab({ taxRates, currencies, locations, orgId, showToast }: {
               <div style={{ fontSize: 12.5, color: 'var(--gray-400)', marginTop: 2 }}>Dropdown lists for contacts</div>
             </div>
             <div style={{ display: 'flex', gap: 8 }}>
-              {customLists.length > 0 && <SaveBtn onClick={() => showToast('success', 'Custom lists saved')} />}
               <button className="btn btn-primary" style={{ height: 32, fontSize: 12.5 }} onClick={addList}>
                 <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                 Add List
@@ -717,11 +775,11 @@ function ContactsTab({ taxRates, currencies, locations, orgId, showToast }: {
                 {expandedList === l.id && (
                   <div style={{ padding: '8px 12px 10px', background: 'var(--white)', borderTop: '1px solid var(--gray-100)' }}>
                     {l.options.map(opt => (
-                      <div key={opt} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '5px 8px', borderRadius: 7, marginBottom: 3 }}
+                      <div key={opt.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '5px 8px', borderRadius: 7, marginBottom: 3 }}
                         onMouseOver={e => (e.currentTarget.style.background = 'var(--gray-50)')}
                         onMouseOut={e => (e.currentTarget.style.background = 'transparent')}>
-                        <span style={{ fontSize: 13, color: 'var(--slate)' }}>{opt}</span>
-                        <button onClick={() => deleteOption(l.id, opt)} style={{ width: 20, height: 20, borderRadius: 5, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--gray-300)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                        <span style={{ fontSize: 13, color: 'var(--slate)' }}>{opt.value}</span>
+                        <button onClick={() => deleteOption(l.id, opt.id)} style={{ width: 20, height: 20, borderRadius: 5, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--gray-300)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
                           onMouseOver={e => (e.currentTarget.style.color = 'var(--danger)')}
                           onMouseOut={e => (e.currentTarget.style.color = 'var(--gray-300)')}>
                           <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>

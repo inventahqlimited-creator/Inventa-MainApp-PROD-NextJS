@@ -225,20 +225,36 @@ type OrgSettings = {
 }
 
 // ── Export Modal ──────────────────────────────────────────────────────────────
-function ExportModal({ products, customFields, decimalPlaces, taxRates, onClose }: {
+function ExportModal({ products, customFields, decimalPlaces, taxRates, priceLevels, orgId, onClose }: {
   products: Product[]
   customFields: CustomField[]
   decimalPlaces: number
   taxRates: TaxRate[]
+  priceLevels: PriceLevel[]
+  orgId: string
   onClose: () => void
 }) {
   const [includeInactive, setIncludeInactive] = useState(false)
+  const [exporting, setExporting] = useState(false)
 
-  function doExport() {
+  async function doExport() {
+    setExporting(true)
     const rows = includeInactive ? products : products.filter(p => p.is_active)
+
+    // Fetch all pricing rows for this org
+    const sb = createClient()
+    const { data: allPricing } = await sb.from('product_pricing').select('product_id, level_id, price, break_qty').in('product_id', rows.map(p => p.id))
+    // Build map: product_id → { level_id → price }
+    const pricingMap = new Map<string, Map<string, number>>()
+    for (const row of (allPricing ?? []) as { product_id: string; level_id: string; price: number }[]) {
+      if (!pricingMap.has(row.product_id)) pricingMap.set(row.product_id, new Map())
+      pricingMap.get(row.product_id)!.set(row.level_id, row.price)
+    }
+
     const stdHeaders = ['Product ID', 'Name', 'SKU', 'Type', 'Description', 'Barcode', 'Sell Price', 'Cost Price', 'Tax Rate', 'Sell UOM', 'Buy UOM', 'Track Stock', 'Serial Tracking', 'Batch Tracking', 'Expiry Tracking', 'Active']
+    const plHeaders = priceLevels.map(pl => `Price: ${pl.name}`)
     const cfHeaders = customFields.map(f => f.name)
-    const headers = [...stdHeaders, ...cfHeaders]
+    const headers = [...stdHeaders, ...plHeaders, ...cfHeaders]
 
     const escape = (v: unknown) => {
       const s = v == null ? '' : String(v)
@@ -249,21 +265,28 @@ function ExportModal({ products, customFields, decimalPlaces, taxRates, onClose 
       headers.join(','),
       ...rows.map(p => {
         const cf = (p.custom_fields ?? {}) as Record<string, string>
+        const prodPricing = pricingMap.get(p.id)
         return [
           p.id, p.name, p.sku ?? '', p.type, p.description ?? '', p.barcode ?? '',
           p.sell_price != null ? Number(p.sell_price).toFixed(decimalPlaces) : '',
           p.cost_price != null ? Number(p.cost_price).toFixed(decimalPlaces) : '',
-          (() => { const stored = Number(p.tax_rate); const m = taxRates.find(t => t.rate === stored); return m ? `${m.rate}% — ${m.name}` : (p.tax_rate ? String(p.tax_rate) : '') })(), p.sell_uom ?? '', p.buy_uom ?? '',
+          (() => { const stored = Number(p.tax_rate); const m = taxRates.find(t => t.rate === stored); return m ? `${m.rate}% — ${m.name}` : (p.tax_rate ? String(p.tax_rate) : '') })(),
+          p.sell_uom ?? '', p.buy_uom ?? '',
           p.track_stock ? 'Yes' : 'No',
           p.serial_tracking ? 'Yes' : 'No',
           p.batch_tracking ? 'Yes' : 'No',
           p.expiry_tracking ? 'Yes' : 'No',
           p.is_active ? 'Yes' : 'No',
+          ...priceLevels.map(pl => {
+            const price = prodPricing?.get(pl.id)
+            return price != null ? Number(price).toFixed(decimalPlaces) : ''
+          }),
           ...customFields.map(f => cf[f.id] ?? ''),
         ].map(escape).join(',')
       }),
     ]
 
+    setExporting(false)
     const blob = new Blob([lines.join('\n')], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
@@ -282,7 +305,7 @@ function ExportModal({ products, customFields, decimalPlaces, taxRates, onClose 
       </label>
       <div className="modal-footer" style={{ marginTop: 20 }}>
         <button className="btn btn-outline" onClick={onClose}>Cancel</button>
-        <button className="btn btn-primary" onClick={doExport}>Export CSV</button>
+        <button className="btn btn-primary" onClick={doExport} disabled={exporting}>{exporting ? 'Preparing…' : 'Export CSV'}</button>
       </div>
     </div>
   )
@@ -305,7 +328,7 @@ function ImportModal({ orgId, customFields, customLists, taxRates, suppliers, pr
   const [dragging, setDragging] = useState(false)
   const [importing, setImporting] = useState(false)
   const [errors, setErrors] = useState<string[]>([])
-  const [imported, setImported] = useState<number | null>(null)
+  const [imported, setImported] = useState<{ created: number; updated: number } | null>(null)
   const fileRef = useRef<HTMLInputElement>(null)
 
   function downloadTemplate() {
@@ -420,23 +443,67 @@ function ImportModal({ orgId, customFields, customLists, taxRates, suppliers, pr
       colIdx: rawHeaders.findIndex(h => h === cl.name.toLowerCase()),
     })).filter(x => x.colIdx >= 0)
 
-    // Phase 2: create
-    // Pre-load existing SKUs for client-side duplicate check
-    let existingSkuSet: Set<string> | null = null
-    if (skipDupes) {
-      const sb = createClient()
-      const { data: existingProds } = await sb.from('products').select('sku').eq('org_id', orgId).not('sku', 'is', null)
-      existingSkuSet = new Set((existingProds ?? []).map((p: { sku: string }) => (p.sku ?? '').toLowerCase()))
+    // Phase 2: upsert
+    // Pre-load existing SKUs → { sku_lower: product_id } for update mode
+    const sb = createClient()
+    const { data: existingProds } = await sb.from('products').select('id, sku').eq('org_id', orgId).not('sku', 'is', null)
+    const existingSkuMap = new Map<string, string>(
+      (existingProds ?? []).map((p: { id: string; sku: string }) => [p.sku.toLowerCase(), p.id])
+    )
+
+    const createdItems: unknown[] = []
+    let updatedCount = 0
+
+    // Helper: upsert pricing rows for a product
+    async function upsertPricing(productId: string, pricingData: { price_level: string; price: number; break_qty: number }[]) {
+      if (pricingData.length === 0) return
+      const pricingRows = pricingData.flatMap(pd => {
+        const pl = priceLevels.find(p => p.name === pd.price_level)
+        return pl ? [{ org_id: orgId, product_id: productId, level_id: pl.id, price: pd.price, break_qty: pd.break_qty }] : []
+      })
+      if (pricingRows.length === 0) return
+      const session = (await sb.auth.getSession()).data.session
+      // Delete existing rows for this product+level combo then reinsert (clean upsert)
+      for (const row of pricingRows) {
+        await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/product_pricing?product_id=eq.${productId}&level_id=eq.${row.level_id}`, {
+          method: 'DELETE',
+          headers: {
+            'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+            'Authorization': `Bearer ${session?.access_token}`,
+          },
+        })
+      }
+      await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/product_pricing`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+          'Authorization': `Bearer ${session?.access_token}`,
+          'Prefer': 'return=minimal',
+        },
+        body: JSON.stringify(pricingRows),
+      })
     }
 
-    const created: unknown[] = []
+    // Helper: translate API errors to friendly messages
+    function friendlyError(status: number, rawMsg: string): string {
+      const m = rawMsg.toLowerCase()
+      if (status === 409 || m.includes('duplicate') || m.includes('unique')) return 'a product with this SKU already exists'
+      if (m.includes('not null') || m.includes('null value')) return 'a required field is missing'
+      if (m.includes('foreign key') || m.includes('violates')) return 'one or more values don\'t match your account settings'
+      if (m.includes('column') && m.includes('schema')) return 'the file format doesn\'t match the template — please re-download the template'
+      if (status >= 500) return 'a server error occurred, please try again'
+      if (status === 401 || status === 403) return 'you don\'t have permission to import products'
+      return 'couldn\'t be saved — please check the row and try again'
+    }
+
     for (const line of dataRows) {
       const cols = parseRow(line)
       const get = (idx: number) => idx >= 0 ? (cols[idx] ?? '').trim() : ''
       const name = get(nameIdx)
       if (!name) continue
 
-      // Resolve tax rate: match label text against taxRates list
+      // Resolve tax rate
       const taxStr = get(taxIdx).toLowerCase()
       let resolvedTaxRate: number | null = null
       if (taxStr) {
@@ -447,26 +514,18 @@ function ImportModal({ orgId, customFields, customLists, taxRates, suppliers, pr
         if (matchedTax) resolvedTaxRate = matchedTax.rate
       }
 
-      // Resolve supplier name to ID
+      // Resolve supplier
       const supplierName = get(supplierIdx).toLowerCase()
       const matchedSupplier = supplierName ? suppliers.find(s => s.name.toLowerCase() === supplierName) : null
 
-      // Parse boolean helper
       const parseBool = (idx: number) => get(idx).toLowerCase() === 'yes'
 
-      // Collect custom fields
+      // Custom fields
       const cfValues: Record<string, string> = {}
-      cfIndexes.forEach(({ fId, colIdx }) => {
-        const val = get(colIdx)
-        if (val) cfValues[fId] = val
-      })
-      // Collect custom list values (store by list id → option value string)
-      clIndexes.forEach(({ listId, colIdx }) => {
-        const val = get(colIdx)
-        if (val) cfValues[`list_${listId}`] = val
-      })
+      cfIndexes.forEach(({ fId, colIdx }) => { const val = get(colIdx); if (val) cfValues[fId] = val })
+      clIndexes.forEach(({ listId, colIdx }) => { const val = get(colIdx); if (val) cfValues[`list_${listId}`] = val })
 
-      // Price level prices
+      // Price level data
       const pricingData: { price_level: string; price: number; break_qty: number }[] = []
       plIndexes.forEach(({ plId, colIdx }) => {
         const val = parseFloat(get(colIdx))
@@ -500,78 +559,57 @@ function ImportModal({ orgId, customFields, customLists, taxRates, suppliers, pr
         min_order_qty: parseInt(get(minOrderIdx)) || null,
         notes: get(notesIdx) || null,
         custom_fields: Object.keys(cfValues).length > 0 ? cfValues : null,
-        // NOTE: pricing is handled separately after product creation — not sent here
       }
 
-      // Handle skip-duplicates client-side instead of passing to API
       const skuVal = payload.sku as string | null
-      if (skipDupes && skuVal && existingSkuSet?.has(skuVal.toLowerCase())) continue
+      const existingId = skuVal ? existingSkuMap.get(skuVal.toLowerCase()) : undefined
 
-      const res = await fetch('/api/org/products', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload),
-      })
-      if (res.ok) {
-        const newProduct = await res.json()
-        created.push(newProduct)
-        console.log('[import] created product:', newProduct)
-        // Insert price level rows directly if any
-        if (pricingData.length > 0 && newProduct?.id) {
-          const sb = createClient()
-          const pricingRows = pricingData.flatMap(pd => {
-            const pl = priceLevels.find(p => p.name === pd.price_level)
-            return pl ? [{ org_id: orgId, product_id: newProduct.id, level_id: pl.id, price: pd.price, break_qty: pd.break_qty }] : []
-          })
-          if (pricingRows.length > 0) {
-            // Use fetch directly to avoid Supabase generated-type constraint on product_pricing
-            await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/product_pricing`, {
-              method: 'POST',
-              headers: {
-                'Content-Type': 'application/json',
-                'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-                'Authorization': `Bearer ${(await sb.auth.getSession()).data.session?.access_token}`,
-                'Prefer': 'return=minimal',
-              },
-              body: JSON.stringify(pricingRows),
-            })
-          }
+      if (existingId) {
+        // SKU already exists
+        if (skipDupes) continue  // skip mode: leave it alone
+
+        // Update mode: PATCH via API
+        const res = await fetch(`/api/org/products/${existingId}`, {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        if (res.ok) {
+          updatedCount++
+          await upsertPricing(existingId, pricingData)
+        } else {
+          let rawMsg = ''
+          try { const b = await res.json(); rawMsg = b?.error || b?.message || JSON.stringify(b) } catch { /* */ }
+          console.error('[import] update failed:', name, res.status, rawMsg)
+          rowErrors.push(`"${name}" — ${friendlyError(res.status, rawMsg)}`)
+          if (rowErrors.length >= 3) break
         }
       } else {
-        let rawMsg = ''
-        try {
-          const errBody = await res.json()
-          rawMsg = errBody?.error || errBody?.message || JSON.stringify(errBody)
-        } catch { /* body wasn't JSON */ }
-        console.error('[import] row failed:', name, res.status, rawMsg)
-
-        // Translate technical errors into friendly language
-        let friendlyMsg: string
-        if (res.status === 409 || rawMsg.toLowerCase().includes('duplicate') || rawMsg.toLowerCase().includes('unique')) {
-          friendlyMsg = 'a product with this SKU already exists'
-        } else if (rawMsg.toLowerCase().includes('not null') || rawMsg.toLowerCase().includes('null value')) {
-          friendlyMsg = 'a required field is missing'
-        } else if (rawMsg.toLowerCase().includes('foreign key') || rawMsg.toLowerCase().includes('violates')) {
-          friendlyMsg = 'one or more values don\'t match your account settings'
-        } else if (rawMsg.toLowerCase().includes('column') && rawMsg.toLowerCase().includes('schema')) {
-          friendlyMsg = 'the file format doesn\'t match the template — please re-download the template'
-        } else if (res.status >= 500) {
-          friendlyMsg = 'a server error occurred, please try again'
-        } else if (res.status === 401 || res.status === 403) {
-          friendlyMsg = 'you don\'t have permission to import products'
+        // New product: POST
+        const res = await fetch('/api/org/products', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        })
+        if (res.ok) {
+          const newProduct = await res.json()
+          createdItems.push(newProduct)
+          console.log('[import] created product:', newProduct)
+          await upsertPricing(newProduct.id, pricingData)
         } else {
-          friendlyMsg = 'couldn\'t be saved — please check the row and try again'
+          let rawMsg = ''
+          try { const b = await res.json(); rawMsg = b?.error || b?.message || JSON.stringify(b) } catch { /* */ }
+          console.error('[import] create failed:', name, res.status, rawMsg)
+          rowErrors.push(`"${name}" — ${friendlyError(res.status, rawMsg)}`)
+          if (rowErrors.length >= 3) break
         }
-
-        rowErrors.push(`"${name}" — ${friendlyMsg}`)
-        if (rowErrors.length >= 3) break
       }
     }
 
     setImporting(false)
-    if (created.length > 0) {
-      setImported(created.length)
-      onImported(created)
+    if (createdItems.length > 0 || updatedCount > 0) {
+      setImported({ created: createdItems.length, updated: updatedCount })
+      onImported(createdItems)
     } else {
       if (rowErrors.length === 0) rowErrors.push('No products were imported. Make sure your file matches the template format.')
       setErrors(rowErrors)
@@ -579,13 +617,19 @@ function ImportModal({ orgId, customFields, customLists, taxRates, suppliers, pr
   }
 
   if (imported !== null) {
+    const total = imported.created + imported.updated
+    const parts: string[] = []
+    if (imported.created > 0) parts.push(`${imported.created} added`)
+    if (imported.updated > 0) parts.push(`${imported.updated} updated`)
     return (
       <div className="modal-body" style={{ textAlign: 'center', padding: '24px 20px' }}>
         <div style={{ width: 52, height: 52, borderRadius: '50%', background: '#D1FAE5', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
           <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#065F46" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
         </div>
         <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--slate)', marginBottom: 6 }}>Import Complete</div>
-        <div style={{ fontSize: 13.5, color: 'var(--gray-400)', marginBottom: 20 }}>{imported} product{imported !== 1 ? 's' : ''} imported successfully.</div>
+        <div style={{ fontSize: 13.5, color: 'var(--gray-400)', marginBottom: 20 }}>
+          {total} product{total !== 1 ? 's' : ''} processed — {parts.join(', ')}.
+        </div>
         <button className="btn btn-primary" onClick={onClose}>Done</button>
       </div>
     )
@@ -611,7 +655,12 @@ function ImportModal({ orgId, customFields, customLists, taxRates, suppliers, pr
 
       <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: 'var(--slate)', cursor: 'pointer', userSelect: 'none', marginTop: 14 }}>
         <input type="checkbox" checked={skipDupes} onChange={e => setSkipDupes(e.target.checked)} style={{ accentColor: 'var(--teal)', width: 14, height: 14, cursor: 'pointer', marginTop: 2 }} />
-        Skip duplicates — do not update existing products with the same Product ID
+        <span>
+          <span style={{ fontWeight: 600 }}>Skip duplicates</span>
+          <span style={{ color: 'var(--gray-400)', marginLeft: 4 }}>
+            {skipDupes ? '— existing products with the same SKU will be left unchanged' : '— existing products with the same SKU will be updated'}
+          </span>
+        </span>
       </label>
 
       <div style={{ background: 'var(--gray-50)', border: '1px solid var(--gray-200)', borderRadius: 9, padding: '10px 14px', marginTop: 14, fontSize: 12.5, color: 'var(--gray-400)' }}>
@@ -1688,7 +1737,7 @@ export default function ProductsTable({
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
               </button>
             </div>
-            <ExportModal products={products} customFields={customFields} decimalPlaces={dp} taxRates={taxRates} onClose={() => setShowExport(false)} />
+            <ExportModal products={products} customFields={customFields} decimalPlaces={dp} taxRates={taxRates} priceLevels={priceLevels} orgId={orgId} onClose={() => setShowExport(false)} />
           </div>
         </div>
       )}

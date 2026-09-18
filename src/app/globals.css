@@ -97,6 +97,7 @@ body {
 .dd-item:hover .dd-icon-wrap{background:rgba(13,148,136,0.15);color:var(--teal);}
 .dd-icon-wrap{width:28px;height:28px;border-radius:8px;background:var(--gray-100);color:var(--gray-400);display:flex;align-items:center;justify-content:center;flex-shrink:0;transition:background var(--transition),color var(--transition);}
 .dd-sep{height:1px;background:var(--gray-100);margin:5px 0;}
+.dd-divider{height:1px;background:var(--gray-100);margin:5px 0;}
 .dd-item-danger:hover{background:#FEF2F2;color:var(--danger);}
 .dd-item-danger:hover .dd-icon-wrap{background:#FEE2E2;color:var(--danger);}
 .profile-dropdown-header{padding:10px 12px 8px;border-bottom:1px solid var(--gray-100);margin-bottom:4px;}

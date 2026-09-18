@@ -422,11 +422,11 @@ function ImportModal({ orgId, customFields, customLists, taxRates, suppliers, pr
 
     // Phase 2: create
     // Pre-load existing SKUs for client-side duplicate check
+    let existingSkuSet: Set<string> | null = null
     if (skipDupes) {
       const sb = createClient()
       const { data: existingProds } = await sb.from('products').select('sku').eq('org_id', orgId).not('sku', 'is', null)
-      const skuSet = new Set((existingProds ?? []).map((p: { sku: string }) => (p.sku ?? '').toLowerCase()))
-      ;(window as Record<string, unknown>).__importExistingSkus = skuSet
+      existingSkuSet = new Set((existingProds ?? []).map((p: { sku: string }) => (p.sku ?? '').toLowerCase()))
     }
 
     const created: unknown[] = []
@@ -505,10 +505,7 @@ function ImportModal({ orgId, customFields, customLists, taxRates, suppliers, pr
 
       // Handle skip-duplicates client-side instead of passing to API
       const skuVal = payload.sku as string | null
-      if (skipDupes && skuVal) {
-        const existingSkus = (window as Record<string, unknown>).__importExistingSkus as Set<string> | undefined
-        if (existingSkus?.has(skuVal.toLowerCase())) continue
-      }
+      if (skipDupes && skuVal && existingSkuSet?.has(skuVal.toLowerCase())) continue
 
       const res = await fetch('/api/org/products', {
         method: 'POST',

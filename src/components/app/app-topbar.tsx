@@ -11,6 +11,8 @@ export default function AppTopbar({
   orgName,
   email,
   canCreateContact = true,
+  canCreateProduct = true,
+  canViewProducts = true,
 }: {
   displayName: string
   initials: string
@@ -18,6 +20,8 @@ export default function AppTopbar({
   orgName: string
   email: string
   canCreateContact?: boolean
+  canCreateProduct?: boolean
+  canViewProducts?: boolean
 }) {
   const router = useRouter()
   const supabase = createClient()
@@ -79,7 +83,9 @@ export default function AppTopbar({
 
           {quickOpen && (
             <div className="inv-dropdown" style={{ display: 'block', minWidth: 230, right: 0, left: 'auto' }}>
-              <div className="dd-section-label">CONTACTS &amp; PRODUCTS</div>
+              {(canCreateContact || (canViewProducts && canCreateProduct)) && (
+                <div className="dd-section-label">CONTACTS &amp; PRODUCTS</div>
+              )}
               {canCreateContact && (
               <div className="dd-item" onClick={() => { setQuickOpen(false); router.push('/contacts?new=1') }}>
                 <div className="dd-icon-wrap">
@@ -91,6 +97,7 @@ export default function AppTopbar({
                 New Contact
               </div>
               )}
+              {canViewProducts && canCreateProduct && (
               <div className="dd-item" onClick={() => { setQuickOpen(false); router.push('/products?new=1') }}>
                 <div className="dd-icon-wrap">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -99,6 +106,7 @@ export default function AppTopbar({
                 </div>
                 New Product
               </div>
+              )}
 
               <div className="dd-sep" />
 

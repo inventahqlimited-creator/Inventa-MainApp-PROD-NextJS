@@ -213,22 +213,22 @@ function BinsModal({ location, orgId, onClose, onUpdate }: {
   return (
     <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
       <div className="modal-box" style={{ maxWidth: 620 }}>
-        <div className="modal-header">
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', padding: '18px 20px 14px', borderBottom: '1px solid var(--gray-100)' }}>
           <div>
             <div className="modal-title">Manage Bins — {location.name}</div>
             <div className="modal-subtitle">Add storage bins to this location</div>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <button className="btn btn-outline" style={{ height: 32, fontSize: 12 }} onClick={downloadSample}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0, marginLeft: 16 }}>
+            <button className="btn btn-outline" style={{ height: 30, fontSize: 11.5, padding: '0 10px', display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }} onClick={downloadSample}>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
               Sample CSV
             </button>
-            <button className="btn btn-outline" style={{ height: 32, fontSize: 12 }} onClick={() => fileRef.current?.click()}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+            <button className="btn btn-outline" style={{ height: 30, fontSize: 11.5, padding: '0 10px', display: 'inline-flex', alignItems: 'center', gap: 5, whiteSpace: 'nowrap' }} onClick={() => fileRef.current?.click()}>
+              <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
               Import CSV
             </button>
             <input ref={fileRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={handleCsvUpload} />
-            <button className="modal-close" onClick={onClose}>
+            <button className="modal-close" onClick={onClose} style={{ marginLeft: 4 }}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             </button>
           </div>
@@ -397,6 +397,260 @@ function AddLocationModal({ orgId, onClose, onAdd }: {
         </div>
       </div>
     </div>
+  )
+}
+
+// ── Contacts Tab ─────────────────────────────────────────────────────
+
+type CustomField = { id: string; name: string; type: 'text' | 'number' | 'date' }
+type CustomList = { id: string; name: string; options: string[] }
+
+function InlineEditable({ value, onChange, style }: { value: string; onChange: (v: string) => void; style?: React.CSSProperties }) {
+  const [editing, setEditing] = useState(false)
+  const [draft, setDraft] = useState(value)
+  const inputRef = useRef<HTMLInputElement>(null)
+
+  function commit() {
+    const trimmed = draft.trim()
+    if (trimmed && trimmed !== value) onChange(trimmed)
+    else setDraft(value)
+    setEditing(false)
+  }
+
+  if (editing) {
+    return (
+      <input
+        ref={inputRef}
+        value={draft}
+        onChange={e => setDraft(e.target.value)}
+        onBlur={commit}
+        onKeyDown={e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') { setDraft(value); setEditing(false) } }}
+        autoFocus
+        style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--slate)', fontFamily: 'var(--font-display)', border: 'none', borderBottom: '2px solid var(--teal)', outline: 'none', background: 'transparent', padding: '0 2px', width: Math.max(120, draft.length * 9), ...style }}
+      />
+    )
+  }
+  return (
+    <span
+      onDoubleClick={() => { setDraft(value); setEditing(true) }}
+      title="Double-click to rename"
+      style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--slate)', fontFamily: 'var(--font-display)', cursor: 'text', borderBottom: '1px dashed transparent', ...style }}
+      onMouseOver={e => (e.currentTarget.style.borderBottomColor = 'var(--gray-300)')}
+      onMouseOut={e => (e.currentTarget.style.borderBottomColor = 'transparent')}
+    >
+      {value}
+    </span>
+  )
+}
+
+function ContactsTab({ taxRates, currencies, locations, orgId, showToast }: {
+  taxRates: TaxRate[]
+  currencies: Currency[]
+  locations: Location[]
+  orgId: string
+  showToast: (type: 'success' | 'error', msg: string) => void
+}) {
+  const [defTaxRate, setDefTaxRate] = useState('')
+  const [defCurrency, setDefCurrency] = useState('')
+  const [defLocation, setDefLocation] = useState('')
+  const [defPaymentTerms, setDefPaymentTerms] = useState('Net 30')
+  const [defPriceTier, setDefPriceTier] = useState('Retail')
+  const [saving, setSaving] = useState(false)
+
+  // Custom Fields
+  const [customFields, setCustomFields] = useState<CustomField[]>([])
+  const nextFieldId = useRef(1)
+
+  function addField() {
+    const id = `cf-${nextFieldId.current++}`
+    setCustomFields(prev => [...prev, { id, name: `Custom Field ${prev.length + 1}`, type: 'text' }])
+  }
+  function renameField(id: string, name: string) {
+    setCustomFields(prev => prev.map(f => f.id === id ? { ...f, name } : f))
+  }
+  function setFieldType(id: string, type: CustomField['type']) {
+    setCustomFields(prev => prev.map(f => f.id === id ? { ...f, type } : f))
+  }
+  function deleteField(id: string) {
+    setCustomFields(prev => prev.filter(f => f.id !== id))
+  }
+
+  // Custom Lists
+  const [customLists, setCustomLists] = useState<CustomList[]>([])
+  const nextListId = useRef(1)
+  const [expandedList, setExpandedList] = useState<string | null>(null)
+  const [newOptionText, setNewOptionText] = useState<Record<string, string>>({})
+
+  function addList() {
+    const id = `cl-${nextListId.current++}`
+    setCustomLists(prev => [...prev, { id, name: `Custom List ${prev.length + 1}`, options: [] }])
+    setExpandedList(id)
+  }
+  function renameList(id: string, name: string) {
+    setCustomLists(prev => prev.map(l => l.id === id ? { ...l, name } : l))
+  }
+  function deleteList(id: string) {
+    setCustomLists(prev => prev.filter(l => l.id !== id))
+    if (expandedList === id) setExpandedList(null)
+  }
+  function addOption(listId: string) {
+    const text = (newOptionText[listId] ?? '').trim()
+    if (!text) return
+    setCustomLists(prev => prev.map(l => l.id === listId ? { ...l, options: [...l.options, text] } : l))
+    setNewOptionText(prev => ({ ...prev, [listId]: '' }))
+  }
+  function deleteOption(listId: string, opt: string) {
+    setCustomLists(prev => prev.map(l => l.id === listId ? { ...l, options: l.options.filter(o => o !== opt) } : l))
+  }
+
+  const taxOptions = [
+    { value: '', label: '— None —' },
+    ...taxRates.map(t => ({ value: t.id, label: `${t.code} — ${t.name} (${t.rate}%)` }))
+  ]
+  const currencyOptions = [
+    { value: '', label: '— None —' },
+    ...currencies.map(c => ({ value: c.id, label: `${c.code} — ${c.name}` }))
+  ]
+  const locationOptions = [
+    { value: '', label: '— None —' },
+    ...locations.filter(l => l.active).map(l => ({ value: l.id, label: l.name }))
+  ]
+
+  async function save() {
+    setSaving(true)
+    await new Promise(r => setTimeout(r, 400))
+    setSaving(false)
+    showToast('success', 'Contact defaults saved')
+  }
+
+  return (
+    <>
+      <Card title="Default Contact Settings" subtitle="Pre-filled values when adding a new contact" action={<SaveBtn onClick={save} saving={saving} />}>
+        <div style={{ padding: '16px 20px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
+          <Field label="Default Tax Rate">
+            <Select value={defTaxRate} onChange={setDefTaxRate} options={taxOptions} />
+          </Field>
+          <Field label="Default Currency">
+            <Select value={defCurrency} onChange={setDefCurrency} options={currencyOptions} />
+          </Field>
+          <Field label="Default Location">
+            <Select value={defLocation} onChange={setDefLocation} options={locationOptions} />
+          </Field>
+          <Field label="Default Payment Terms">
+            <Select value={defPaymentTerms} onChange={setDefPaymentTerms} options={['Net 7','Net 14','Net 30','Net 60','COD','Prepaid'].map(t => ({ value: t, label: t }))} />
+          </Field>
+          <Field label="Default Price Tier">
+            <Select value={defPriceTier} onChange={setDefPriceTier} options={['Retail','Wholesale','VIP'].map(t => ({ value: t, label: t }))} />
+          </Field>
+        </div>
+      </Card>
+
+      {/* Custom Fields + Custom Lists side by side */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, marginBottom: 20 }}>
+
+        {/* Custom Fields */}
+        <div style={{ background: 'var(--white)', border: '1px solid var(--gray-100)', borderRadius: 14, boxShadow: '0 1px 4px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid var(--gray-100)' }}>
+            <div>
+              <div style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 700, color: 'var(--slate)' }}>Custom Fields</div>
+              <div style={{ fontSize: 12.5, color: 'var(--gray-400)', marginTop: 2 }}>Text, number or date fields for contacts</div>
+            </div>
+            <button className="btn btn-primary" style={{ height: 32, fontSize: 12.5 }} onClick={addField}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Add Field
+            </button>
+          </div>
+          <div style={{ padding: '10px 16px', display: 'flex', flexDirection: 'column', gap: 8, minHeight: 60 }}>
+            {customFields.length === 0 && (
+              <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--gray-300)', fontSize: 12.5 }}>No custom fields yet.</div>
+            )}
+            {customFields.map(f => (
+              <div key={f.id} style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: 'var(--gray-50)', border: '1.5px solid var(--gray-200)', borderRadius: 10 }}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--gray-300)" strokeWidth="2" style={{ flexShrink: 0 }}><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+                <InlineEditable value={f.name} onChange={name => renameField(f.id, name)} />
+                <div style={{ display: 'flex', gap: 4, marginLeft: 'auto' }}>
+                  {(['text','number','date'] as const).map(t => (
+                    <button key={t} onClick={() => setFieldType(f.id, t)} style={{ fontSize: 11, padding: '2px 8px', borderRadius: 20, border: `1.5px solid ${f.type === t ? 'var(--teal)' : 'var(--gray-200)'}`, background: f.type === t ? 'var(--teal-surface)' : 'var(--white)', color: f.type === t ? 'var(--teal)' : 'var(--gray-400)', cursor: 'pointer', fontWeight: f.type === t ? 700 : 400 }}>{t}</button>
+                  ))}
+                </div>
+                <button onClick={() => deleteField(f.id)} style={{ width: 24, height: 24, borderRadius: 6, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--gray-300)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}
+                  onMouseOver={e => (e.currentTarget.style.color = 'var(--danger)')}
+                  onMouseOut={e => (e.currentTarget.style.color = 'var(--gray-300)')}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+                </button>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Custom Lists */}
+        <div style={{ background: 'var(--white)', border: '1px solid var(--gray-100)', borderRadius: 14, boxShadow: '0 1px 4px rgba(0,0,0,0.05)', overflow: 'hidden' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px', borderBottom: '1px solid var(--gray-100)' }}>
+            <div>
+              <div style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 700, color: 'var(--slate)' }}>Custom Lists</div>
+              <div style={{ fontSize: 12.5, color: 'var(--gray-400)', marginTop: 2 }}>Dropdown lists for contacts</div>
+            </div>
+            <button className="btn btn-primary" style={{ height: 32, fontSize: 12.5 }} onClick={addList}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+              Add List
+            </button>
+          </div>
+          <div style={{ padding: '10px 16px', display: 'flex', flexDirection: 'column', gap: 8, minHeight: 60 }}>
+            {customLists.length === 0 && (
+              <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--gray-300)', fontSize: 12.5 }}>No custom lists yet.</div>
+            )}
+            {customLists.map(l => (
+              <div key={l.id} style={{ border: '1.5px solid var(--gray-200)', borderRadius: 10, overflow: 'hidden' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', background: 'var(--gray-50)' }}>
+                  <button onClick={() => setExpandedList(expandedList === l.id ? null : l.id)}
+                    style={{ width: 24, height: 24, borderRadius: 6, border: '1.5px solid var(--gray-200)', background: 'var(--white)', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: 'var(--gray-400)', transition: 'transform 0.15s' }}>
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ transform: expandedList === l.id ? 'rotate(180deg)' : 'rotate(0deg)', transition: 'transform 0.15s' }}><polyline points="6 9 12 15 18 9"/></svg>
+                  </button>
+                  <div>
+                    <InlineEditable value={l.name} onChange={name => renameList(l.id, name)} />
+                    <div style={{ fontSize: 11.5, color: 'var(--gray-400)', marginTop: 1 }}>{l.options.length} {l.options.length === 1 ? 'option' : 'options'}</div>
+                  </div>
+                  <button onClick={() => deleteList(l.id)} style={{ marginLeft: 'auto', width: 24, height: 24, borderRadius: 6, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--gray-300)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                    onMouseOver={e => (e.currentTarget.style.color = 'var(--danger)')}
+                    onMouseOut={e => (e.currentTarget.style.color = 'var(--gray-300)')}>
+                    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+                  </button>
+                </div>
+                {expandedList === l.id && (
+                  <div style={{ padding: '8px 12px 10px', background: 'var(--white)', borderTop: '1px solid var(--gray-100)' }}>
+                    {l.options.map(opt => (
+                      <div key={opt} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '5px 8px', borderRadius: 7, marginBottom: 3 }}
+                        onMouseOver={e => (e.currentTarget.style.background = 'var(--gray-50)')}
+                        onMouseOut={e => (e.currentTarget.style.background = 'transparent')}>
+                        <span style={{ fontSize: 13, color: 'var(--slate)' }}>{opt}</span>
+                        <button onClick={() => deleteOption(l.id, opt)} style={{ width: 20, height: 20, borderRadius: 5, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--gray-300)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                          onMouseOver={e => (e.currentTarget.style.color = 'var(--danger)')}
+                          onMouseOut={e => (e.currentTarget.style.color = 'var(--gray-300)')}>
+                          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                        </button>
+                      </div>
+                    ))}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginTop: 4, padding: '2px 4px' }}>
+                      <input
+                        className="modal-input"
+                        value={newOptionText[l.id] ?? ''}
+                        onChange={e => setNewOptionText(prev => ({ ...prev, [l.id]: e.target.value }))}
+                        onKeyDown={e => { if (e.key === 'Enter') addOption(l.id) }}
+                        placeholder="+ Add option"
+                        style={{ fontSize: 12.5, height: 30, border: '1.5px dashed var(--gray-200)', background: 'transparent' }}
+                      />
+                      {(newOptionText[l.id] ?? '').trim() && (
+                        <button className="btn btn-primary" style={{ height: 30, fontSize: 12, padding: '0 10px' }} onClick={() => addOption(l.id)}>Add</button>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </>
   )
 }
 
@@ -586,9 +840,9 @@ export default function SettingsClient({
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
 
-      {/* Page header — same width as content below */}
-      <div className="page-header-card" style={{ borderRadius: 0, borderLeft: 'none', borderRight: 'none', borderTop: 'none' }}>
-        <div className="page-header-top">
+      {/* Page header */}
+      <div style={{ background: 'var(--white)', borderBottom: '1px solid var(--gray-100)', padding: '20px 24px 0', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
           <div>
             <div className="page-title">Settings</div>
             <div className="page-subtitle">Manage your workspace configuration</div>
@@ -714,18 +968,18 @@ export default function SettingsClient({
                 Add Tax Rate
               </button>
             }>
-              <div style={{ padding: '12px 20px 16px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: 10, alignItems: 'end', borderBottom: '1px solid var(--gray-100)' }}>
+              <div style={{ padding: '12px 20px 16px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, alignItems: 'end', borderBottom: '1px solid var(--gray-100)' }}>
                 <Field label="Tax Name"><MInput value={newTaxName} onChange={setNewTaxName} placeholder="e.g. GST" /></Field>
                 <Field label="Tax Code"><MInput value={newTaxCode} onChange={setNewTaxCode} placeholder="e.g. GST15" /></Field>
                 <Field label="Rate (%)"><MInput value={newTaxRate} onChange={setNewTaxRate} placeholder="e.g. 15" type="number" /></Field>
-                <button className="btn btn-outline" style={{ height: 36, marginBottom: 0 }} onClick={addTaxRate}>Add</button>
               </div>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ background: 'var(--gray-50)' }}>
-                    <th className="li-th">Tax Code</th><th className="li-th">Name</th>
-                    <th className="li-th" style={{ textAlign: 'right' }}>Rate (%)</th>
-                    <th className="li-th" style={{ width: 40 }} />
+                    <th className="li-th" style={{ width: 120 }}>Tax Code</th>
+                    <th className="li-th">Name</th>
+                    <th className="li-th" style={{ width: 100, textAlign: 'right' }}>Rate (%)</th>
+                    <th className="li-th" style={{ width: 44 }} />
                   </tr>
                 </thead>
                 <tbody>
@@ -734,9 +988,9 @@ export default function SettingsClient({
                     <tr key={t.id} style={{ borderBottom: '1px solid var(--gray-100)' }}>
                       <td className="li-td"><span style={{ fontFamily: 'monospace', fontSize: 13, fontWeight: 600, color: 'var(--slate)' }}>{t.code}</span></td>
                       <td className="li-td" style={{ color: 'var(--gray-900)', fontSize: 13 }}>{t.name}</td>
-                      <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: 'var(--slate)' }}>{t.rate}%</td>
-                      <td className="li-td">
-                        <button onClick={() => deleteTaxRate(t.id)} style={{ width: 26, height: 26, borderRadius: 7, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--gray-400)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                      <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: 'var(--slate)', paddingRight: 20 }}>{t.rate}%</td>
+                      <td className="li-td" style={{ textAlign: 'center' }}>
+                        <button onClick={() => deleteTaxRate(t.id)} style={{ width: 26, height: 26, borderRadius: 7, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--gray-400)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
                           onMouseOver={e => (e.currentTarget.style.color = 'var(--danger)')}
                           onMouseOut={e => (e.currentTarget.style.color = 'var(--gray-400)')}>
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
@@ -807,18 +1061,18 @@ export default function SettingsClient({
                 Add Currency
               </button>
             }>
-              <div style={{ padding: '12px 20px 16px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr auto', gap: 10, alignItems: 'end', borderBottom: '1px solid var(--gray-100)' }}>
+              <div style={{ padding: '12px 20px 16px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 10, alignItems: 'end', borderBottom: '1px solid var(--gray-100)' }}>
                 <Field label="Code"><MInput value={newCurrCode} onChange={setNewCurrCode} placeholder="e.g. USD" /></Field>
                 <Field label="Name"><MInput value={newCurrName} onChange={setNewCurrName} placeholder="e.g. US Dollar" /></Field>
                 <Field label="Exchange Rate"><MInput value={newCurrRate} onChange={setNewCurrRate} placeholder="e.g. 0.62" type="number" /></Field>
-                <button className="btn btn-outline" style={{ height: 36 }} onClick={addCurrency}>Add</button>
               </div>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ background: 'var(--gray-50)' }}>
-                    <th className="li-th">Code</th><th className="li-th">Name</th>
-                    <th className="li-th" style={{ textAlign: 'right' }}>Rate to {String(baseCurrency)}</th>
-                    <th className="li-th" style={{ width: 40 }} />
+                    <th className="li-th" style={{ width: 100 }}>Code</th>
+                    <th className="li-th">Name</th>
+                    <th className="li-th" style={{ width: 140, textAlign: 'right' }}>Rate to {String(baseCurrency)}</th>
+                    <th className="li-th" style={{ width: 44 }} />
                   </tr>
                 </thead>
                 <tbody>
@@ -827,9 +1081,9 @@ export default function SettingsClient({
                     <tr key={c.id} style={{ borderBottom: '1px solid var(--gray-100)' }}>
                       <td className="li-td"><span style={{ fontFamily: 'monospace', fontSize: 13, fontWeight: 700, color: 'var(--slate)' }}>{c.code}</span></td>
                       <td className="li-td" style={{ color: 'var(--gray-900)', fontSize: 13 }}>{c.name}</td>
-                      <td className="li-td" style={{ textAlign: 'right', color: 'var(--gray-400)' }}>{c.rate}</td>
-                      <td className="li-td">
-                        <button onClick={() => deleteCurrency(c.id)} style={{ width: 26, height: 26, borderRadius: 7, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--gray-400)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                      <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: 'var(--slate)', paddingRight: 20 }}>{c.rate}</td>
+                      <td className="li-td" style={{ textAlign: 'center' }}>
+                        <button onClick={() => deleteCurrency(c.id)} style={{ width: 26, height: 26, borderRadius: 7, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--gray-400)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
                           onMouseOver={e => (e.currentTarget.style.color = 'var(--danger)')}
                           onMouseOut={e => (e.currentTarget.style.color = 'var(--gray-400)')}>
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
@@ -845,22 +1099,13 @@ export default function SettingsClient({
 
         {/* ── CONTACTS ── */}
         {tab === 'contacts' && (
-          <Card title="Default Contact Settings" subtitle="Pre-filled values when adding a new contact" action={<SaveBtn onClick={() => showToast('success', 'Contact defaults saved')} />}>
-            <div style={{ padding: '16px 20px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 14 }}>
-              <Field label="Default Tax Rate">
-                <Select value="15% — GST (NZ)" onChange={() => {}} options={['0% — Tax Exempt','10% — GST (AU)','15% — GST (NZ)','20% — VAT (UK)'].map(t => ({ value: t, label: t }))} />
-              </Field>
-              <Field label="Default Payment Terms">
-                <Select value="Net 30" onChange={() => {}} options={['Net 7','Net 14','Net 30','Net 60','COD','Prepaid'].map(t => ({ value: t, label: t }))} />
-              </Field>
-              <Field label="Default Price Tier">
-                <Select value="Retail" onChange={() => {}} options={['Retail','Wholesale','VIP'].map(t => ({ value: t, label: t }))} />
-              </Field>
-              <Field label="Default Currency">
-                <Select value="NZD" onChange={() => {}} options={['NZD','AUD','USD','GBP','EUR'].map(t => ({ value: t, label: t }))} />
-              </Field>
-            </div>
-          </Card>
+          <ContactsTab
+            taxRates={taxRates}
+            currencies={currencies}
+            locations={locations}
+            orgId={orgId}
+            showToast={showToast}
+          />
         )}
 
         {/* ── PRODUCTS ── */}

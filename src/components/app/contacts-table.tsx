@@ -288,6 +288,7 @@ export default function ContactsTable({
     setOrders([])
     const existing = (c as Record<string, unknown>).custom_fields as Record<string, string> | null
     setCustomFieldValues(existing ?? {})
+    loadAdditionalAddresses(c.id)
   }
 
   function closeModal() {
@@ -333,13 +334,6 @@ export default function ContactsTable({
       }
     }
 
-    // Validate additional address emails
-    for (let i = 0; i < additionalAddresses.length; i++) {
-      if (!additionalAddresses[i].email.trim()) {
-        setError(`Address "${additionalAddresses[i].label || `#${i + 1}`}" requires an email address.`)
-        return
-      }
-    }
 
     setSaving(true)
     setError(null)
@@ -378,10 +372,14 @@ export default function ContactsTable({
 
     const contactId: string = isEdit ? activeContact.id : data.id
 
+    const updatedContact = isEdit
+      ? { ...activeContact, ...payload } as Contact
+      : { ...payload, id: contactId, balance_owing: 0 } as Contact
+
     if (isEdit) {
-      setContacts(prev => prev.map(c => c.id === activeContact.id ? { ...c, ...payload } : c))
+      setContacts(prev => prev.map(c => c.id === activeContact.id ? updatedContact : c))
     } else {
-      setContacts(prev => [...prev, { ...payload, id: contactId, balance_owing: 0 } as Contact])
+      setContacts(prev => [...prev, updatedContact])
     }
 
     // Save additional addresses — runs for both new and edit
@@ -399,7 +397,11 @@ export default function ContactsTable({
       }
     }
 
-    closeModal()
+    if (isEdit) {
+      openView(updatedContact)
+    } else {
+      closeModal()
+    }
   }
 
   async function bulkAction(action: 'active' | 'inactive') {
@@ -974,8 +976,8 @@ export default function ContactsTable({
                             <Field label="Contact Name">
                               <input className="modal-input" value={addr.contact_name} onChange={e => { const a = [...additionalAddresses]; a[idx].contact_name = e.target.value; setAdditionalAddresses(a) }} placeholder="e.g. Receiving Team" disabled={modal === 'view'} style={{ opacity: modal === 'view' ? 0.7 : 1 }} />
                             </Field>
-                            <Field label="Email" required>
-                              <input className="modal-input" type="email" value={addr.email} onChange={e => { const a = [...additionalAddresses]; a[idx].email = e.target.value; setAdditionalAddresses(a) }} placeholder="warehouse@example.com" disabled={modal === 'view'} style={{ opacity: modal === 'view' ? 0.7 : 1, borderColor: !addr.email.trim() && modal !== 'view' ? 'var(--red, #EF4444)' : undefined }} />
+                            <Field label="Email">
+                              <input className="modal-input" type="email" value={addr.email} onChange={e => { const a = [...additionalAddresses]; a[idx].email = e.target.value; setAdditionalAddresses(a) }} placeholder="warehouse@example.com" disabled={modal === 'view'} style={{ opacity: modal === 'view' ? 0.7 : 1 }} />
                             </Field>
                             <Field label="Phone">
                               <input className="modal-input" value={addr.phone} onChange={e => { const a = [...additionalAddresses]; a[idx].phone = e.target.value; setAdditionalAddresses(a) }} placeholder="+64 9 000 0000" disabled={modal === 'view'} style={{ opacity: modal === 'view' ? 0.7 : 1 }} />

@@ -655,6 +655,14 @@ function ContactsTab({ taxRates, currencies, locations, orgId, showToast }: {
     })
   }
 
+  async function renameOption(listId: string, optionId: string, value: string) {
+    setCustomLists(prev => prev.map(l => l.id === listId ? { ...l, options: l.options.map(o => o.id === optionId ? { ...o, value } : o) } : l))
+    await fetch(`/api/org/contact-custom-lists/${listId}/options`, {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ option_id: optionId, value }),
+    })
+  }
+
   const taxOptions = [
     { value: '', label: '— None —' },
     ...taxRates.map(t => ({ value: t.id, label: `${t.code} — ${t.name} (${t.rate}%)` }))
@@ -778,7 +786,7 @@ function ContactsTab({ taxRates, currencies, locations, orgId, showToast }: {
                       <div key={opt.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '5px 8px', borderRadius: 7, marginBottom: 3 }}
                         onMouseOver={e => (e.currentTarget.style.background = 'var(--gray-50)')}
                         onMouseOut={e => (e.currentTarget.style.background = 'transparent')}>
-                        <span style={{ fontSize: 13, color: 'var(--slate)' }}>{opt.value}</span>
+                        <InlineEditable value={opt.value} onChange={v => renameOption(l.id, opt.id, v)} style={{ fontSize: 13 }} />
                         <button onClick={() => deleteOption(l.id, opt.id)} style={{ width: 20, height: 20, borderRadius: 5, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--gray-300)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
                           onMouseOver={e => (e.currentTarget.style.color = 'var(--danger)')}
                           onMouseOut={e => (e.currentTarget.style.color = 'var(--gray-300)')}>
@@ -876,10 +884,18 @@ export default function SettingsClient({
   const [newCurrRate, setNewCurrRate] = useState('')
 
   // Products settings
-  const [serialTracking, setSerialTracking] = useState(false)
-  const [batchTracking, setBatchTracking] = useState(false)
-  const [expiryTracking, setExpiryTracking] = useState(false)
-  const [decimalQty, setDecimalQty] = useState(false)
+  const [serialTracking, setSerialTracking] = useState(Boolean(org.serial_tracking))
+  const [batchTracking, setBatchTracking] = useState(Boolean(org.batch_tracking))
+  const [expiryTracking, setExpiryTracking] = useState(Boolean(org.expiry_tracking))
+  const [decimalQty, setDecimalQty] = useState(Boolean(org.decimal_qty))
+
+  async function saveProductSetting(key: string, value: unknown) {
+    await fetch('/api/org/settings', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ [key]: value }),
+    })
+    showToast('success', 'Setting saved')
+  }
 
   // Purchases settings
   const [allowOverReceive, setAllowOverReceive] = useState(false)
@@ -1276,14 +1292,14 @@ export default function SettingsClient({
           <>
             <Card title="Inventory Tracking" subtitle="Configure serial and batch tracking defaults">
               <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <ToggleRow label="Serial Number Tracking" sub="Track individual serial numbers for each unit received" active={serialTracking} onChange={setSerialTracking} />
-                <ToggleRow label="Batch / Lot Tracking" sub="Group received items into batches or lots for traceability" active={batchTracking} onChange={setBatchTracking} />
-                <ToggleRow label="Expiry Date Tracking" sub="All new products will have expiry date tracking enabled by default" active={expiryTracking} onChange={setExpiryTracking} />
+                <ToggleRow label="Serial Number Tracking" sub="Track individual serial numbers for each unit received" active={serialTracking} onChange={v => { setSerialTracking(v); saveProductSetting('serial_tracking', v) }} />
+                <ToggleRow label="Batch / Lot Tracking" sub="Group received items into batches or lots for traceability" active={batchTracking} onChange={v => { setBatchTracking(v); saveProductSetting('batch_tracking', v) }} />
+                <ToggleRow label="Expiry Date Tracking" sub="All new products will have expiry date tracking enabled by default" active={expiryTracking} onChange={v => { setExpiryTracking(v); saveProductSetting('expiry_tracking', v) }} />
               </div>
             </Card>
             <Card title="Quantity Settings" subtitle="Control how quantities are entered and displayed">
               <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <ToggleRow label="Allow Decimal Quantities" sub="Enables buying and selling in fractional quantities (e.g. 0.5, 1.25)" active={decimalQty} onChange={setDecimalQty} />
+                <ToggleRow label="Allow Decimal Quantities" sub="Enables buying and selling in fractional quantities (e.g. 0.5, 1.25)" active={decimalQty} onChange={v => { setDecimalQty(v); saveProductSetting('decimal_qty', v) }} />
               </div>
             </Card>
           </>

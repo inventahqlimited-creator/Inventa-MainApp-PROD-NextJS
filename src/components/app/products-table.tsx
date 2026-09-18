@@ -510,7 +510,8 @@ function ImportModal({ orgId, customFields, customLists, taxRates, suppliers, pr
             const pl = priceLevels.find(p => p.name === pd.price_level)
             return pl ? [{ org_id: orgId, product_id: newProduct.id, level_id: pl.id, price: pd.price, break_qty: pd.break_qty }] : []
           })
-          if (pricingRows.length > 0) await sb.from('product_pricing').insert(pricingRows)
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          if (pricingRows.length > 0) await sb.from('product_pricing').insert(pricingRows as any[])
         }
       } else {
         let errMsg = `Row failed (status ${res.status})`

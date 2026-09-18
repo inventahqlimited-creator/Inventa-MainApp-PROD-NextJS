@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 
 type Product = {
@@ -121,7 +121,7 @@ function fmt(n: number | null | undefined, dp = 2) {
 }
 
 function typeBadge(type: string) {
-  if (type === 'NonStock') return <span className="badge" style={{ background: '#EDE9FE', color: '#5B21B6' }}>Non-Stock</span>
+  if (type === 'NonStock') return <span className="badge" style={{ background: '#EDE9FE', color: '#5B21B6' }}>Non Stock</span>
   if (type === 'Service') return <span className="badge" style={{ background: '#DBEAFE', color: '#1E40AF' }}>Service</span>
   return <span className="badge" style={{ background: 'var(--teal-pale)', color: '#0B7A6E' }}>Stock</span>
 }
@@ -222,6 +222,232 @@ type OrgSettings = {
   expiry_tracking?: boolean
 }
 
+// ── Export Modal ──────────────────────────────────────────────────────────────
+function ExportModal({ products, customFields, decimalPlaces, onClose }: {
+  products: Product[]
+  customFields: CustomField[]
+  decimalPlaces: number
+  onClose: () => void
+}) {
+  const [includeInactive, setIncludeInactive] = useState(false)
+
+  function doExport() {
+    const rows = includeInactive ? products : products.filter(p => p.is_active)
+    const stdHeaders = ['Product ID', 'Name', 'SKU', 'Type', 'Description', 'Barcode', 'Sell Price', 'Cost Price', 'Tax Rate', 'Sell UOM', 'Buy UOM', 'Track Stock', 'Serial Tracking', 'Batch Tracking', 'Expiry Tracking', 'Active']
+    const cfHeaders = customFields.map(f => f.name)
+    const headers = [...stdHeaders, ...cfHeaders]
+
+    const escape = (v: unknown) => {
+      const s = v == null ? '' : String(v)
+      return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s
+    }
+
+    const lines = [
+      headers.join(','),
+      ...rows.map(p => {
+        const cf = (p.custom_fields ?? {}) as Record<string, string>
+        return [
+          p.id, p.name, p.sku ?? '', p.type, p.description ?? '', p.barcode ?? '',
+          p.sell_price != null ? Number(p.sell_price).toFixed(decimalPlaces) : '',
+          p.cost_price != null ? Number(p.cost_price).toFixed(decimalPlaces) : '',
+          p.tax_rate ?? '', p.sell_uom ?? '', p.buy_uom ?? '',
+          p.track_stock ? 'Yes' : 'No',
+          p.serial_tracking ? 'Yes' : 'No',
+          p.batch_tracking ? 'Yes' : 'No',
+          p.expiry_tracking ? 'Yes' : 'No',
+          p.is_active ? 'Yes' : 'No',
+          ...customFields.map(f => cf[f.id] ?? ''),
+        ].map(escape).join(',')
+      }),
+    ]
+
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `products-${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+    onClose()
+  }
+
+  return (
+    <div className="modal-body" style={{ paddingTop: 8 }}>
+      <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13.5, color: 'var(--slate)', cursor: 'pointer', userSelect: 'none' }}>
+        <input type="checkbox" checked={includeInactive} onChange={e => setIncludeInactive(e.target.checked)} style={{ accentColor: 'var(--teal)', width: 15, height: 15, cursor: 'pointer' }} />
+        Include inactive products
+      </label>
+      <div className="modal-footer" style={{ marginTop: 20 }}>
+        <button className="btn btn-outline" onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary" onClick={doExport}>Export CSV</button>
+      </div>
+    </div>
+  )
+}
+
+// ── Import Modal ──────────────────────────────────────────────────────────────
+function ImportModal({ orgId, customFields, onClose, onImported }: {
+  orgId: string
+  customFields: CustomField[]
+  onClose: () => void
+  onImported: (products: unknown[]) => void
+}) {
+  const [file, setFile] = useState<File | null>(null)
+  const [skipDupes, setSkipDupes] = useState(true)
+  const [dragging, setDragging] = useState(false)
+  const [importing, setImporting] = useState(false)
+  const [errors, setErrors] = useState<string[]>([])
+  const [imported, setImported] = useState<number | null>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
+
+  function downloadTemplate() {
+    const stdHeaders = ['Name*', 'SKU*', 'Type (Stock/NonStock/Service)', 'Description', 'Barcode', 'Sell Price', 'Cost Price', 'Tax Rate', 'Sell UOM', 'Buy UOM', 'Track Stock (Yes/No)', 'Notes']
+    const cfHeaders = customFields.map(f => f.name)
+    const csv = [...stdHeaders, ...cfHeaders].join(',')
+    const blob = new Blob([csv + '\n'], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url; a.download = 'products-template.csv'; a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  async function doImport() {
+    if (!file) return
+    setImporting(true)
+    setErrors([])
+    const text = await file.text()
+    const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+    if (lines.length < 2) { setErrors(['File is empty or has no data rows.']); setImporting(false); return }
+
+    const rawHeaders = lines[0].split(',').map(h => h.replace(/^"|"$/g, '').trim().toLowerCase())
+    const nameIdx = rawHeaders.findIndex(h => h.includes('name'))
+    const skuIdx = rawHeaders.findIndex(h => h.includes('sku') || h.includes('product #') || h.includes('product id'))
+
+    const parseRow = (line: string): string[] => {
+      const result: string[] = []
+      let cur = '', inQ = false
+      for (const ch of line) {
+        if (ch === '"') { inQ = !inQ } else if (ch === ',' && !inQ) { result.push(cur); cur = '' } else { cur += ch }
+      }
+      result.push(cur)
+      return result
+    }
+
+    // Phase 1: validate
+    const rowErrors: string[] = []
+    const dataRows = lines.slice(1)
+    for (let i = 0; i < dataRows.length; i++) {
+      const cols = parseRow(dataRows[i])
+      const name = nameIdx >= 0 ? cols[nameIdx]?.trim() : ''
+      if (!name) rowErrors.push(`Row ${i + 2}: Product Name is required`)
+    }
+    if (rowErrors.length > 0) { setErrors(rowErrors); setImporting(false); return }
+
+    // Phase 2: create
+    const created: unknown[] = []
+    for (const line of dataRows) {
+      const cols = parseRow(line)
+      const get = (idx: number) => (cols[idx] ?? '').trim()
+      const name = nameIdx >= 0 ? get(nameIdx) : ''
+      if (!name) continue
+
+      const cfValues: Record<string, string> = {}
+      customFields.forEach(f => {
+        const idx = rawHeaders.findIndex(h => h === f.name.toLowerCase())
+        if (idx >= 0) cfValues[f.id] = get(idx)
+      })
+
+      const payload: Record<string, unknown> = {
+        name,
+        sku: skuIdx >= 0 ? get(skuIdx) || null : null,
+        type: (() => { const t = get(rawHeaders.findIndex(h => h.includes('type'))).toLowerCase(); return t.includes('non') ? 'NonStock' : t.includes('serv') ? 'Service' : 'Stock' })(),
+        description: get(rawHeaders.findIndex(h => h.includes('desc'))) || null,
+        barcode: get(rawHeaders.findIndex(h => h.includes('barcode'))) || null,
+        sell_price: parseFloat(get(rawHeaders.findIndex(h => h.includes('sell price')))) || null,
+        cost_price: parseFloat(get(rawHeaders.findIndex(h => h.includes('cost price')))) || null,
+        tax_rate: get(rawHeaders.findIndex(h => h.includes('tax'))) || null,
+        sell_uom: get(rawHeaders.findIndex(h => h.includes('sell uom'))) || 'Each',
+        buy_uom: get(rawHeaders.findIndex(h => h.includes('buy uom'))) || 'Each',
+        track_stock: get(rawHeaders.findIndex(h => h.includes('track stock'))).toLowerCase() !== 'no',
+        notes: get(rawHeaders.findIndex(h => h.includes('notes'))) || null,
+        custom_fields: Object.keys(cfValues).length > 0 ? cfValues : null,
+      }
+
+      const res = await fetch('/api/org/products', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...payload, skip_if_sku_exists: skipDupes }),
+      })
+      if (res.ok) created.push(await res.json())
+    }
+
+    setImporting(false)
+    setImported(created.length)
+    if (created.length > 0) onImported(created)
+  }
+
+  if (imported !== null) {
+    return (
+      <div className="modal-body" style={{ textAlign: 'center', padding: '24px 20px' }}>
+        <div style={{ width: 52, height: 52, borderRadius: '50%', background: '#D1FAE5', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px' }}>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#065F46" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+        </div>
+        <div style={{ fontSize: 16, fontWeight: 700, color: 'var(--slate)', marginBottom: 6 }}>Import Complete</div>
+        <div style={{ fontSize: 13.5, color: 'var(--gray-400)', marginBottom: 20 }}>{imported} product{imported !== 1 ? 's' : ''} imported successfully.</div>
+        <button className="btn btn-primary" onClick={onClose}>Done</button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="modal-body" style={{ paddingTop: 4 }}>
+      <div
+        className={`import-drop-zone${dragging ? ' dragging' : ''}`}
+        onDragOver={e => { e.preventDefault(); setDragging(true) }}
+        onDragLeave={() => setDragging(false)}
+        onDrop={e => { e.preventDefault(); setDragging(false); const f = e.dataTransfer.files[0]; if (f?.name.endsWith('.csv')) setFile(f) }}
+        onClick={() => fileRef.current?.click()}
+      >
+        <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="var(--gray-300)" strokeWidth="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+        <div style={{ fontSize: 14, fontWeight: 600, color: 'var(--slate)', marginTop: 10 }}>Drop CSV file here</div>
+        <div style={{ fontSize: 13, color: 'var(--gray-400)', marginTop: 4 }}>
+          or <span style={{ color: 'var(--teal)', textDecoration: 'underline', cursor: 'pointer' }}>browse</span>
+        </div>
+        <div style={{ fontSize: 12.5, color: 'var(--gray-400)', marginTop: 6 }}>{file ? file.name : 'No file selected'}</div>
+        <input ref={fileRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={e => { const f = e.target.files?.[0]; if (f) setFile(f) }} />
+      </div>
+
+      <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, color: 'var(--slate)', cursor: 'pointer', userSelect: 'none', marginTop: 14 }}>
+        <input type="checkbox" checked={skipDupes} onChange={e => setSkipDupes(e.target.checked)} style={{ accentColor: 'var(--teal)', width: 14, height: 14, cursor: 'pointer', marginTop: 2 }} />
+        Skip duplicates — do not update existing products with the same Product ID
+      </label>
+
+      <div style={{ background: 'var(--gray-50)', border: '1px solid var(--gray-200)', borderRadius: 9, padding: '10px 14px', marginTop: 14, fontSize: 12.5, color: 'var(--gray-400)' }}>
+        Not sure about the format?{' '}
+        <span style={{ color: 'var(--teal)', textDecoration: 'underline', cursor: 'pointer', fontWeight: 500 }} onClick={downloadTemplate}>Download Sample Template</span>
+      </div>
+
+      {errors.length > 0 && (
+        <div style={{ background: '#FEF2F2', border: '1.5px solid #FECACA', borderRadius: 9, padding: '10px 14px', marginTop: 12, maxHeight: 140, overflowY: 'auto' }}>
+          <div style={{ fontSize: 12.5, fontWeight: 700, color: '#B91C1C', marginBottom: 6 }}>Please fix the following errors before importing:</div>
+          {errors.map((e, i) => <div key={i} style={{ fontSize: 12.5, color: '#B91C1C', marginBottom: 2 }}>• {e}</div>)}
+        </div>
+      )}
+
+      <div className="modal-footer" style={{ marginTop: 20 }}>
+        <button className="btn btn-outline" onClick={onClose}>Cancel</button>
+        <button className="btn btn-primary" onClick={doImport} disabled={!file || importing}>
+          {importing ? 'Importing…' : 'Import'}
+        </button>
+      </div>
+      <style>{`
+        .import-drop-zone { border: 2px dashed var(--gray-200); border-radius: 12px; padding: 28px 20px; text-align: center; cursor: pointer; transition: border-color .15s, background .15s; }
+        .import-drop-zone:hover, .import-drop-zone.dragging { border-color: var(--teal); background: var(--teal-surface); }
+      `}</style>
+    </div>
+  )
+}
+
 export default function ProductsTable({
   products: initialProducts,
   stockLevels,
@@ -280,16 +506,25 @@ export default function ProductsTable({
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(25)
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set())
-  const [visibleCols, setVisibleCols] = useState<Set<string>>(DEFAULT_VISIBLE)
+  const [visibleCols, setVisibleCols] = useState<Set<string>>(() => {
+    try {
+      const saved = localStorage.getItem('products-visible-cols')
+      if (saved) return new Set(JSON.parse(saved) as string[])
+    } catch {}
+    return DEFAULT_VISIBLE
+  })
   const [typeOpen, setTypeOpen] = useState(false)
   const [colOpen, setColOpen] = useState(false)
   const [actionsOpen, setActionsOpen] = useState(false)
   const [advOpen, setAdvOpen] = useState(false)
-  const [advType, setAdvType] = useState('')
+  const [advTracking, setAdvTracking] = useState<Set<string>>(new Set())
+  const [advUom, setAdvUom] = useState('')
   const [advSupplier, setAdvSupplier] = useState('')
   const [advStock, setAdvStock] = useState('')
   const [taxOpen, setTaxOpen] = useState(false)
   const [supplierOpen, setSupplierOpen] = useState(false)
+  const [showExport, setShowExport] = useState(false)
+  const [showImport, setShowImport] = useState(false)
 
   const [modal, setModal] = useState<'closed' | 'view' | 'add' | 'edit'>('closed')
   const [activeProduct, setActiveProduct] = useState<Product | null>(null)
@@ -464,8 +699,17 @@ export default function ProductsTable({
     return products.filter(p => {
       if (!showInactive && !p.is_active) return false
       if (typeFilter && p.type !== typeFilter) return false
-      if (advType && p.type !== advType) return false
       if (advSupplier && p.default_supplier_id !== advSupplier) return false
+      if (advUom && p.sell_uom !== advUom && p.buy_uom !== advUom) return false
+      if (advTracking.size > 0) {
+        const hasNone = advTracking.has('none')
+        const hasSer = advTracking.has('serial')
+        const hasBat = advTracking.has('batch')
+        const hasExp = advTracking.has('expiry')
+        const pNone = !p.serial_tracking && !p.batch_tracking && !p.expiry_tracking
+        const match = (hasNone && pNone) || (hasSer && p.serial_tracking) || (hasBat && p.batch_tracking) || (hasExp && p.expiry_tracking)
+        if (!match) return false
+      }
       const stock = stockMap[p.id]
       const onHand = stock?.onHand ?? 0
       if (tab === 'instock' && onHand <= 0) return false
@@ -479,7 +723,7 @@ export default function ProductsTable({
       }
       return true
     })
-  }, [products, search, typeFilter, tab, showInactive, stockMap, advType, advSupplier, advStock])
+  }, [products, search, typeFilter, tab, showInactive, stockMap, advTracking, advUom, advSupplier, advStock])
 
   const counts = useMemo(() => ({
     all: products.filter(p => showInactive || p.is_active).length,
@@ -513,7 +757,7 @@ export default function ProductsTable({
   const supplierName = (id: string) => suppliers?.find(s => s.id === id)?.name ?? 'Select supplier…'
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }} onClick={() => { setTypeOpen(false); setColOpen(false); setActionsOpen(false); setTaxOpen(false); setSupplierOpen(false) }}>
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }} onClick={() => { setTypeOpen(false); setColOpen(false); setActionsOpen(false); setTaxOpen(false); setSupplierOpen(false); setShowExport(false); setShowImport(false) }}>
 
       <div className="page-header-card">
         <div className="page-header-top">
@@ -528,21 +772,29 @@ export default function ProductsTable({
                 <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg>
               </button>
               {actionsOpen && (
-                <div className="inv-dropdown" style={{ display: 'block', minWidth: 190, padding: 6 }} onClick={e => e.stopPropagation()}>
-                  <div className="dd-item" onClick={() => setActionsOpen(false)}>
+                <div className="inv-dropdown" style={{ display: 'block', minWidth: 200, padding: 6 }} onClick={e => e.stopPropagation()}>
+                  <div className="dd-section-label">DATA</div>
+                  <div className="dd-item" onClick={() => { setActionsOpen(false); setShowExport(true) }}>
                     <div className="dd-icon-wrap"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></div>
                     Export Products
                   </div>
-                  <div className="dd-item" onClick={() => setActionsOpen(false)}>
+                  <div className="dd-item" onClick={() => { setActionsOpen(false); setShowImport(true) }}>
                     <div className="dd-icon-wrap"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div>
                     Import Products
                   </div>
                   <div className="dd-sep" />
+                  <div className="dd-section-label">STOCK</div>
                   <div className="dd-item" onClick={() => { setActionsOpen(false); router.push('/products/adjustments') }}>
                     <div className="dd-icon-wrap">
-                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="12" y1="1" x2="12" y2="23"/><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
                     </div>
                     Stock Adjustments
+                  </div>
+                  <div className="dd-item" onClick={() => { setActionsOpen(false); router.push('/products/movements') }}>
+                    <div className="dd-icon-wrap">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
+                    </div>
+                    Stock Movement
                   </div>
                 </div>
               )}
@@ -569,21 +821,21 @@ export default function ProductsTable({
         </div>
         <div style={{ position: 'relative' }}>
           <button className={`filter-dd-btn${typeFilter ? ' active-filter' : ''}`} onClick={() => setTypeOpen(o => !o)}>
-            <span>{typeFilter || 'All Types'}</span>
+            <span>{typeFilter === 'NonStock' ? 'Non Stock' : typeFilter || 'All Types'}</span>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
           {typeOpen && (
             <div className="inv-dropdown" style={{ display: 'block', minWidth: 160 }}>
               <div className="col-dropdown-title">Type</div>
-              {['', 'Stock', 'NonStock', 'Service'].map(val => (
-                <div key={val} className={`fp-item${typeFilter === val ? ' active' : ''}`} onClick={() => { setTypeFilter(val); setPage(1); setTypeOpen(false) }}>{val || 'All Types'}</div>
+              {[{ val: '', label: 'All Types' }, { val: 'Stock', label: 'Stock' }, { val: 'NonStock', label: 'Non Stock' }].map(({ val, label }) => (
+                <div key={val} className={`fp-item${typeFilter === val ? ' active' : ''}`} onClick={() => { setTypeFilter(val); setPage(1); setTypeOpen(false) }}>{label}</div>
               ))}
             </div>
           )}
         </div>
         <button className={`filter-btn${advOpen ? ' active' : ''}`} onClick={() => setAdvOpen(o => !o)}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
-          Advanced{(advType || advSupplier || advStock) ? ' •' : ''}
+          Advanced{(advTracking.size > 0 || advUom || advSupplier || advStock) ? ' •' : ''}
         </button>
         <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12.5, color: 'var(--gray-400)', cursor: 'pointer', userSelect: 'none', whiteSpace: 'nowrap' }}>
           <input type="checkbox" checked={showInactive} onChange={e => { setShowInactive(e.target.checked); setPage(1) }} style={{ accentColor: 'var(--teal)', cursor: 'pointer', width: 14, height: 14 }} />
@@ -601,7 +853,12 @@ export default function ProductsTable({
               {COLS.map(col => (
                 <label key={col.key} className="col-check-item">
                   <input type="checkbox" checked={v.has(col.key)} onChange={e => {
-                    setVisibleCols(prev => { const next = new Set(prev); e.target.checked ? next.add(col.key) : next.delete(col.key); return next })
+                    setVisibleCols(prev => {
+                      const next = new Set(prev)
+                      e.target.checked ? next.add(col.key) : next.delete(col.key)
+                      try { localStorage.setItem('products-visible-cols', JSON.stringify([...next])) } catch {}
+                      return next
+                    })
                   }} style={{ accentColor: 'var(--teal)', width: 14, height: 14, cursor: 'pointer' }} />
                   {col.label}
                 </label>
@@ -621,13 +878,30 @@ export default function ProductsTable({
             </button>
           </div>
           <div className="adv-filter-grid">
+            {/* Tracking — multi-select checkboxes */}
             <div className="adv-field">
-              <label>Product Type</label>
-              <select className="adv-input" value={advType} onChange={e => setAdvType(e.target.value)} style={{ cursor: 'pointer' }}>
-                <option value="">Any</option>
-                {['Stock', 'NonStock', 'Service'].map(t => <option key={t}>{t}</option>)}
-              </select>
+              <label>Tracking</label>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginTop: 2 }}>
+                {[{ key: 'serial', label: 'Serial' }, { key: 'batch', label: 'Batch / Lot' }, { key: 'expiry', label: 'Expiry Date' }, { key: 'none', label: 'No Tracking' }].map(({ key, label }) => (
+                  <label key={key} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13, color: 'var(--slate)', cursor: 'pointer', userSelect: 'none' }}>
+                    <input type="checkbox" checked={advTracking.has(key)} onChange={e => {
+                      setAdvTracking(prev => { const next = new Set(prev); e.target.checked ? next.add(key) : next.delete(key); return next })
+                    }} style={{ accentColor: 'var(--teal)', width: 14, height: 14, cursor: 'pointer' }} />
+                    {label}
+                  </label>
+                ))}
+              </div>
             </div>
+            {/* UOM */}
+            {UOM_LIST.length > 0 && (
+              <div className="adv-field">
+                <label>UOM</label>
+                <select className="adv-input" value={advUom} onChange={e => setAdvUom(e.target.value)} style={{ cursor: 'pointer' }}>
+                  <option value="">Any</option>
+                  {UOM_LIST.map(u => <option key={u} value={u}>{u}</option>)}
+                </select>
+              </div>
+            )}
             {suppliers && suppliers.length > 0 && (
               <div className="adv-field">
                 <label>Supplier</label>
@@ -647,7 +921,7 @@ export default function ProductsTable({
           </div>
           <div className="adv-filter-actions">
             <button className="btn-sm btn-sm-primary" onClick={() => setAdvOpen(false)}>Apply</button>
-            <button className="btn-sm btn-sm-ghost" onClick={() => { setAdvType(''); setAdvSupplier(''); setAdvStock('') }}>Clear all</button>
+            <button className="btn-sm btn-sm-ghost" onClick={() => { setAdvTracking(new Set()); setAdvUom(''); setAdvSupplier(''); setAdvStock('') }}>Clear all</button>
           </div>
         </div>
       )}
@@ -815,7 +1089,7 @@ export default function ProductsTable({
                         {isView ? typeBadge(curProduct?.type ?? 'Stock') : (
                           <div className="modal-seg">
                             {['Stock', 'NonStock', 'Service'].map(t => (
-                              <button key={t} type="button" className={`seg-btn${form.type === t ? ' active' : ''}`} onClick={() => setF('type', t)}>{t === 'NonStock' ? 'Non-Stock' : t}</button>
+                              <button key={t} type="button" className={`seg-btn${form.type === t ? ' active' : ''}`} onClick={() => setF('type', t)}>{t === 'NonStock' ? 'Non Stock' : t}</button>
                             ))}
                           </div>
                         )}
@@ -1147,6 +1421,47 @@ export default function ProductsTable({
                 </>
               )}
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Export Modal ── */}
+      {showExport && (
+        <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) setShowExport(false) }}>
+          <div className="modal-box" style={{ maxWidth: 440 }}>
+            <div className="modal-header">
+              <div>
+                <div className="modal-title">Export Products</div>
+                <div className="modal-subtitle">Download all products as a CSV file.</div>
+              </div>
+              <button className="modal-close" onClick={() => setShowExport(false)}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+            <ExportModal products={products} customFields={customFields} decimalPlaces={dp} onClose={() => setShowExport(false)} />
+          </div>
+        </div>
+      )}
+
+      {/* ── Import Modal ── */}
+      {showImport && (
+        <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) setShowImport(false) }}>
+          <div className="modal-box" style={{ maxWidth: 500 }}>
+            <div className="modal-header">
+              <div>
+                <div className="modal-title">Import Products</div>
+                <div className="modal-subtitle">Upload a CSV file to import products.</div>
+              </div>
+              <button className="modal-close" onClick={() => setShowImport(false)}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </div>
+            <ImportModal
+              orgId={orgId}
+              customFields={customFields}
+              onClose={() => setShowImport(false)}
+              onImported={(newProds) => setProducts(prev => [...prev, ...(newProds as Product[])])}
+            />
           </div>
         </div>
       )}

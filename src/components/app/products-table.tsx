@@ -1,7 +1,7 @@
 'use client'
 
-import { useState, useMemo } from 'react'
-import { useRouter } from 'next/navigation'
+import { useState, useMemo, useEffect } from 'react'
+import { useRouter, useSearchParams } from 'next/navigation'
 
 type Product = {
   id: string
@@ -233,6 +233,7 @@ export default function ProductsTable({
   suppliers?: Supplier[]
 }) {
   const router = useRouter()
+  const searchParams = useSearchParams()
   const [products, setProducts] = useState(initialProducts)
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
@@ -261,6 +262,16 @@ export default function ProductsTable({
   const [pricing, setPricing] = useState<PricingRow[]>(PRICE_LEVELS.map(l => ({ price_level: l, price: 0, break_qty: 1 })))
   const [productOrders, setProductOrders] = useState<Record<string, unknown>[]>([])
   const [ordersLoading, setOrdersLoading] = useState(false)
+
+  useEffect(() => {
+    if (searchParams.get('new') === '1') {
+      openAdd()
+      const url = new URL(window.location.href)
+      url.searchParams.delete('new')
+      window.history.replaceState({}, '', url.toString())
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   function setF(field: keyof ModalForm, value: string | boolean) {
     setForm(f => ({ ...f, [field]: value }))

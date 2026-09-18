@@ -126,7 +126,7 @@ export default function AppSidebar() {
   return (
     <aside className="sidebar">
       <div className="sidebar-logo">
-        <svg width="222" height="36" viewBox="0 0 480 76" xmlns="http://www.w3.org/2000/svg">
+        <svg width="255" height="41" viewBox="0 0 480 76" xmlns="http://www.w3.org/2000/svg">
           <defs>
             <clipPath id="sl-L"><polygon points="0,0 185,0 165,76 0,76"/></clipPath>
             <clipPath id="sl-R"><polygon points="185,0 480,0 480,76 165,76"/></clipPath>

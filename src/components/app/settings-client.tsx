@@ -789,6 +789,13 @@ type Permission = {
   edit_contacts: boolean
   export_contacts: boolean
   import_contacts: boolean
+  // Products
+  view_products: boolean
+  create_products: boolean
+  edit_products: boolean
+  view_pricing: boolean
+  import_products: boolean
+  export_products: boolean
 }
 
 type Role = {
@@ -803,6 +810,12 @@ const EMPTY_PERMISSIONS: Permission = {
   edit_contacts: false,
   export_contacts: false,
   import_contacts: false,
+  view_products: false,
+  create_products: false,
+  edit_products: false,
+  view_pricing: false,
+  import_products: false,
+  export_products: false,
 }
 
 const CONTACTS_PERMISSIONS: { key: keyof Permission; label: string; dependsOn?: keyof Permission }[] = [
@@ -810,6 +823,15 @@ const CONTACTS_PERMISSIONS: { key: keyof Permission; label: string; dependsOn?: 
   { key: 'edit_contacts', label: 'Edit Contacts' },
   { key: 'export_contacts', label: 'Export Contacts' },
   { key: 'import_contacts', label: 'Import Contacts', dependsOn: 'create_contacts' },
+]
+
+const PRODUCTS_PERMISSIONS: { key: keyof Permission; label: string; sub?: string; dependsOn?: keyof Permission }[] = [
+  { key: 'view_products', label: 'View Products', sub: 'Access the Products module' },
+  { key: 'create_products', label: 'Add Products', sub: 'Create new products', dependsOn: 'view_products' },
+  { key: 'edit_products', label: 'Edit Products', sub: 'Modify existing products', dependsOn: 'view_products' },
+  { key: 'view_pricing', label: 'View Pricing', sub: 'See cost price, sell price, last cost etc.', dependsOn: 'view_products' },
+  { key: 'import_products', label: 'Import Products', sub: 'Upload CSV to bulk import', dependsOn: 'create_products' },
+  { key: 'export_products', label: 'Export Products', sub: 'Download product list as CSV', dependsOn: 'view_products' },
 ]
 
 function RolesModal({ orgId, onClose }: { orgId: string; onClose: () => void }) {
@@ -836,26 +858,41 @@ function RolesModal({ orgId, onClose }: { orgId: string; onClose: () => void }) 
     permissions: {
       create_contacts: true, edit_contacts: true,
       export_contacts: true, import_contacts: true,
+      view_products: true, create_products: true, edit_products: true,
+      view_pricing: true, import_products: true, export_products: true,
     },
   }
 
   const allRoles = [ADMIN_ROLE, ...roles]
 
-  function allContactsChecked(perms: Permission) {
-    return CONTACTS_PERMISSIONS.every(p => perms[p.key])
+  function allSectionChecked(items: typeof CONTACTS_PERMISSIONS, perms: Permission) {
+    return items.every(p => perms[p.key])
   }
 
-  function toggleAllContacts(perms: Permission, on: boolean): Permission {
+  function toggleAllSection(items: typeof CONTACTS_PERMISSIONS, perms: Permission, on: boolean): Permission {
     const next = { ...perms }
-    CONTACTS_PERMISSIONS.forEach(p => { next[p.key] = on })
-    if (!on) next.import_contacts = false
+    items.forEach(p => { next[p.key] = on })
+    // cascade: turning off view_products also turns off dependent perms
+    if (!on) {
+      const keys = items.map(i => i.key)
+      if (keys.includes('view_products')) {
+        next.create_products = false; next.edit_products = false
+        next.view_pricing = false; next.import_products = false; next.export_products = false
+      }
+      if (keys.includes('create_contacts')) next.import_contacts = false
+    }
     return next
   }
 
   function togglePerm(perms: Permission, key: keyof Permission, on: boolean): Permission {
     const next = { ...perms, [key]: on }
-    // import depends on create
+    // cascades
     if (key === 'create_contacts' && !on) next.import_contacts = false
+    if (key === 'view_products' && !on) {
+      next.create_products = false; next.edit_products = false
+      next.view_pricing = false; next.import_products = false; next.export_products = false
+    }
+    if (key === 'create_products' && !on) next.import_products = false
     return next
   }
 
@@ -911,12 +948,12 @@ function RolesModal({ orgId, onClose }: { orgId: string; onClose: () => void }) 
     label, items, perms, onChange, disabled,
   }: {
     label: string
-    items: typeof CONTACTS_PERMISSIONS
+    items: { key: keyof Permission; label: string; sub?: string; dependsOn?: keyof Permission }[]
     perms: Permission
     onChange: (p: Permission) => void
     disabled?: boolean
   }) {
-    const allOn = items.every(p => perms[p.key])
+    const allOn = allSectionChecked(items, perms)
     return (
       <div style={{ marginBottom: 16 }}>
         {/* Section header with Select All */}
@@ -927,7 +964,7 @@ function RolesModal({ orgId, onClose }: { orgId: string; onClose: () => void }) 
               <input
                 type="checkbox"
                 checked={allOn}
-                onChange={e => onChange(toggleAllContacts(perms, e.target.checked))}
+                onChange={e => onChange(toggleAllSection(items, perms, e.target.checked))}
                 style={{ accentColor: 'var(--indigo)', cursor: 'pointer' }}
               />
               Select all
@@ -938,6 +975,7 @@ function RolesModal({ orgId, onClose }: { orgId: string; onClose: () => void }) 
         <div style={{ border: '1px solid var(--gray-200)', borderTop: 'none', borderRadius: '0 0 8px 8px', overflow: 'hidden' }}>
           {items.map((p, i) => {
             const isDisabled = disabled || (p.dependsOn && !perms[p.dependsOn])
+            const depLabel = p.dependsOn ? PRODUCTS_PERMISSIONS.find(x => x.key === p.dependsOn)?.label ?? CONTACTS_PERMISSIONS.find(x => x.key === p.dependsOn)?.label : null
             return (
               <label
                 key={p.key}
@@ -955,11 +993,14 @@ function RolesModal({ orgId, onClose }: { orgId: string; onClose: () => void }) 
                   checked={perms[p.key]}
                   disabled={!!isDisabled}
                   onChange={e => onChange(togglePerm(perms, p.key, e.target.checked))}
-                  style={{ accentColor: 'var(--indigo)', cursor: isDisabled ? 'not-allowed' : 'pointer' }}
+                  style={{ accentColor: 'var(--indigo)', cursor: isDisabled ? 'not-allowed' : 'pointer', flexShrink: 0 }}
                 />
-                <span style={{ fontSize: 13.5, color: 'var(--slate)' }}>{p.label}</span>
-                {p.dependsOn && !perms[p.dependsOn] && (
-                  <span style={{ fontSize: 11, color: 'var(--gray-400)', marginLeft: 'auto' }}>Requires Create Contacts</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 13.5, color: 'var(--slate)' }}>{p.label}</div>
+                  {p.sub && <div style={{ fontSize: 11.5, color: 'var(--gray-400)', marginTop: 1 }}>{p.sub}</div>}
+                </div>
+                {p.dependsOn && !perms[p.dependsOn] && depLabel && (
+                  <span style={{ fontSize: 11, color: 'var(--gray-400)', whiteSpace: 'nowrap' }}>Requires {depLabel}</span>
                 )}
               </label>
             )
@@ -1060,6 +1101,12 @@ function RolesModal({ orgId, onClose }: { orgId: string; onClose: () => void }) 
                   perms={newRolePerms}
                   onChange={setNewRolePerms}
                 />
+                <PermSection
+                  label="Products"
+                  items={PRODUCTS_PERMISSIONS}
+                  perms={newRolePerms}
+                  onChange={setNewRolePerms}
+                />
                 <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
                   <button className="btn btn-primary" style={{ height: 34, fontSize: 13 }} onClick={createRole} disabled={saving}>
                     {saving ? 'Creating…' : 'Create Role'}
@@ -1078,6 +1125,12 @@ function RolesModal({ orgId, onClose }: { orgId: string; onClose: () => void }) 
                 <PermSection
                   label="Contacts"
                   items={CONTACTS_PERMISSIONS}
+                  perms={editingRole.permissions}
+                  onChange={p => setEditingRole({ ...editingRole, permissions: p })}
+                />
+                <PermSection
+                  label="Products"
+                  items={PRODUCTS_PERMISSIONS}
                   perms={editingRole.permissions}
                   onChange={p => setEditingRole({ ...editingRole, permissions: p })}
                 />
@@ -1103,6 +1156,13 @@ function RolesModal({ orgId, onClose }: { orgId: string; onClose: () => void }) 
                 <PermSection
                   label="Contacts"
                   items={CONTACTS_PERMISSIONS}
+                  perms={ADMIN_ROLE.permissions}
+                  onChange={() => {}}
+                  disabled
+                />
+                <PermSection
+                  label="Products"
+                  items={PRODUCTS_PERMISSIONS}
                   perms={ADMIN_ROLE.permissions}
                   onChange={() => {}}
                   disabled

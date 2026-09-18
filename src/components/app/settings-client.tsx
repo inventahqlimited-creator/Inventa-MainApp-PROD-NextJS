@@ -782,6 +782,340 @@ function ContactsTab({ taxRates, currencies, locations, priceLevels, orgId, show
   )
 }
 
+// ── Roles & Permissions Modal ─────────────────────────────────────────
+
+type Permission = {
+  create_contacts: boolean
+  edit_contacts: boolean
+  export_contacts: boolean
+  import_contacts: boolean
+}
+
+type Role = {
+  id: string
+  name: string
+  permissions: Permission
+  is_system?: boolean
+}
+
+const EMPTY_PERMISSIONS: Permission = {
+  create_contacts: false,
+  edit_contacts: false,
+  export_contacts: false,
+  import_contacts: false,
+}
+
+const CONTACTS_PERMISSIONS: { key: keyof Permission; label: string; dependsOn?: keyof Permission }[] = [
+  { key: 'create_contacts', label: 'Create Contacts' },
+  { key: 'edit_contacts', label: 'Edit Contacts' },
+  { key: 'export_contacts', label: 'Export Contacts' },
+  { key: 'import_contacts', label: 'Import Contacts', dependsOn: 'create_contacts' },
+]
+
+function RolesModal({ orgId, onClose }: { orgId: string; onClose: () => void }) {
+  const [roles, setRoles] = useState<Role[]>([])
+  const [loading, setLoading] = useState(true)
+  const [editingRole, setEditingRole] = useState<Role | null>(null)
+  const [newRoleName, setNewRoleName] = useState('')
+  const [newRolePerms, setNewRolePerms] = useState<Permission>({ ...EMPTY_PERMISSIONS })
+  const [addingNew, setAddingNew] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  useEffect(() => {
+    fetch(`/api/org/roles`)
+      .then(r => r.json())
+      .then((data: Role[]) => { setRoles(data); setLoading(false) })
+      .catch(() => setLoading(false))
+  }, [])
+
+  const ADMIN_ROLE: Role = {
+    id: 'admin',
+    name: 'Admin',
+    is_system: true,
+    permissions: {
+      create_contacts: true, edit_contacts: true,
+      export_contacts: true, import_contacts: true,
+    },
+  }
+
+  const allRoles = [ADMIN_ROLE, ...roles]
+
+  function allContactsChecked(perms: Permission) {
+    return CONTACTS_PERMISSIONS.every(p => perms[p.key])
+  }
+
+  function toggleAllContacts(perms: Permission, on: boolean): Permission {
+    const next = { ...perms }
+    CONTACTS_PERMISSIONS.forEach(p => { next[p.key] = on })
+    if (!on) next.import_contacts = false
+    return next
+  }
+
+  function togglePerm(perms: Permission, key: keyof Permission, on: boolean): Permission {
+    const next = { ...perms, [key]: on }
+    // import depends on create
+    if (key === 'create_contacts' && !on) next.import_contacts = false
+    return next
+  }
+
+  async function saveRole() {
+    if (editingRole) {
+      setSaving(true); setError(null)
+      const res = await fetch(`/api/org/roles/${editingRole.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ permissions: editingRole.permissions }),
+      })
+      if (res.ok) {
+        setRoles(prev => prev.map(r => r.id === editingRole.id ? editingRole : r))
+        setEditingRole(null)
+      } else {
+        setError('Failed to save role.')
+      }
+      setSaving(false)
+    }
+  }
+
+  async function createRole() {
+    if (!newRoleName.trim()) { setError('Role name is required.'); return }
+    if (roles.some(r => r.name.toLowerCase() === newRoleName.trim().toLowerCase())) {
+      setError('A role with this name already exists.'); return
+    }
+    setSaving(true); setError(null)
+    const res = await fetch('/api/org/roles', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: newRoleName.trim(), permissions: newRolePerms }),
+    })
+    if (res.ok) {
+      const created = await res.json()
+      setRoles(prev => [...prev, created])
+      setNewRoleName('')
+      setNewRolePerms({ ...EMPTY_PERMISSIONS })
+      setAddingNew(false)
+    } else {
+      setError('Failed to create role.')
+    }
+    setSaving(false)
+  }
+
+  async function deleteRole(id: string) {
+    if (!confirm('Delete this role? Members using it will lose their role.')) return
+    await fetch(`/api/org/roles/${id}`, { method: 'DELETE' })
+    setRoles(prev => prev.filter(r => r.id !== id))
+    if (editingRole?.id === id) setEditingRole(null)
+  }
+
+  function PermSection({
+    label, items, perms, onChange, disabled,
+  }: {
+    label: string
+    items: typeof CONTACTS_PERMISSIONS
+    perms: Permission
+    onChange: (p: Permission) => void
+    disabled?: boolean
+  }) {
+    const allOn = items.every(p => perms[p.key])
+    return (
+      <div style={{ marginBottom: 16 }}>
+        {/* Section header with Select All */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: 'var(--gray-50)', borderRadius: '8px 8px 0 0', border: '1px solid var(--gray-200)', borderBottom: 'none' }}>
+          <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--slate)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>{label}</span>
+          {!disabled && (
+            <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--gray-400)', cursor: 'pointer', userSelect: 'none' }}>
+              <input
+                type="checkbox"
+                checked={allOn}
+                onChange={e => onChange(toggleAllContacts(perms, e.target.checked))}
+                style={{ accentColor: 'var(--indigo)', cursor: 'pointer' }}
+              />
+              Select all
+            </label>
+          )}
+        </div>
+        {/* Permission rows */}
+        <div style={{ border: '1px solid var(--gray-200)', borderTop: 'none', borderRadius: '0 0 8px 8px', overflow: 'hidden' }}>
+          {items.map((p, i) => {
+            const isDisabled = disabled || (p.dependsOn && !perms[p.dependsOn])
+            return (
+              <label
+                key={p.key}
+                style={{
+                  display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px',
+                  borderBottom: i < items.length - 1 ? '1px solid var(--gray-100)' : 'none',
+                  background: 'var(--white)',
+                  cursor: isDisabled ? 'not-allowed' : 'pointer',
+                  opacity: isDisabled ? 0.5 : 1,
+                  userSelect: 'none',
+                }}
+              >
+                <input
+                  type="checkbox"
+                  checked={perms[p.key]}
+                  disabled={!!isDisabled}
+                  onChange={e => onChange(togglePerm(perms, p.key, e.target.checked))}
+                  style={{ accentColor: 'var(--indigo)', cursor: isDisabled ? 'not-allowed' : 'pointer' }}
+                />
+                <span style={{ fontSize: 13.5, color: 'var(--slate)' }}>{p.label}</span>
+                {p.dependsOn && !perms[p.dependsOn] && (
+                  <span style={{ fontSize: 11, color: 'var(--gray-400)', marginLeft: 'auto' }}>Requires Create Contacts</span>
+                )}
+              </label>
+            )
+          })}
+        </div>
+      </div>
+    )
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <div style={{ background: 'var(--white)', borderRadius: 16, width: '100%', maxWidth: 820, maxHeight: '90vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 24px', borderBottom: '1px solid var(--gray-100)' }}>
+          <div>
+            <div style={{ fontFamily: 'var(--font-display)', fontSize: 16, fontWeight: 700, color: 'var(--slate)' }}>Roles &amp; Permissions</div>
+            <div style={{ fontSize: 12.5, color: 'var(--gray-400)', marginTop: 2 }}>Define what each role can do across Inventa</div>
+          </div>
+          <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--gray-400)', padding: 4 }}>
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+
+        {/* Body: two-panel */}
+        <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
+          {/* Left: role list */}
+          <div style={{ width: 220, borderRight: '1px solid var(--gray-100)', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
+            <div style={{ padding: '14px 16px', borderBottom: '1px solid var(--gray-100)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: 11.5, fontWeight: 700, color: 'var(--gray-400)', textTransform: 'uppercase', letterSpacing: '0.05em' }}>Roles</span>
+              <button
+                onClick={() => { setAddingNew(true); setEditingRole(null); setError(null) }}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--indigo)', fontSize: 12, fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4 }}
+              >
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                New
+              </button>
+            </div>
+            <div style={{ flex: 1, overflowY: 'auto' }}>
+              {loading ? (
+                <div style={{ padding: 20, fontSize: 13, color: 'var(--gray-400)', textAlign: 'center' }}>Loading…</div>
+              ) : allRoles.map(r => {
+                const isSelected = editingRole?.id === r.id || (!editingRole && !addingNew && r.id === 'admin')
+                return (
+                  <div
+                    key={r.id}
+                    onClick={() => { setEditingRole(r.is_system ? null : r); setAddingNew(false); setError(null) }}
+                    style={{
+                      padding: '10px 16px', cursor: 'pointer',
+                      background: isSelected ? '#EEF2FF' : 'transparent',
+                      borderLeft: isSelected ? '3px solid var(--indigo)' : '3px solid transparent',
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    }}
+                  >
+                    <div>
+                      <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--slate)' }}>{r.name}</div>
+                      {r.is_system && <div style={{ fontSize: 11, color: 'var(--gray-400)' }}>System role</div>}
+                    </div>
+                    {r.is_system
+                      ? <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--gray-400)" strokeWidth="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0 1 10 0v4"/></svg>
+                      : (
+                        <button
+                          onClick={e => { e.stopPropagation(); deleteRole(r.id) }}
+                          style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--gray-300)', padding: 2 }}
+                          title="Delete role"
+                        >
+                          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6M14 11v6"/><path d="M9 6V4a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2"/></svg>
+                        </button>
+                      )
+                    }
+                  </div>
+                )
+              })}
+            </div>
+          </div>
+
+          {/* Right: permissions panel */}
+          <div style={{ flex: 1, overflowY: 'auto', padding: 24 }}>
+            {error && (
+              <div style={{ padding: '10px 14px', background: '#FEE2E2', border: '1px solid #FCA5A5', borderRadius: 8, fontSize: 13, color: '#B91C1C', marginBottom: 16 }}>{error}</div>
+            )}
+
+            {/* Add new role form */}
+            {addingNew && (
+              <div>
+                <div style={{ marginBottom: 20 }}>
+                  <label style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-400)', textTransform: 'uppercase', letterSpacing: '0.05em', display: 'block', marginBottom: 6 }}>Role Name</label>
+                  <input
+                    className="modal-input"
+                    value={newRoleName}
+                    onChange={e => setNewRoleName(e.target.value)}
+                    placeholder="e.g. Warehouse Staff"
+                    autoFocus
+                  />
+                </div>
+                <PermSection
+                  label="Contacts"
+                  items={CONTACTS_PERMISSIONS}
+                  perms={newRolePerms}
+                  onChange={setNewRolePerms}
+                />
+                <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+                  <button className="btn btn-primary" style={{ height: 34, fontSize: 13 }} onClick={createRole} disabled={saving}>
+                    {saving ? 'Creating…' : 'Create Role'}
+                  </button>
+                  <button className="btn" style={{ height: 34, fontSize: 13 }} onClick={() => { setAddingNew(false); setError(null) }}>Cancel</button>
+                </div>
+              </div>
+            )}
+
+            {/* Edit existing role */}
+            {!addingNew && editingRole && (
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
+                  <span style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 700, color: 'var(--slate)' }}>{editingRole.name}</span>
+                </div>
+                <PermSection
+                  label="Contacts"
+                  items={CONTACTS_PERMISSIONS}
+                  perms={editingRole.permissions}
+                  onChange={p => setEditingRole({ ...editingRole, permissions: p })}
+                />
+                <div style={{ display: 'flex', gap: 10, marginTop: 8 }}>
+                  <button className="btn btn-primary" style={{ height: 34, fontSize: 13 }} onClick={saveRole} disabled={saving}>
+                    {saving ? 'Saving…' : 'Save Changes'}
+                  </button>
+                  <button className="btn" style={{ height: 34, fontSize: 13 }} onClick={() => setEditingRole(null)}>Cancel</button>
+                </div>
+              </div>
+            )}
+
+            {/* Admin role info (read-only) */}
+            {!addingNew && !editingRole && (
+              <div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 20 }}>
+                  <span style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 700, color: 'var(--slate)' }}>Admin</span>
+                  <LockBadge label="Locked" />
+                </div>
+                <div style={{ padding: '14px 16px', background: '#FFFBEB', border: '1px solid #FDE68A', borderRadius: 10, fontSize: 13, color: '#92400E', marginBottom: 20 }}>
+                  The Admin role is a system role that grants full access to everything. It cannot be edited.
+                </div>
+                <PermSection
+                  label="Contacts"
+                  items={CONTACTS_PERMISSIONS}
+                  perms={ADMIN_ROLE.permissions}
+                  onChange={() => {}}
+                  disabled
+                />
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 // ── Main Component ────────────────────────────────────────────────────
 
 export default function SettingsClient({
@@ -807,6 +1141,7 @@ export default function SettingsClient({
 }) {
   const router = useRouter()
   const [tab, setTab] = useState<Tab>((initialTab as Tab) ?? 'general')
+  const [showRolesModal, setShowRolesModal] = useState(false)
 
   // Org details
   const [bizName, setBizName] = useState(String(org.name ?? ''))
@@ -1730,10 +2065,20 @@ export default function SettingsClient({
             title="Team Members"
             subtitle="Manage who has access to your organisation"
             action={
-              <button className="btn btn-primary" style={{ height: 32, fontSize: 12.5, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                Invite User
-              </button>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  className="btn"
+                  style={{ height: 32, fontSize: 12.5, display: 'inline-flex', alignItems: 'center', gap: 6, border: '1.5px solid var(--gray-200)' }}
+                  onClick={() => setShowRolesModal(true)}
+                >
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/><path d="M18 14l2 2 4-4" strokeWidth="2"/></svg>
+                  Roles &amp; Permissions
+                </button>
+                <button className="btn btn-primary" style={{ height: 32, fontSize: 12.5, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                  Invite User
+                </button>
+              </div>
             }
           >
             {/* Table header */}
@@ -1847,6 +2192,11 @@ export default function SettingsClient({
           </Card>
         )}
       </div>
+
+      {/* Roles & Permissions Modal */}
+      {showRolesModal && (
+        <RolesModal orgId={orgId} onClose={() => setShowRolesModal(false)} />
+      )}
 
       {/* Modals */}
       {showAddLoc && (

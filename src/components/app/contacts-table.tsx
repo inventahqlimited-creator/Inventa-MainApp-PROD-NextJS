@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo, useEffect, useRef } from 'react'
+import { useSearchParams, useRouter } from 'next/navigation'
 
 type Contact = {
   id: string
@@ -154,6 +155,8 @@ export default function ContactsTable({
   orgId: string
   isAdmin: boolean
 }) {
+  const searchParams = useSearchParams()
+  const router = useRouter()
   const [contacts, setContacts] = useState(initialContacts)
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
@@ -190,6 +193,18 @@ export default function ContactsTable({
   const [additionalAddresses, setAdditionalAddresses] = useState<AdditionalAddress[]>([])
   const [orders, setOrders] = useState<Record<string, unknown>[]>([])
   const [ordersLoading, setOrdersLoading] = useState(false)
+
+  // Auto-open modal when ?new=1 param is present
+  useEffect(() => {
+    if (searchParams.get('new') === '1') {
+      openAdd()
+      // Clean the URL param without navigation
+      const url = new URL(window.location.href)
+      url.searchParams.delete('new')
+      window.history.replaceState({}, '', url.toString())
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   function set(field: keyof ModalForm, value: string | boolean) {
     setForm(f => ({ ...f, [field]: value }))

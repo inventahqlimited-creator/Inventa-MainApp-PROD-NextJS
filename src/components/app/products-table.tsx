@@ -288,9 +288,14 @@ function ExportModal({ products, customFields, decimalPlaces, taxRates, onClose 
 }
 
 // ── Import Modal ──────────────────────────────────────────────────────────────
-function ImportModal({ orgId, customFields, onClose, onImported }: {
+function ImportModal({ orgId, customFields, customLists, taxRates, suppliers, priceLevels, uoms, onClose, onImported }: {
   orgId: string
   customFields: CustomField[]
+  customLists: CustomList[]
+  taxRates: TaxRate[]
+  suppliers: { id: string; name: string }[]
+  priceLevels: { id: string; name: string }[]
+  uoms: { id: string; name: string; abbr?: string }[]
   onClose: () => void
   onImported: (products: unknown[]) => void
 }) {
@@ -303,10 +308,40 @@ function ImportModal({ orgId, customFields, onClose, onImported }: {
   const fileRef = useRef<HTMLInputElement>(null)
 
   function downloadTemplate() {
-    const stdHeaders = ['Name*', 'SKU*', 'Type (Stock/NonStock/Service)', 'Description', 'Barcode', 'Sell Price', 'Cost Price', 'Tax Rate', 'Sell UOM', 'Buy UOM', 'Track Stock (Yes/No)', 'Notes']
+    const uomList = uoms.length > 0 ? uoms.map(u => u.name).join('/') : 'Each/Box/Carton'
+    const taxList = taxRates.map(t => `${t.rate}% ${t.name}`).join(' | ') || 'e.g. 15% GST on Income'
+    const supplierList = suppliers.map(s => s.name).join(' | ') || 'e.g. Pacific Supply Co.'
+    const plHeaders = priceLevels.map(pl => `Price: ${pl.name}`)
     const cfHeaders = customFields.map(f => f.name)
-    const csv = [...stdHeaders, ...cfHeaders].join(',')
-    const blob = new Blob([csv + '\n'], { type: 'text/csv' })
+    const clHeaders = customLists.map(cl => cl.name)
+
+    const headers = [
+      'Name*',
+      'SKU*',
+      `Type (Stock/NonStock/Service)`,
+      'Description',
+      'Barcode',
+      `Sell Price`,
+      `Cost Price`,
+      `Tax Rate (${taxList})`,
+      `Sell UOM (${uomList})`,
+      `Buy UOM (${uomList})`,
+      'Buy UOM Qty',
+      'Track Stock (Yes/No)',
+      'Serial Tracking (Yes/No)',
+      'Batch Tracking (Yes/No)',
+      'Expiry Tracking (Yes/No)',
+      `Supplier (${supplierList})`,
+      'Supplier Code',
+      'Lead Time (days)',
+      'Min Order Qty',
+      'Notes',
+      ...plHeaders,
+      ...cfHeaders,
+      ...clHeaders,
+    ]
+
+    const blob = new Blob([headers.join(',') + '\n'], { type: 'text/csv' })
     const url = URL.createObjectURL(blob)
     const a = document.createElement('a')
     a.href = url; a.download = 'products-template.csv'; a.click()
@@ -345,34 +380,118 @@ function ImportModal({ orgId, customFields, onClose, onImported }: {
     }
     if (rowErrors.length > 0) { setErrors(rowErrors); setImporting(false); return }
 
+    // Pre-compute column indexes for efficiency
+    const typeIdx = rawHeaders.findIndex(h => h.includes('type'))
+    const descIdx = rawHeaders.findIndex(h => h.includes('desc'))
+    const barcodeIdx = rawHeaders.findIndex(h => h.includes('barcode'))
+    const sellPriceIdx = rawHeaders.findIndex(h => h.startsWith('sell price') || h === 'sell price')
+    const costPriceIdx = rawHeaders.findIndex(h => h.startsWith('cost price') || h === 'cost price')
+    const taxIdx = rawHeaders.findIndex(h => h.startsWith('tax rate') || h === 'tax rate' || h === 'tax')
+    // sell uom before buy uom to avoid partial match collision
+    const sellUomIdx = rawHeaders.findIndex(h => h.startsWith('sell uom'))
+    const buyUomIdx = rawHeaders.findIndex(h => h.startsWith('buy uom') && !h.includes('qty'))
+    const buyUomQtyIdx = rawHeaders.findIndex(h => h.includes('buy uom qty') || h.includes('units per'))
+    const trackStockIdx = rawHeaders.findIndex(h => h.startsWith('track stock'))
+    const serialIdx = rawHeaders.findIndex(h => h.startsWith('serial'))
+    const batchIdx = rawHeaders.findIndex(h => h.startsWith('batch'))
+    const expiryIdx = rawHeaders.findIndex(h => h.startsWith('expiry'))
+    const supplierIdx = rawHeaders.findIndex(h => h.startsWith('supplier') && !h.includes('code'))
+    const supplierCodeIdx = rawHeaders.findIndex(h => h.includes('supplier code'))
+    const leadTimeIdx = rawHeaders.findIndex(h => h.includes('lead time'))
+    const minOrderIdx = rawHeaders.findIndex(h => h.includes('min order'))
+    const notesIdx = rawHeaders.findIndex(h => h === 'notes')
+
+    // Price level column indexes: "price: retail" etc
+    const plIndexes: { plId: string; colIdx: number }[] = priceLevels.map(pl => ({
+      plId: pl.id,
+      colIdx: rawHeaders.findIndex(h => h === `price: ${pl.name.toLowerCase()}`),
+    })).filter(x => x.colIdx >= 0)
+
+    // Custom field indexes
+    const cfIndexes: { fId: string; colIdx: number }[] = customFields.map(f => ({
+      fId: f.id,
+      colIdx: rawHeaders.findIndex(h => h === f.name.toLowerCase()),
+    })).filter(x => x.colIdx >= 0)
+
+    // Custom list indexes
+    const clIndexes: { listId: string; colIdx: number }[] = customLists.map(cl => ({
+      listId: cl.id,
+      colIdx: rawHeaders.findIndex(h => h === cl.name.toLowerCase()),
+    })).filter(x => x.colIdx >= 0)
+
     // Phase 2: create
     const created: unknown[] = []
     for (const line of dataRows) {
       const cols = parseRow(line)
-      const get = (idx: number) => (cols[idx] ?? '').trim()
-      const name = nameIdx >= 0 ? get(nameIdx) : ''
+      const get = (idx: number) => idx >= 0 ? (cols[idx] ?? '').trim() : ''
+      const name = get(nameIdx)
       if (!name) continue
 
+      // Resolve tax rate: match label text against taxRates list
+      const taxStr = get(taxIdx).toLowerCase()
+      let resolvedTaxRate: number | null = null
+      if (taxStr) {
+        const matchedTax = taxRates.find(t => {
+          const rateStr = String(t.rate)
+          return taxStr.includes(rateStr) || taxStr.replace(/[^a-z0-9]/g, '').includes(t.name.toLowerCase().replace(/[^a-z0-9]/g, ''))
+        })
+        if (matchedTax) resolvedTaxRate = matchedTax.rate
+      }
+
+      // Resolve supplier name to ID
+      const supplierName = get(supplierIdx).toLowerCase()
+      const matchedSupplier = supplierName ? suppliers.find(s => s.name.toLowerCase() === supplierName) : null
+
+      // Parse boolean helper
+      const parseBool = (idx: number) => get(idx).toLowerCase() === 'yes'
+
+      // Collect custom fields
       const cfValues: Record<string, string> = {}
-      customFields.forEach(f => {
-        const idx = rawHeaders.findIndex(h => h === f.name.toLowerCase())
-        if (idx >= 0) cfValues[f.id] = get(idx)
+      cfIndexes.forEach(({ fId, colIdx }) => {
+        const val = get(colIdx)
+        if (val) cfValues[fId] = val
+      })
+      // Collect custom list values (store by list id → option value string)
+      clIndexes.forEach(({ listId, colIdx }) => {
+        const val = get(colIdx)
+        if (val) cfValues[`list_${listId}`] = val
       })
 
+      // Price level prices
+      const pricingData: { price_level: string; price: number; break_qty: number }[] = []
+      plIndexes.forEach(({ plId, colIdx }) => {
+        const val = parseFloat(get(colIdx))
+        if (!isNaN(val) && val > 0) {
+          const pl = priceLevels.find(p => p.id === plId)
+          if (pl) pricingData.push({ price_level: pl.name, price: val, break_qty: 1 })
+        }
+      })
+
+      const typeStr = get(typeIdx).toLowerCase()
       const payload: Record<string, unknown> = {
+        org_id: orgId,
         name,
-        sku: skuIdx >= 0 ? get(skuIdx) || null : null,
-        type: (() => { const t = get(rawHeaders.findIndex(h => h.includes('type'))).toLowerCase(); return t.includes('non') ? 'NonStock' : t.includes('serv') ? 'Service' : 'Stock' })(),
-        description: get(rawHeaders.findIndex(h => h.includes('desc'))) || null,
-        barcode: get(rawHeaders.findIndex(h => h.includes('barcode'))) || null,
-        sell_price: parseFloat(get(rawHeaders.findIndex(h => h.includes('sell price')))) || null,
-        cost_price: parseFloat(get(rawHeaders.findIndex(h => h.includes('cost price')))) || null,
-        tax_rate: get(rawHeaders.findIndex(h => h.includes('tax'))) || null,
-        sell_uom: get(rawHeaders.findIndex(h => h.includes('sell uom'))) || 'Each',
-        buy_uom: get(rawHeaders.findIndex(h => h.includes('buy uom'))) || 'Each',
-        track_stock: get(rawHeaders.findIndex(h => h.includes('track stock'))).toLowerCase() !== 'no',
-        notes: get(rawHeaders.findIndex(h => h.includes('notes'))) || null,
+        sku: get(skuIdx) || null,
+        type: typeStr.includes('non') ? 'NonStock' : typeStr.includes('serv') ? 'Service' : 'Stock',
+        description: get(descIdx) || null,
+        barcode: get(barcodeIdx) || null,
+        sell_price: parseFloat(get(sellPriceIdx)) || null,
+        cost_price: parseFloat(get(costPriceIdx)) || null,
+        tax_rate: resolvedTaxRate,
+        sell_uom: get(sellUomIdx) || 'Each',
+        buy_uom: get(buyUomIdx) || 'Each',
+        buy_uom_qty: parseInt(get(buyUomQtyIdx)) || 1,
+        track_stock: get(trackStockIdx).toLowerCase() !== 'no',
+        serial_tracking: parseBool(serialIdx),
+        batch_tracking: parseBool(batchIdx),
+        expiry_tracking: parseBool(expiryIdx),
+        default_supplier_id: matchedSupplier?.id ?? null,
+        supplier_code: get(supplierCodeIdx) || null,
+        lead_time_days: parseInt(get(leadTimeIdx)) || null,
+        min_order_qty: parseInt(get(minOrderIdx)) || null,
+        notes: get(notesIdx) || null,
         custom_fields: Object.keys(cfValues).length > 0 ? cfValues : null,
+        pricing: pricingData.length > 0 ? pricingData : undefined,
       }
 
       const res = await fetch('/api/org/products', {
@@ -1491,6 +1610,11 @@ export default function ProductsTable({
             <ImportModal
               orgId={orgId}
               customFields={customFields}
+              customLists={customLists}
+              taxRates={taxRates}
+              suppliers={suppliers ?? []}
+              priceLevels={priceLevels}
+              uoms={uoms}
               onClose={() => setShowImport(false)}
               onImported={(newProds) => setProducts(prev => [...prev, ...(newProds as Product[])])}
             />

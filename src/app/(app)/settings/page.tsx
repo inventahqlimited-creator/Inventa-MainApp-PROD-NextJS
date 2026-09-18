@@ -55,8 +55,8 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
     const { data: { users: authUsers } } = await adminClient.auth.admin.listUsers({ perPage: 200 })
     lastSignInMap = Object.fromEntries(
       (authUsers ?? [])
-        .filter(u => acceptedUserIds.includes(u.id))
-        .map(u => [u.id, u.last_sign_in_at ?? null])
+        .filter((u: { id: string; last_sign_in_at?: string | null }) => acceptedUserIds.includes(u.id))
+        .map((u: { id: string; last_sign_in_at?: string | null }) => [u.id, u.last_sign_in_at ?? null])
     )
   }
 

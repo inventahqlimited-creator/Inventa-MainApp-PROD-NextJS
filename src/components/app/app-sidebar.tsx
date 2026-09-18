@@ -3,7 +3,10 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
-const MAIN_NAV = [
+type SidebarPermissions = {
+  view_products?: boolean
+}
+
   {
     href: '/dashboard',
     label: 'Dashboard',
@@ -122,7 +125,15 @@ function NavLink({ href, label, icon }: { href: string; label: string; icon: Rea
   )
 }
 
-export default function AppSidebar() {
+export default function AppSidebar({ permissions = {} }: { permissions?: SidebarPermissions }) {
+  // Admins (no permissions object set) get full access
+  const canViewProducts = permissions.view_products !== false
+
+  const visibleModules = MODULE_NAV.filter(item => {
+    if (item.href === '/products') return canViewProducts
+    return true
+  })
+
   return (
     <aside className="sidebar">
       <div className="sidebar-logo">
@@ -150,7 +161,7 @@ export default function AppSidebar() {
         <div style={{ marginTop: 4 }}>
           <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '8px 0 4px' }} />
           <div className="nav-section-label">Modules</div>
-          {MODULE_NAV.map(item => <NavLink key={item.href} {...item} />)}
+          {visibleModules.map(item => <NavLink key={item.href} {...item} />)}
         </div>
 
         {/* Spacer pushes System to bottom */}

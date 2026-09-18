@@ -922,9 +922,36 @@ export default function SettingsClient({
   }
 
   // Purchases settings
-  const [allowOverReceive, setAllowOverReceive] = useState(false)
-  const [poPrefix, setPoPrefix] = useState('PO-')
-  const [poStart, setPoStart] = useState('1')
+  const [allowOverReceive, setAllowOverReceive] = useState(Boolean(org.allow_over_receive))
+  const [landingCostMethod, setLandingCostMethod] = useState(String(org.landing_cost_method ?? 'value'))
+  const [poPrefix, setPoPrefix] = useState(String(org.po_prefix ?? 'PO-'))
+  const [poSuffix, setPoSuffix] = useState(String(org.po_suffix ?? ''))
+  const [poStart, setPoStart] = useState(String(org.po_start ?? '1'))
+  const [poDigits, setPoDigits] = useState(String(org.po_digits ?? '4'))
+  const [savingPurchaseSettings, setSavingPurchaseSettings] = useState(false)
+  const [savingPoNumbering, setSavingPoNumbering] = useState(false)
+
+  async function savePurchaseSettings() {
+    setSavingPurchaseSettings(true)
+    const res = await fetch('/api/org/purchase-settings', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ allow_over_receive: allowOverReceive, landing_cost_method: landingCostMethod }),
+    })
+    setSavingPurchaseSettings(false)
+    if (res.ok) showToast('success', 'Receiving settings saved')
+    else showToast('error', 'Failed to save')
+  }
+
+  async function savePoNumbering() {
+    setSavingPoNumbering(true)
+    const res = await fetch('/api/org/purchase-settings', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ po_prefix: poPrefix, po_suffix: poSuffix, po_start: parseInt(poStart) || 1, po_digits: parseInt(poDigits) || 4 }),
+    })
+    setSavingPoNumbering(false)
+    if (res.ok) showToast('success', 'PO numbering saved')
+    else showToast('error', 'Failed to save')
+  }
 
   // Sales settings
   const [fulfilmentMode, setFulfilmentMode] = useState('full')
@@ -1031,7 +1058,7 @@ export default function SettingsClient({
     setLocations(prev => prev.map(l => l.id === id ? { ...l, active } : l))
   }
 
-  const poPreview = `${poPrefix}${String(parseInt(poStart) || 1).padStart(4, '0')}`
+  const poPreview = `${poPrefix}${String(parseInt(poStart) || 1).padStart(parseInt(poDigits) || 4, '0')}${poSuffix}`
   const soPreview = `${soPrefix}${String(parseInt(soStart) || 1).padStart(4, '0')}`
 
   return (
@@ -1419,20 +1446,43 @@ export default function SettingsClient({
         {/* ── PURCHASES ── */}
         {tab === 'purchases' && (
           <>
-            <Card title="Receiving Settings" subtitle="Control how stock is received against purchase orders" action={<SaveBtn onClick={() => showToast('success', 'Receiving settings saved')} />}>
+            <Card title="Receiving Settings" subtitle="Control how stock is received against purchase orders" action={<SaveBtn onClick={savePurchaseSettings} saving={savingPurchaseSettings} />}>
               <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <ToggleRow label="Allow Over-Receiving" sub="Allow users to receive more units than ordered on a line" active={allowOverReceive} onChange={setAllowOverReceive} />
+                <ToggleRow label="Allow Over-Receiving" sub="Allow users to receive more units than ordered on a line" active={allowOverReceive} onChange={v => { setAllowOverReceive(v); }} />
+                <div style={{ padding: '14px 16px', background: 'var(--gray-50)', border: '1.5px solid var(--gray-200)', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  <div>
+                    <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--slate)', fontFamily: 'var(--font-display)' }}>Landing Cost Allocation Method</div>
+                    <div style={{ fontSize: 12.5, color: 'var(--gray-400)', marginTop: 2 }}>How freight &amp; additional charges are spread across received lines</div>
+                  </div>
+                  <select className="modal-input" value={landingCostMethod} onChange={e => setLandingCostMethod(e.target.value)} style={{ width: 180, cursor: 'pointer' }}>
+                    <option value="value">By Value</option>
+                    <option value="quantity">By Quantity</option>
+                    <option value="weight">By Weight / Volume</option>
+                  </select>
+                </div>
               </div>
             </Card>
-            <Card title="Purchase Order Numbering" subtitle="Configure auto-generated PO numbers" action={<SaveBtn onClick={() => showToast('success', 'PO numbering saved')} />}>
-              <div style={{ padding: '18px 20px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
+            <Card title="Purchase Order Numbering" subtitle="Configure auto-generated PO numbers" action={<SaveBtn onClick={savePoNumbering} saving={savingPoNumbering} />}>
+              <div style={{ padding: '18px 20px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 14 }}>
                 <Field label="Prefix (up to 4 chars)">
-                  <input className="modal-input" value={poPrefix} onChange={e => setPoPrefix(e.target.value)} maxLength={4} style={{ background: 'var(--white)', fontFamily: 'monospace', fontWeight: 700 }} />
+                  <input className="modal-input" value={poPrefix} onChange={e => setPoPrefix(e.target.value)} maxLength={6} style={{ background: 'var(--white)', fontFamily: 'monospace', fontWeight: 700 }} />
+                </Field>
+                <Field label="Suffix (up to 4 chars)">
+                  <input className="modal-input" value={poSuffix} onChange={e => setPoSuffix(e.target.value)} maxLength={6} placeholder="e.g. -NZ" style={{ background: 'var(--white)', fontFamily: 'monospace', fontWeight: 700 }} />
                 </Field>
                 <Field label="Start Number"><MInput value={poStart} onChange={setPoStart} type="number" placeholder="1" /></Field>
-                <Field label="Preview">
-                  <div style={{ background: 'var(--gray-50)', border: '1.5px solid var(--gray-200)', borderRadius: 9, padding: '9px 14px', fontFamily: 'monospace', fontSize: 14, fontWeight: 700, color: 'var(--slate)' }}>{poPreview}</div>
+                <Field label="Number Length (digits)">
+                  <Select value={poDigits} onChange={setPoDigits} options={[
+                    { value: '3', label: '3 digits' },
+                    { value: '4', label: '4 digits' },
+                    { value: '5', label: '5 digits' },
+                    { value: '6', label: '6 digits' },
+                  ]} />
                 </Field>
+              </div>
+              <div style={{ padding: '0 20px 18px' }}>
+                <div style={{ fontSize: 12, color: 'var(--gray-400)', marginBottom: 6 }}>Preview</div>
+                <div style={{ background: 'var(--gray-50)', border: '1.5px solid var(--gray-200)', borderRadius: 9, padding: '9px 14px', fontFamily: 'monospace', fontSize: 14, fontWeight: 700, color: 'var(--slate)', display: 'inline-block' }}>{poPreview}</div>
               </div>
             </Card>
           </>

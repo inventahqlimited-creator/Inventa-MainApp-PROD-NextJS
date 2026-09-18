@@ -166,6 +166,17 @@ function BinsModal({ location, orgId, onClose, onUpdate }: {
     onUpdate(location.id, updated)
   }
 
+  async function renameBin(id: string, name: string) {
+    await fetch(`/api/org/bins/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name }),
+    })
+    const updated = bins.map(b => b.id === id ? { ...b, name } : b)
+    setBins(updated)
+    onUpdate(location.id, updated)
+  }
+
   async function importBulk() {
     const lines = bulkText.split('\n').map(l => l.trim()).filter(Boolean)
     if (!lines.length) return
@@ -296,7 +307,9 @@ function BinsModal({ location, orgId, onClose, onUpdate }: {
                 <tbody>
                   {bins.map(b => (
                     <tr key={b.id} style={{ borderBottom: '1px solid var(--gray-100)' }}>
-                      <td className="li-td" style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{b.name}</td>
+                      <td className="li-td" style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>
+                        <InlineEditable value={b.name} onChange={name => renameBin(b.id, name)} />
+                      </td>
                       <td className="li-td" style={{ color: 'var(--gray-400)', fontSize: 12.5 }}>{b.description ?? '—'}</td>
                       <td className="li-td">
                         <button onClick={() => deleteBin(b.id)} style={{ width: 26, height: 26, borderRadius: 7, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--gray-400)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
@@ -315,6 +328,85 @@ function BinsModal({ location, orgId, onClose, onUpdate }: {
 
         <div className="modal-footer">
           <button className="btn btn-outline" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// ── Edit Location Modal ───────────────────────────────────────────────
+
+function EditLocationModal({ location, onClose, onSave }: {
+  location: Location
+  onClose: () => void
+  onSave: (updated: Location) => void
+}) {
+  const [name, setName] = useState(location.name)
+  const [type, setType] = useState(location.type)
+  const [address, setAddress] = useState(location.address ?? '')
+  const [phone, setPhone] = useState(location.phone ?? '')
+  const [email, setEmail] = useState(location.email ?? '')
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+
+  async function save() {
+    if (!name.trim()) { setError('Location name is required'); return }
+    setSaving(true); setError(null)
+    const res = await fetch(`/api/org/locations/${location.id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: name.trim(), type, address: address.trim() || null, phone: phone.trim() || null, email: email.trim() || null }),
+    })
+    setSaving(false)
+    if (res.ok) {
+      onSave({ ...location, name: name.trim(), type, address: address.trim() || null, phone: phone.trim() || null, email: email.trim() || null })
+      onClose()
+    } else {
+      const data = await res.json()
+      setError(data.error ?? 'Failed to save')
+    }
+  }
+
+  return (
+    <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose() }}>
+      <div className="modal-box" style={{ maxWidth: 520 }}>
+        <div className="modal-header">
+          <div>
+            <div className="modal-title">Edit Location</div>
+            <div className="modal-subtitle">{location.name}</div>
+          </div>
+          <button className="modal-close" onClick={onClose}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          </button>
+        </div>
+        <div className="modal-body">
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+            <div className="modal-field" style={{ gridColumn: 'span 2' }}>
+              <label className="modal-label">Location Name <span className="req">*</span></label>
+              <MInput value={name} onChange={setName} placeholder="e.g. Auckland Warehouse" />
+            </div>
+            <div className="modal-field">
+              <label className="modal-label">Type</label>
+              <Select value={type} onChange={setType} options={['Warehouse','Store','Supplier','Virtual'].map(t => ({ value: t, label: t }))} />
+            </div>
+            <div className="modal-field">
+              <label className="modal-label">Phone</label>
+              <MInput value={phone} onChange={setPhone} placeholder="+64 9 000 0000" />
+            </div>
+            <div className="modal-field" style={{ gridColumn: 'span 2' }}>
+              <label className="modal-label">Address</label>
+              <MInput value={address} onChange={setAddress} placeholder="123 Main St, Auckland 1010" />
+            </div>
+            <div className="modal-field" style={{ gridColumn: 'span 2' }}>
+              <label className="modal-label">Email</label>
+              <MInput value={email} onChange={setEmail} placeholder="warehouse@business.com" type="email" />
+            </div>
+          </div>
+          {error && <div style={{ background: '#FEF2F2', border: '1.5px solid #FECACA', borderRadius: 9, padding: '10px 14px', fontSize: 13, color: '#B91C1C', marginTop: 12 }}>{error}</div>}
+        </div>
+        <div className="modal-footer">
+          <button className="btn btn-outline" onClick={onClose}>Cancel</button>
+          <button className="btn btn-primary" onClick={save} disabled={saving}>{saving ? 'Saving…' : 'Save Changes'}</button>
         </div>
       </div>
     </div>
@@ -555,10 +647,13 @@ function ContactsTab({ taxRates, currencies, locations, orgId, showToast }: {
               <div style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 700, color: 'var(--slate)' }}>Custom Fields</div>
               <div style={{ fontSize: 12.5, color: 'var(--gray-400)', marginTop: 2 }}>Text, number or date fields for contacts</div>
             </div>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {customFields.length > 0 && <SaveBtn onClick={() => showToast('success', 'Custom fields saved')} />}
             <button className="btn btn-primary" style={{ height: 32, fontSize: 12.5 }} onClick={addField}>
               <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               Add Field
             </button>
+            </div>
           </div>
           <div style={{ padding: '10px 16px', display: 'flex', flexDirection: 'column', gap: 8, minHeight: 60 }}>
             {customFields.length === 0 && (
@@ -590,10 +685,13 @@ function ContactsTab({ taxRates, currencies, locations, orgId, showToast }: {
               <div style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 700, color: 'var(--slate)' }}>Custom Lists</div>
               <div style={{ fontSize: 12.5, color: 'var(--gray-400)', marginTop: 2 }}>Dropdown lists for contacts</div>
             </div>
-            <button className="btn btn-primary" style={{ height: 32, fontSize: 12.5 }} onClick={addList}>
-              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              Add List
-            </button>
+            <div style={{ display: 'flex', gap: 8 }}>
+              {customLists.length > 0 && <SaveBtn onClick={() => showToast('success', 'Custom lists saved')} />}
+              <button className="btn btn-primary" style={{ height: 32, fontSize: 12.5 }} onClick={addList}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Add List
+              </button>
+            </div>
           </div>
           <div style={{ padding: '10px 16px', display: 'flex', flexDirection: 'column', gap: 8, minHeight: 60 }}>
             {customLists.length === 0 && (
@@ -703,6 +801,7 @@ export default function SettingsClient({
   // Locations
   const [locations, setLocations] = useState<Location[]>(initialLocations.map(l => ({ ...l, bins: (l as Location).bins ?? [] })))
   const [showAddLoc, setShowAddLoc] = useState(false)
+  const [editLocModal, setEditLocModal] = useState<Location | null>(null)
   const [binsModal, setBinsModal] = useState<Location | null>(null)
 
   // Tax Rates
@@ -1029,6 +1128,12 @@ export default function SettingsClient({
                         </div>
                       </div>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <button onClick={() => setEditLocModal(l)} style={{ width: 28, height: 28, borderRadius: 7, border: '1.5px solid var(--gray-200)', background: 'var(--white)', cursor: 'pointer', color: 'var(--gray-400)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                          title="Edit location"
+                          onMouseOver={e => { e.currentTarget.style.borderColor = 'var(--teal)'; e.currentTarget.style.color = 'var(--teal)' }}
+                          onMouseOut={e => { e.currentTarget.style.borderColor = 'var(--gray-200)'; e.currentTarget.style.color = 'var(--gray-400)' }}>
+                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+                        </button>
                         <span style={{ fontSize: 12, color: l.active ? '#059669' : 'var(--gray-400)', fontWeight: 600 }}>{l.active ? 'Active' : 'Inactive'}</span>
                         <button className="status-toggle" data-active={String(l.active)} onClick={() => toggleLocation(l.id, !l.active)} type="button">
                           <div className="status-toggle-knob" />
@@ -1280,6 +1385,17 @@ export default function SettingsClient({
           orgId={orgId}
           onClose={() => setShowAddLoc(false)}
           onAdd={loc => setLocations(prev => [...prev, loc])}
+        />
+      )}
+
+      {editLocModal && (
+        <EditLocationModal
+          location={editLocModal}
+          onClose={() => setEditLocModal(null)}
+          onSave={updated => {
+            setLocations(prev => prev.map(l => l.id === updated.id ? { ...l, ...updated } : l))
+            setEditLocModal(null)
+          }}
         />
       )}
 

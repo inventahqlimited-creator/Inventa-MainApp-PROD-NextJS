@@ -510,8 +510,19 @@ function ImportModal({ orgId, customFields, customLists, taxRates, suppliers, pr
             const pl = priceLevels.find(p => p.name === pd.price_level)
             return pl ? [{ org_id: orgId, product_id: newProduct.id, level_id: pl.id, price: pd.price, break_qty: pd.break_qty }] : []
           })
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          if (pricingRows.length > 0) await sb.from('product_pricing').insert(pricingRows as any[])
+          if (pricingRows.length > 0) {
+            // Use fetch directly to avoid Supabase generated-type constraint on product_pricing
+            await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/product_pricing`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+                'Authorization': `Bearer ${(await sb.auth.getSession()).data.session?.access_token}`,
+                'Prefer': 'return=minimal',
+              },
+              body: JSON.stringify(pricingRows),
+            })
+          }
         }
       } else {
         let errMsg = `Row failed (status ${res.status})`

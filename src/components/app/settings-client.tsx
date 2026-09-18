@@ -18,6 +18,7 @@ type Location = {
 type Bin = { id: string; name: string; description: string | null }
 type TaxRate = { id: string; name: string; code: string; rate: number; is_default: boolean }
 type Currency = { id: string; code: string; name: string; rate: number; symbol: string | null }
+type Uom = { id: string; name: string; abbr: string; in_use?: boolean }
 
 const TABS = [
   { key: 'general', label: 'General' },
@@ -888,6 +889,7 @@ export default function SettingsClient({
   const [batchTracking, setBatchTracking] = useState(Boolean(org.batch_tracking))
   const [expiryTracking, setExpiryTracking] = useState(Boolean(org.expiry_tracking))
   const [decimalQty, setDecimalQty] = useState(Boolean(org.decimal_qty))
+  const [decimalQtyPlaces, setDecimalQtyPlaces] = useState(String(org.decimal_qty_places ?? '2'))
 
   async function saveProductSetting(key: string, value: unknown) {
     await fetch('/api/org/settings', {
@@ -895,6 +897,42 @@ export default function SettingsClient({
       body: JSON.stringify({ [key]: value }),
     })
     showToast('success', 'Setting saved')
+  }
+
+  // Units of Measure
+  const [uoms, setUoms] = useState<Uom[]>([])
+  const [addingUom, setAddingUom] = useState(false)
+  const [newUomName, setNewUomName] = useState('')
+  const [newUomAbbr, setNewUomAbbr] = useState('')
+
+  useEffect(() => {
+    fetch('/api/org/uoms').then(r => r.json()).then(data => { if (Array.isArray(data)) setUoms(data) })
+  }, [])
+
+  async function addUom() {
+    if (!newUomName.trim()) return
+    const res = await fetch('/api/org/uoms', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: newUomName.trim(), abbr: newUomAbbr.trim() }),
+    })
+    const data = await res.json()
+    if (res.ok) { setUoms(prev => [...prev, data]); setNewUomName(''); setNewUomAbbr(''); setAddingUom(false) }
+    else showToast('error', data.error ?? 'Failed to add unit')
+  }
+
+  async function renameUom(id: string, name: string) {
+    setUoms(prev => prev.map(u => u.id === id ? { ...u, name } : u))
+    await fetch(`/api/org/uoms/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name }) })
+  }
+
+  async function updateUomAbbr(id: string, abbr: string) {
+    setUoms(prev => prev.map(u => u.id === id ? { ...u, abbr } : u))
+    await fetch(`/api/org/uoms/${id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ abbr }) })
+  }
+
+  async function deleteUom(id: string) {
+    setUoms(prev => prev.filter(u => u.id !== id))
+    await fetch(`/api/org/uoms/${id}`, { method: 'DELETE' })
   }
 
   // Purchases settings
@@ -1300,6 +1338,51 @@ export default function SettingsClient({
             <Card title="Quantity Settings" subtitle="Control how quantities are entered and displayed">
               <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <ToggleRow label="Allow Decimal Quantities" sub="Enables buying and selling in fractional quantities (e.g. 0.5, 1.25)" active={decimalQty} onChange={v => { setDecimalQty(v); saveProductSetting('decimal_qty', v) }} />
+                {decimalQty && (
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', background: 'var(--gray-50)', border: '1.5px solid var(--gray-200)', borderRadius: 10 }}>
+                    <div>
+                      <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--slate)', fontFamily: 'var(--font-display)' }}>Decimal Places</div>
+                      <div style={{ fontSize: 12.5, color: 'var(--gray-400)', marginTop: 2 }}>Number of decimal places shown on qty and price fields</div>
+                    </div>
+                    <select className="modal-input" value={decimalQtyPlaces} onChange={e => { setDecimalQtyPlaces(e.target.value); saveProductSetting('decimal_qty_places', parseInt(e.target.value)) }} style={{ width: 160, marginLeft: 16 }}>
+                      {[1,2,3,4].map(n => <option key={n} value={String(n)}>{n} (e.g. {(1).toFixed(n)})</option>)}
+                    </select>
+                  </div>
+                )}
+              </div>
+            </Card>
+            {/* Units of Measure */}
+            <Card title="Units of Measure" subtitle="Define units available when creating or editing products" action={
+              <button className="btn btn-primary" style={{ height: 32, fontSize: 12.5 }} onClick={() => setAddingUom(true)}>
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Add Unit
+              </button>
+            }>
+              {addingUom && (
+                <div style={{ padding: '12px 20px', borderBottom: '1px solid var(--gray-100)', display: 'flex', gap: 8, alignItems: 'center' }}>
+                  <input className="modal-input" placeholder="Name (e.g. Kilogram)" value={newUomName} onChange={e => setNewUomName(e.target.value)} style={{ flex: 2 }} onKeyDown={e => e.key === 'Enter' && addUom()} />
+                  <input className="modal-input" placeholder="Abbr (e.g. kg)" value={newUomAbbr} onChange={e => setNewUomAbbr(e.target.value)} style={{ flex: 1 }} onKeyDown={e => e.key === 'Enter' && addUom()} />
+                  <button className="btn btn-primary" style={{ height: 34, fontSize: 12.5, whiteSpace: 'nowrap' }} onClick={addUom}>Add</button>
+                  <button className="btn" style={{ height: 34, fontSize: 12.5 }} onClick={() => { setAddingUom(false); setNewUomName(''); setNewUomAbbr('') }}>Cancel</button>
+                </div>
+              )}
+              <div style={{ padding: '8px 0' }}>
+                {uoms.length === 0 && <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--gray-300)', fontSize: 12.5 }}>No units yet.</div>}
+                {uoms.map(u => (
+                  <div key={u.id} style={{ display: 'flex', alignItems: 'center', padding: '10px 20px', borderBottom: '1px solid var(--gray-100)' }}>
+                    <InlineEditable value={u.name} onChange={name => renameUom(u.id, name)} style={{ flex: 1, fontWeight: 500, color: 'var(--slate)', fontSize: 13.5 }} />
+                    <InlineEditable value={u.abbr} onChange={abbr => updateUomAbbr(u.id, abbr)} style={{ width: 80, textAlign: 'right', color: 'var(--gray-400)', fontSize: 12.5 }} />
+                    {!u.in_use ? (
+                      <button onClick={() => deleteUom(u.id)} style={{ width: 28, height: 28, borderRadius: 7, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--gray-300)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', marginLeft: 8 }}
+                        onMouseOver={e => (e.currentTarget.style.color = 'var(--danger)')}
+                        onMouseOut={e => (e.currentTarget.style.color = 'var(--gray-300)')}>
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/></svg>
+                      </button>
+                    ) : (
+                      <div style={{ width: 36, marginLeft: 8 }} />
+                    )}
+                  </div>
+                ))}
               </div>
             </Card>
           </>

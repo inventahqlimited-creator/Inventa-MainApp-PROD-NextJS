@@ -20,6 +20,17 @@ type TaxRate = { id: string; name: string; code: string; rate: number; is_defaul
 type Currency = { id: string; code: string; name: string; rate: number; symbol: string | null }
 type Uom = { id: string; name: string; abbr: string; in_use?: boolean }
 type PriceLevel = { id: string; name: string; is_default: boolean }
+type Member = {
+  id: string
+  first_name: string | null
+  last_name: string | null
+  email: string | null
+  role: string
+  invite_status: string
+  accepted_at: string | null
+  last_sign_in_at: string | null
+  is_me: boolean
+}
 
 const TABS = [
   { key: 'general', label: 'General' },
@@ -782,6 +793,7 @@ export default function SettingsClient({
   isAdmin,
   initialTab,
   hasTxns = false,
+  members = [],
 }: {
   org: Org
   locations: Location[]
@@ -791,6 +803,7 @@ export default function SettingsClient({
   isAdmin: boolean
   initialTab: string
   hasTxns?: boolean
+  members?: Member[]
 }) {
   const router = useRouter()
   const [tab, setTab] = useState<Tab>((initialTab as Tab) ?? 'general')
@@ -967,15 +980,99 @@ export default function SettingsClient({
     else showToast('error', 'Failed to save')
   }
 
+  // Transfers settings
+  const [trPrefix, setTrPrefix] = useState(String(org.tr_prefix ?? 'TR-'))
+  const [trSuffix, setTrSuffix] = useState(String(org.tr_suffix ?? ''))
+  const [trStart, setTrStart] = useState(String(org.tr_start ?? '1'))
+  const [trDigits, setTrDigits] = useState(String(org.tr_digits ?? '4'))
+  const [savingTrNumbering, setSavingTrNumbering] = useState(false)
+
+  const trPreview = `${trPrefix}${String(parseInt(trStart) || 1).padStart(parseInt(trDigits) || 4, '0')}${trSuffix}`
+
+  async function saveTrNumbering() {
+    setSavingTrNumbering(true)
+    const res = await fetch('/api/org/transfer-settings', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ tr_prefix: trPrefix, tr_suffix: trSuffix, tr_start: parseInt(trStart) || 1, tr_digits: parseInt(trDigits) || 4 }),
+    })
+    setSavingTrNumbering(false)
+    if (res.ok) showToast('success', 'Transfer numbering saved')
+    else showToast('error', 'Failed to save')
+  }
+
   // Sales settings
-  const [fulfilmentMode, setFulfilmentMode] = useState('full')
-  const [autoPicking, setAutoPicking] = useState(false)
-  const [allowOverPicking, setAllowOverPicking] = useState(false)
-  const [pickingRule, setPickingRule] = useState('FIFO')
-  const [soPrefix, setSoPrefix] = useState('SO-')
-  const [soStart, setSoStart] = useState('1')
-  const [defCarrier, setDefCarrier] = useState('NZ Post')
-  const [defShipping, setDefShipping] = useState('Standard Courier')
+  const [fulfilmentMode, setFulfilmentMode] = useState(String(org.fulfilment_mode ?? 'full'))
+  const [autoPicking, setAutoPicking] = useState(Boolean(org.auto_picking))
+  const [allowOverPicking, setAllowOverPicking] = useState(Boolean(org.allow_over_picking))
+  const [pickingRule, setPickingRule] = useState(String(org.picking_rule ?? 'FIFO'))
+  const [soPrefix, setSoPrefix] = useState(String(org.so_prefix ?? 'SO-'))
+  const [soSuffix, setSoSuffix] = useState(String(org.so_suffix ?? ''))
+  const [soStart, setSoStart] = useState(String(org.so_start ?? '1'))
+  const [soDigits, setSoDigits] = useState(String(org.so_digits ?? '4'))
+  const [defCarrier, setDefCarrier] = useState(String(org.default_carrier ?? 'NZ Post'))
+  const [defShipping, setDefShipping] = useState(String(org.default_shipping_method ?? 'Standard Courier'))
+  const [soDefaultPaymentTerms, setSoDefaultPaymentTerms] = useState(String(org.so_default_payment_terms ?? 'Net 30'))
+  const [soDefaultShipFrom, setSoDefaultShipFrom] = useState(String(org.so_default_ship_from ?? ''))
+  const [savingFulfilment, setSavingFulfilment] = useState(false)
+  const [savingPicking, setSavingPicking] = useState(false)
+  const [savingSoNumbering, setSavingSoNumbering] = useState(false)
+  const [savingShippingDefaults, setSavingShippingDefaults] = useState(false)
+  const [savingSoDefaults, setSavingSoDefaults] = useState(false)
+
+  async function saveFulfilment() {
+    setSavingFulfilment(true)
+    const res = await fetch('/api/org/sales-settings', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fulfilment_mode: fulfilmentMode }),
+    })
+    setSavingFulfilment(false)
+    if (res.ok) showToast('success', 'Fulfilment mode saved')
+    else showToast('error', 'Failed to save')
+  }
+
+  async function savePicking() {
+    setSavingPicking(true)
+    const res = await fetch('/api/org/sales-settings', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ auto_picking: autoPicking, allow_over_picking: allowOverPicking, picking_rule: pickingRule }),
+    })
+    setSavingPicking(false)
+    if (res.ok) showToast('success', 'Picking settings saved')
+    else showToast('error', 'Failed to save')
+  }
+
+  async function saveSoNumbering() {
+    setSavingSoNumbering(true)
+    const res = await fetch('/api/org/sales-settings', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ so_prefix: soPrefix, so_suffix: soSuffix, so_start: parseInt(soStart) || 1, so_digits: parseInt(soDigits) || 4 }),
+    })
+    setSavingSoNumbering(false)
+    if (res.ok) showToast('success', 'SO numbering saved')
+    else showToast('error', 'Failed to save')
+  }
+
+  async function saveShippingDefaults() {
+    setSavingShippingDefaults(true)
+    const res = await fetch('/api/org/sales-settings', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ default_carrier: defCarrier, default_shipping_method: defShipping }),
+    })
+    setSavingShippingDefaults(false)
+    if (res.ok) showToast('success', 'Shipping defaults saved')
+    else showToast('error', 'Failed to save')
+  }
+
+  async function saveSoDefaults() {
+    setSavingSoDefaults(true)
+    const res = await fetch('/api/org/sales-settings', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ so_default_payment_terms: soDefaultPaymentTerms, so_default_ship_from: soDefaultShipFrom || null }),
+    })
+    setSavingSoDefaults(false)
+    if (res.ok) showToast('success', 'Sales order defaults saved')
+    else showToast('error', 'Failed to save')
+  }
 
   // Toast
   const [toast, setToast] = useState<{ type: 'success' | 'error'; msg: string } | null>(null)
@@ -1073,7 +1170,7 @@ export default function SettingsClient({
   }
 
   const poPreview = `${poPrefix}${String(parseInt(poStart) || 1).padStart(parseInt(poDigits) || 4, '0')}${poSuffix}`
-  const soPreview = `${soPrefix}${String(parseInt(soStart) || 1).padStart(4, '0')}`
+  const soPreview = `${soPrefix}${String(parseInt(soStart) || 1).padStart(parseInt(soDigits) || 4, '0')}${soSuffix}`
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
@@ -1514,15 +1611,27 @@ export default function SettingsClient({
 
         {/* ── TRANSFERS ── */}
         {tab === 'transfers' && (
-          <Card title="Transfer Order Numbering" subtitle="Configure auto-generated Transfer numbers" action={<SaveBtn onClick={() => showToast('success', 'Transfer numbering saved')} />}>
-            <div style={{ padding: '18px 20px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
+          <Card title="Transfer Order Numbering" subtitle="Configure auto-generated Transfer numbers" action={<SaveBtn onClick={saveTrNumbering} saving={savingTrNumbering} />}>
+            <div style={{ padding: '18px 20px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 14 }}>
               <Field label="Prefix (up to 4 chars)">
-                <input className="modal-input" value="TR-" readOnly style={{ background: 'var(--gray-50)', fontFamily: 'monospace', fontWeight: 700, opacity: 0.7 }} />
+                <input className="modal-input" value={trPrefix} onChange={e => setTrPrefix(e.target.value)} maxLength={6} style={{ background: 'var(--white)', fontFamily: 'monospace', fontWeight: 700 }} />
               </Field>
-              <Field label="Start Number"><MInput value="1" onChange={() => {}} type="number" /></Field>
-              <Field label="Preview">
-                <div style={{ background: 'var(--gray-50)', border: '1.5px solid var(--gray-200)', borderRadius: 9, padding: '9px 14px', fontFamily: 'monospace', fontSize: 14, fontWeight: 700, color: 'var(--slate)' }}>TR-0001</div>
+              <Field label="Suffix (up to 4 chars)">
+                <input className="modal-input" value={trSuffix} onChange={e => setTrSuffix(e.target.value)} maxLength={6} placeholder="e.g. -NZ" style={{ background: 'var(--white)', fontFamily: 'monospace', fontWeight: 700 }} />
               </Field>
+              <Field label="Start Number"><MInput value={trStart} onChange={setTrStart} type="number" placeholder="1" /></Field>
+              <Field label="Number Length (digits)">
+                <Select value={trDigits} onChange={setTrDigits} options={[
+                  { value: '3', label: '3 digits' },
+                  { value: '4', label: '4 digits' },
+                  { value: '5', label: '5 digits' },
+                  { value: '6', label: '6 digits' },
+                ]} />
+              </Field>
+            </div>
+            <div style={{ padding: '0 20px 18px' }}>
+              <div style={{ fontSize: 12, color: 'var(--gray-400)', marginBottom: 6 }}>Preview</div>
+              <div style={{ background: 'var(--gray-50)', border: '1.5px solid var(--gray-200)', borderRadius: 9, padding: '9px 14px', fontFamily: 'monospace', fontSize: 14, fontWeight: 700, color: 'var(--slate)', display: 'inline-block' }}>{trPreview}</div>
             </div>
           </Card>
         )}
@@ -1530,7 +1639,7 @@ export default function SettingsClient({
         {/* ── SALES ── */}
         {tab === 'sales' && (
           <>
-            <Card title="Fulfilment Mode" subtitle="Controls which steps are required to close a sales order">
+            <Card title="Fulfilment Mode" subtitle="Controls which steps are required to close a sales order" action={<SaveBtn onClick={saveFulfilment} saving={savingFulfilment} />}>
               <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 10 }}>
                 {[
                   { value: 'full', label: 'Full — Pick → Pack → Close', sub: 'All steps required. Default for most businesses.' },
@@ -1547,7 +1656,7 @@ export default function SettingsClient({
                 ))}
               </div>
             </Card>
-            <Card title="Picking" subtitle="Control how stock is picked for sales orders">
+            <Card title="Picking" subtitle="Control how stock is picked for sales orders" action={<SaveBtn onClick={savePicking} saving={savingPicking} />}>
               <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
                 <ToggleRow label="Auto Picking" sub="Stock is picked automatically using the rule below when Pick Order is clicked" active={autoPicking} onChange={setAutoPicking} />
                 {autoPicking && (
@@ -1569,18 +1678,40 @@ export default function SettingsClient({
                 <ToggleRow label="Allow Over Picking" sub="Allow users to pick more stock than the ordered quantity" active={allowOverPicking} onChange={setAllowOverPicking} />
               </div>
             </Card>
-            <Card title="Sales Order Numbering" subtitle="Configure auto-generated SO numbers" action={<SaveBtn onClick={() => showToast('success', 'SO numbering saved')} />}>
-              <div style={{ padding: '18px 20px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
-                <Field label="Prefix">
-                  <input className="modal-input" value={soPrefix} onChange={e => setSoPrefix(e.target.value)} maxLength={4} style={{ background: 'var(--white)', fontFamily: 'monospace', fontWeight: 700 }} />
+            <Card title="Sales Order Numbering" subtitle="Configure auto-generated SO numbers" action={<SaveBtn onClick={saveSoNumbering} saving={savingSoNumbering} />}>
+              <div style={{ padding: '18px 20px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 14 }}>
+                <Field label="Prefix (up to 4 chars)">
+                  <input className="modal-input" value={soPrefix} onChange={e => setSoPrefix(e.target.value)} maxLength={6} style={{ background: 'var(--white)', fontFamily: 'monospace', fontWeight: 700 }} />
                 </Field>
-                <Field label="Start Number"><MInput value={soStart} onChange={setSoStart} type="number" /></Field>
-                <Field label="Preview">
-                  <div style={{ background: 'var(--gray-50)', border: '1.5px solid var(--gray-200)', borderRadius: 9, padding: '9px 14px', fontFamily: 'monospace', fontSize: 14, fontWeight: 700, color: 'var(--slate)' }}>{soPreview}</div>
+                <Field label="Suffix (up to 4 chars)">
+                  <input className="modal-input" value={soSuffix} onChange={e => setSoSuffix(e.target.value)} maxLength={6} placeholder="e.g. -NZ" style={{ background: 'var(--white)', fontFamily: 'monospace', fontWeight: 700 }} />
+                </Field>
+                <Field label="Start Number"><MInput value={soStart} onChange={setSoStart} type="number" placeholder="1" /></Field>
+                <Field label="Number Length (digits)">
+                  <Select value={soDigits} onChange={setSoDigits} options={[
+                    { value: '3', label: '3 digits' },
+                    { value: '4', label: '4 digits' },
+                    { value: '5', label: '5 digits' },
+                    { value: '6', label: '6 digits' },
+                  ]} />
+                </Field>
+              </div>
+              <div style={{ padding: '0 20px 18px' }}>
+                <div style={{ fontSize: 12, color: 'var(--gray-400)', marginBottom: 6 }}>Preview</div>
+                <div style={{ background: 'var(--gray-50)', border: '1.5px solid var(--gray-200)', borderRadius: 9, padding: '9px 14px', fontFamily: 'monospace', fontSize: 14, fontWeight: 700, color: 'var(--slate)', display: 'inline-block' }}>{soPreview}</div>
+              </div>
+            </Card>
+            <Card title="Sales Order Defaults" subtitle="Default values for new sales orders" action={<SaveBtn onClick={saveSoDefaults} saving={savingSoDefaults} label="Save Defaults" />}>
+              <div style={{ padding: '18px 20px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                <Field label="Default Payment Terms">
+                  <Select value={soDefaultPaymentTerms} onChange={setSoDefaultPaymentTerms} options={['Net 7','Net 14','Net 30','Net 60','COD','Prepaid'].map(t => ({ value: t, label: t }))} />
+                </Field>
+                <Field label="Default Ship From">
+                  <Select value={soDefaultShipFrom} onChange={setSoDefaultShipFrom} options={[{ value: '', label: '— None —' }, ...locations.filter(l => l.active).map(l => ({ value: l.id, label: l.name }))]} />
                 </Field>
               </div>
             </Card>
-            <Card title="Shipping Defaults" subtitle="Default carrier and method for new shipments" action={<SaveBtn onClick={() => showToast('success', 'Shipping defaults saved')} />}>
+            <Card title="Shipping Defaults" subtitle="Default carrier and method for new shipments" action={<SaveBtn onClick={saveShippingDefaults} saving={savingShippingDefaults} />}>
               <div style={{ padding: '18px 20px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
                 <Field label="Default Carrier">
                   <Select value={defCarrier} onChange={setDefCarrier} options={['NZ Post','Aramex','DHL','FedEx','Aus Post','UPS','TNT','Other'].map(c => ({ value: c, label: c }))} />
@@ -1595,14 +1726,93 @@ export default function SettingsClient({
 
         {/* ── USERS ── */}
         {tab === 'users' && (
-          <Card title="Team Members" subtitle="Manage who has access to your organisation">
-            <div style={{ padding: '20px', textAlign: 'center' }}>
-              <p style={{ fontSize: 13, color: 'var(--gray-400)', marginBottom: 16 }}>Manage your team members, roles and invitations.</p>
-              <Link href="/settings/users" className="btn btn-primary" style={{ display: 'inline-flex' }}>
-                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
-                Manage Team
-              </Link>
+          <Card
+            title="Team Members"
+            subtitle="Manage who has access to your organisation"
+            action={
+              <button className="btn btn-primary" style={{ height: 32, fontSize: 12.5, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Invite User
+              </button>
+            }
+          >
+            {/* Table header */}
+            <div style={{ display: 'grid', gridTemplateColumns: '2fr 2.5fr 1.2fr 1fr 1.2fr 48px', padding: '10px 20px', borderBottom: '1px solid var(--gray-100)' }}>
+              {['Name', 'Email', 'Role', 'Status', 'Last Active'].map(h => (
+                <div key={h} style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-400)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>{h}</div>
+              ))}
+              <div />
             </div>
+            {/* Rows */}
+            {members.length === 0 ? (
+              <div style={{ padding: '28px 20px', textAlign: 'center', fontSize: 13, color: 'var(--gray-400)' }}>No members yet.</div>
+            ) : members.map(mb => {
+              const initials = [mb.first_name, mb.last_name].filter(Boolean).map(s => s![0].toUpperCase()).join('') || (mb.email ? mb.email[0].toUpperCase() : '?')
+              const fullName = [mb.first_name, mb.last_name].filter(Boolean).join(' ') || mb.email?.split('@')[0] || '—'
+              const isAccepted = mb.invite_status === 'accepted'
+
+              // Avatar colour based on initials
+              const colours = ['#0D9488','#7C3AED','#DB2777','#D97706','#2563EB','#059669']
+              const avatarBg = colours[(initials.charCodeAt(0) || 0) % colours.length]
+
+              // Last active
+              let lastActive = '—'
+              if (mb.last_sign_in_at) {
+                const diff = Date.now() - new Date(mb.last_sign_in_at).getTime()
+                const mins = Math.floor(diff / 60000)
+                const hrs = Math.floor(mins / 60)
+                const days = Math.floor(hrs / 24)
+                if (mins < 2) lastActive = 'Just now'
+                else if (mins < 60) lastActive = `${mins} min ago`
+                else if (hrs < 24) lastActive = hrs === 1 ? '1 hour ago' : `${hrs} hours ago`
+                else lastActive = days === 1 ? 'Yesterday' : `${days} days ago`
+              }
+
+              // Role badge colours
+              const roleMeta: Record<string, { bg: string; color: string }> = {
+                admin:   { bg: '#EDE9FE', color: '#6D28D9' },
+                manager: { bg: '#D1FAE5', color: '#065F46' },
+                staff:   { bg: '#DBEAFE', color: '#1D4ED8' },
+              }
+              const roleStyle = roleMeta[mb.role?.toLowerCase()] ?? { bg: 'var(--gray-100)', color: 'var(--gray-400)' }
+              const roleLabel = mb.role ? mb.role.charAt(0).toUpperCase() + mb.role.slice(1) : '—'
+
+              return (
+                <div key={mb.id} style={{ display: 'grid', gridTemplateColumns: '2fr 2.5fr 1.2fr 1fr 1.2fr 48px', padding: '14px 20px', borderBottom: '1px solid var(--gray-100)', alignItems: 'center' }}>
+                  {/* Name + avatar */}
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                    <div style={{ width: 32, height: 32, borderRadius: '50%', background: avatarBg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                      <span style={{ fontSize: 12, fontWeight: 700, color: '#fff', letterSpacing: '0.02em' }}>{initials}</span>
+                    </div>
+                    <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--slate)', fontFamily: 'var(--font-display)' }}>{fullName}</div>
+                  </div>
+                  {/* Email */}
+                  <div style={{ fontSize: 13, color: '#6366F1' }}>{mb.email ?? '—'}</div>
+                  {/* Role badge */}
+                  <div>
+                    <span style={{ fontSize: 12, fontWeight: 600, padding: '3px 10px', borderRadius: 20, background: roleStyle.bg, color: roleStyle.color }}>{roleLabel}</span>
+                  </div>
+                  {/* Status badge */}
+                  <div>
+                    {isAccepted
+                      ? <span style={{ fontSize: 12, fontWeight: 600, padding: '3px 10px', borderRadius: 20, background: '#D1FAE5', color: '#065F46' }}>Active</span>
+                      : <span style={{ fontSize: 12, fontWeight: 600, padding: '3px 10px', borderRadius: 20, background: '#FEF3C7', color: '#92400E' }}>Pending</span>
+                    }
+                  </div>
+                  {/* Last active */}
+                  <div style={{ fontSize: 13, color: 'var(--gray-400)' }}>{lastActive}</div>
+                  {/* Actions */}
+                  <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                    {mb.is_me
+                      ? <span style={{ fontSize: 11.5, color: 'var(--gray-400)', fontStyle: 'italic' }}>You</span>
+                      : <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--gray-400)', padding: 4 }}>
+                          <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
+                        </button>
+                    }
+                  </div>
+                </div>
+              )
+            })}
           </Card>
         )}
 

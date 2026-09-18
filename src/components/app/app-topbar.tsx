@@ -47,7 +47,7 @@ export default function AppTopbar({
     role === 'manager' ? 'Manager' :
     role === 'read_only' ? 'Read Only' : 'Staff'
 
-  // Show name if available, fall back to email
+  // Show name if set, fall back to email
   const nameDisplay = displayName && displayName !== email ? displayName : email
 
   return (
@@ -62,43 +62,23 @@ export default function AppTopbar({
       <div className="topbar-spacer" />
 
       <div className="topbar-actions">
-        {/* Notification bell */}
-        <button className="icon-btn" title="Notifications">
-          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
-            <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
-          </svg>
-        </button>
 
-        {/* Quick-actions + button */}
+        {/* + Quick actions — FIRST */}
         <div style={{ position: 'relative' }} ref={quickRef}>
           <button
-            className="icon-btn"
+            className="plus-btn"
             title="Quick actions"
             onClick={() => setQuickOpen(o => !o)}
-            style={{
-              background: 'var(--teal)',
-              color: '#fff',
-              borderRadius: 6,
-              width: 30,
-              height: 30,
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              fontWeight: 700,
-              fontSize: 18,
-              lineHeight: 1,
-              border: 'none',
-              cursor: 'pointer',
-            }}
           >
-            +
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+              <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
           </button>
 
           {quickOpen && (
-            <div className="inv-dropdown" style={{ display: 'block', minWidth: 220, right: 0, left: 'auto' }}>
+            <div className="inv-dropdown" style={{ display: 'block', minWidth: 230, right: 0, left: 'auto' }}>
               <div className="dd-section-label">CONTACTS &amp; PRODUCTS</div>
-              <div className="dd-item" onClick={() => { setQuickOpen(false); router.push('/contacts') }}>
+              <div className="dd-item" onClick={() => { setQuickOpen(false); router.push('/contacts?new=1') }}>
                 <div className="dd-icon-wrap">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
@@ -107,7 +87,7 @@ export default function AppTopbar({
                 </div>
                 New Contact
               </div>
-              <div className="dd-item" onClick={() => { setQuickOpen(false); router.push('/products') }}>
+              <div className="dd-item" onClick={() => { setQuickOpen(false); router.push('/products?new=1') }}>
                 <div className="dd-icon-wrap">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
@@ -116,7 +96,7 @@ export default function AppTopbar({
                 New Product
               </div>
 
-              <div className="dd-divider" />
+              <div className="dd-sep" />
 
               <div className="dd-section-label">ORDERS</div>
               <div className="dd-item" onClick={() => { setQuickOpen(false); router.push('/sales/new') }}>
@@ -153,9 +133,26 @@ export default function AppTopbar({
           )}
         </div>
 
+        {/* Notification bell — SECOND */}
+        <button className="icon-btn" title="Notifications">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/>
+            <path d="M13.73 21a2 2 0 0 1-3.46 0"/>
+          </svg>
+        </button>
+
+        {/* Help — THIRD */}
+        <button className="icon-btn" title="Help">
+          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+            <circle cx="12" cy="12" r="10"/>
+            <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/>
+            <line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+        </button>
+
         <div className="topbar-divider" />
 
-        {/* Profile dropdown */}
+        {/* Profile dropdown — LAST */}
         <div style={{ position: 'relative' }} ref={profileRef}>
           <div className="topbar-user" onClick={() => setProfileOpen(o => !o)}>
             <div className="topbar-avatar">{initials}</div>

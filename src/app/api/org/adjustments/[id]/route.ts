@@ -1,43 +1,42 @@
-import { NextRequest, NextResponse } from 'next/server'
-import { withOrg } from '@/lib/api/with-org'
+import { NextResponse } from 'next/server'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
 
-export const GET = withOrg(async (req: NextRequest, ctx) => {
-  const id = req.nextUrl.pathname.split('/').at(-2)!
-  const { data, error } = await ctx.adminClient
-    .from('adjustment_orders')
-    .select('*, adjustment_order_lines(*)')
-    .eq('id', id)
-    .eq('org_id', ctx.org_id)
+async function getOrgId(userId: string) {
+  const adminClient = createAdminClient()
+  const { data: m } = await adminClient
+    .from('org_members')
+    .select('org_id')
+    .eq('user_id', userId)
+    .eq('invite_status', 'accepted')
     .single()
-  if (error) return NextResponse.json({ error: error.message }, { status: 404 })
-  return NextResponse.json(data)
-})
+  return m ? (m as { org_id: string }).org_id : null
+}
 
-export const PATCH = withOrg(async (req: NextRequest, ctx) => {
-  const id = req.nextUrl.pathname.split('/').at(-2)!
-  const body = await req.json()
+export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const orgId = await getOrgId(user.id)
+  if (!orgId) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+
+  const adminClient = createAdminClient()
+  const { id } = await params
+  const body = await request.json()
 
   // Update the adjustment order status
-  const { error } = await ctx.adminClient
+  const { error } = await adminClient
     .from('adjustment_orders')
     .update({ status: body.status })
     .eq('id', id)
-    .eq('org_id', ctx.org_id)
+    .eq('org_id', orgId)
 
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
 
   // If completing, apply stock level changes
   if (body.status === 'Completed') {
-    // Get all lines for this adjustment
-    const { data: lines, error: linesError } = await ctx.adminClient
-      .from('adjustment_order_lines')
-      .select('product_id, quantity_before, quantity_after')
-      .eq('adjustment_order_id', id)
-
-    if (linesError) return NextResponse.json({ error: linesError.message }, { status: 400 })
-
-    // Get the location for this adjustment
-    const { data: adj, error: adjError } = await ctx.adminClient
+    // Get the location and lines for this adjustment
+    const { data: adj, error: adjError } = await adminClient
       .from('adjustment_orders')
       .select('location_id')
       .eq('id', id)
@@ -45,15 +44,21 @@ export const PATCH = withOrg(async (req: NextRequest, ctx) => {
 
     if (adjError) return NextResponse.json({ error: adjError.message }, { status: 400 })
 
-    const locationId = adj.location_id
+    const { data: lines, error: linesError } = await adminClient
+      .from('adjustment_order_lines')
+      .select('product_id, quantity_before, quantity_after')
+      .eq('adj_id', id)
+
+    if (linesError) return NextResponse.json({ error: linesError.message }, { status: 400 })
+
+    const locationId = (adj as { location_id: string }).location_id
 
     // Upsert stock levels for each line
-    for (const line of (lines ?? [])) {
+    for (const line of (lines ?? []) as { product_id: string; quantity_before: number; quantity_after: number }[]) {
       if (!line.product_id) continue
       const delta = line.quantity_after - line.quantity_before
 
-      // Try to update existing stock level row first
-      const { data: existing } = await ctx.adminClient
+      const { data: existing } = await adminClient
         .from('stock_levels')
         .select('id, quantity')
         .eq('product_id', line.product_id)
@@ -61,28 +66,22 @@ export const PATCH = withOrg(async (req: NextRequest, ctx) => {
         .maybeSingle()
 
       if (existing) {
-        await ctx.adminClient
+        await adminClient
           .from('stock_levels')
-          .update({ quantity: existing.quantity + delta })
-          .eq('id', existing.id)
+          .update({ quantity: (existing as { id: string; quantity: number }).quantity + delta })
+          .eq('id', (existing as { id: string; quantity: number }).id)
       } else {
-        await ctx.adminClient
+        await adminClient
           .from('stock_levels')
-          .insert({ product_id: line.product_id, location_id: locationId, org_id: ctx.org_id, quantity: line.quantity_after })
+          .insert({
+            product_id: line.product_id,
+            location_id: locationId,
+            org_id: orgId,
+            quantity: line.quantity_after,
+          })
       }
     }
   }
 
   return NextResponse.json({ ok: true })
-})
-
-export const DELETE = withOrg(async (req: NextRequest, ctx) => {
-  const id = req.nextUrl.pathname.split('/').at(-2)!
-  const { error } = await ctx.adminClient
-    .from('adjustment_orders')
-    .delete()
-    .eq('id', id)
-    .eq('org_id', ctx.org_id)
-  if (error) return NextResponse.json({ error: error.message }, { status: 400 })
-  return NextResponse.json({ ok: true })
-})
+}

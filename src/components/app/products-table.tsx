@@ -263,6 +263,7 @@ export default function ProductsTable({
   const [productOrders, setProductOrders] = useState<Record<string, unknown>[]>([])
   const [ordersLoading, setOrdersLoading] = useState(false)
 
+  // Auto-open modal when ?new=1 param is present (runs on mount AND when already on page)
   useEffect(() => {
     if (searchParams.get('new') === '1') {
       openAdd()
@@ -271,7 +272,7 @@ export default function ProductsTable({
       window.history.replaceState({}, '', url.toString())
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [searchParams])
 
   function setF(field: keyof ModalForm, value: string | boolean) {
     setForm(f => ({ ...f, [field]: value }))

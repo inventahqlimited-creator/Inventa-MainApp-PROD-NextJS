@@ -1,28 +1,31 @@
+// src/app/api/org/settings/route.ts
+import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
-import { createClient, createAdminClient } from '@/lib/supabase/server'
 
-export async function PATCH(request: Request) {
+const ALLOWED_KEYS = [
+  'serial_tracking', 'batch_tracking', 'expiry_tracking',
+  'decimal_qty', 'decimal_qty_places',
+]
+
+async function getAuth() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
+  if (!user) return null
   const adminClient = createAdminClient()
-  const { data: m } = await adminClient
-    .from('org_members')
-    .select('org_id, role')
-    .eq('user_id', user.id)
-    .eq('invite_status', 'accepted')
-    .single()
+  const { data: m } = await adminClient.from('org_members').select('org_id').eq('user_id', user.id).eq('invite_status', 'accepted').single()
+  return m ? { orgId: m.org_id, adminClient } : null
+}
 
-  if (!m || (m as { role: string }).role !== 'admin')
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-
-  const body = await request.json()
-  const { error } = await adminClient
-    .from('organisations')
-    .update(body)
-    .eq('id', (m as { org_id: string }).org_id)
-
+export async function PATCH(req: Request) {
+  const auth = await getAuth()
+  if (!auth) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const body = await req.json()
+  const updates: Record<string, unknown> = {}
+  for (const key of ALLOWED_KEYS) {
+    if (key in body) updates[key] = body[key]
+  }
+  if (Object.keys(updates).length === 0) return NextResponse.json({ error: 'No valid fields' }, { status: 400 })
+  const { error } = await auth.adminClient.from('organisations').update(updates).eq('id', auth.orgId)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ success: true })
 }

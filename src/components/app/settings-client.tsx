@@ -108,10 +108,10 @@ function Select({ value, onChange, options, disabled }: {
   )
 }
 
-function SaveBtn({ onClick, saving }: { onClick: () => void; saving?: boolean }) {
+function SaveBtn({ onClick, saving, label }: { onClick: () => void; saving?: boolean; label?: string }) {
   return (
     <button className="btn btn-primary" style={{ height: 32, fontSize: 12.5 }} onClick={onClick} disabled={saving}>
-      {saving ? 'Saving…' : 'Save'}
+      {saving ? 'Saving…' : (label ?? 'Save')}
     </button>
   )
 }
@@ -928,6 +928,20 @@ export default function SettingsClient({
   const [poSuffix, setPoSuffix] = useState(String(org.po_suffix ?? ''))
   const [poStart, setPoStart] = useState(String(org.po_start ?? '1'))
   const [poDigits, setPoDigits] = useState(String(org.po_digits ?? '4'))
+  const [poDefaultPaymentTerms, setPoDefaultPaymentTerms] = useState(String(org.po_default_payment_terms ?? 'Net 30'))
+  const [poDefaultDeliverTo, setPoDefaultDeliverTo] = useState(String(org.po_default_deliver_to ?? ''))
+  const [savingPoDefaults, setSavingPoDefaults] = useState(false)
+
+  async function savePoDefaults() {
+    setSavingPoDefaults(true)
+    const res = await fetch('/api/org/purchase-settings', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ po_default_payment_terms: poDefaultPaymentTerms, po_default_deliver_to: poDefaultDeliverTo || null }),
+    })
+    setSavingPoDefaults(false)
+    if (res.ok) showToast('success', 'Purchase order defaults saved')
+    else showToast('error', 'Failed to save')
+  }
   const [savingPurchaseSettings, setSavingPurchaseSettings] = useState(false)
   const [savingPoNumbering, setSavingPoNumbering] = useState(false)
 
@@ -1483,6 +1497,16 @@ export default function SettingsClient({
               <div style={{ padding: '0 20px 18px' }}>
                 <div style={{ fontSize: 12, color: 'var(--gray-400)', marginBottom: 6 }}>Preview</div>
                 <div style={{ background: 'var(--gray-50)', border: '1.5px solid var(--gray-200)', borderRadius: 9, padding: '9px 14px', fontFamily: 'monospace', fontSize: 14, fontWeight: 700, color: 'var(--slate)', display: 'inline-block' }}>{poPreview}</div>
+              </div>
+            </Card>
+            <Card title="Purchase Order Defaults" subtitle="Default values for new purchase orders" action={<SaveBtn onClick={savePoDefaults} saving={savingPoDefaults} label="Save Defaults" />}>
+              <div style={{ padding: '18px 20px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
+                <Field label="Default Payment Terms">
+                  <Select value={poDefaultPaymentTerms} onChange={setPoDefaultPaymentTerms} options={['Net 7','Net 14','Net 30','Net 60','COD','Prepaid'].map(t => ({ value: t, label: t }))} />
+                </Field>
+                <Field label="Default Deliver To">
+                  <Select value={poDefaultDeliverTo} onChange={setPoDefaultDeliverTo} options={[{ value: '', label: '— None —' }, ...locations.filter(l => l.active).map(l => ({ value: l.id, label: l.name }))]} />
+                </Field>
               </div>
             </Card>
           </>

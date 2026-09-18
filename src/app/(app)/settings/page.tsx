@@ -46,7 +46,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   const hasTxns = (salesCount ?? 0) > 0 || (purchaseCount ?? 0) > 0 || (transferCount ?? 0) > 0 || (adjustmentCount ?? 0) > 0
 
   // Attach bins to their locations
-  const locationsWithBins = (locations ?? []).map(loc => ({
+  const locationsWithBins = (locations ?? []).map((loc: Record<string, unknown>) => ({
     ...loc,
     bins: (bins ?? []).filter(b => b.location_id === loc.id),
   }))

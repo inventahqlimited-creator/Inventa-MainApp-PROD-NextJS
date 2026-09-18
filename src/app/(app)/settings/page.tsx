@@ -48,7 +48,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   // Attach bins to their locations
   const locationsWithBins = (locations ?? []).map((loc: Record<string, unknown>) => ({
     ...loc,
-    bins: (bins ?? []).filter(b => b.location_id === loc.id),
+    bins: (bins ?? []).filter((b: Record<string, unknown>) => b.location_id === loc.id),
   }))
 
   return (

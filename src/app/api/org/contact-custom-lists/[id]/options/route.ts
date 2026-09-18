@@ -24,6 +24,18 @@ export async function POST(req: Request, { params }: { params: Promise<{ id: str
   return NextResponse.json(data)
 }
 
+export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const { id: list_id } = await params
+  const auth = await getAuth()
+  if (!auth) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const { option_id, value } = await req.json()
+  if (!value?.trim()) return NextResponse.json({ error: 'Value is required' }, { status: 400 })
+  const { error } = await auth.adminClient.from('contact_custom_list_options')
+    .update({ value: value.trim() }).eq('id', option_id).eq('list_id', list_id).eq('org_id', auth.orgId)
+  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  return NextResponse.json({ success: true })
+}
+
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id: list_id } = await params
   const auth = await getAuth()

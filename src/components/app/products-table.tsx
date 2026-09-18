@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
+import { createClient } from '@/lib/supabase/client'
 
 type Product = {
   id: string
@@ -491,7 +492,7 @@ function ImportModal({ orgId, customFields, customLists, taxRates, suppliers, pr
         min_order_qty: parseInt(get(minOrderIdx)) || null,
         notes: get(notesIdx) || null,
         custom_fields: Object.keys(cfValues).length > 0 ? cfValues : null,
-        pricing: pricingData.length > 0 ? pricingData : undefined,
+        // NOTE: pricing is handled separately after product creation — not sent here
       }
 
       const res = await fetch('/api/org/products', {
@@ -499,10 +500,30 @@ function ImportModal({ orgId, customFields, customLists, taxRates, suppliers, pr
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ...payload, skip_if_sku_exists: skipDupes }),
       })
-      if (res.ok) created.push(await res.json())
+      if (res.ok) {
+        const newProduct = await res.json()
+        created.push(newProduct)
+        // Insert price level rows directly if any
+        if (pricingData.length > 0 && newProduct?.id) {
+          const sb = createClient()
+          const pricingRows = pricingData.map(pd => {
+            const pl = priceLevels.find(p => p.name === pd.price_level)
+            return pl ? { org_id: orgId, product_id: newProduct.id, level_id: pl.id, price: pd.price, break_qty: pd.break_qty } : null
+          }).filter(Boolean)
+          if (pricingRows.length > 0) await sb.from('product_pricing').insert(pricingRows)
+        }
+      } else {
+        let errMsg = `Row failed (status ${res.status})`
+        try {
+          const errBody = await res.json()
+          errMsg = errBody?.error || errBody?.message || JSON.stringify(errBody)
+        } catch { /* body wasn't JSON */ }
+        rowErrors.push(`"${name}": ${errMsg}`)
+      }
     }
 
     setImporting(false)
+    if (rowErrors.length > 0) setErrors(rowErrors)
     setImported(created.length)
     if (created.length > 0) onImported(created)
   }
@@ -583,6 +604,7 @@ export default function ProductsTable({
   orgSettings = {},
   customFields = [],
   customLists = [],
+  permissions = {},
 }: {
   products: Product[]
   stockLevels: StockLevel[]
@@ -597,9 +619,23 @@ export default function ProductsTable({
   orgSettings?: OrgSettings
   customFields?: CustomField[]
   customLists?: CustomList[]
+  permissions?: {
+    create_products?: boolean
+    edit_products?: boolean
+    view_pricing?: boolean
+    import_products?: boolean
+    export_products?: boolean
+  }
 }) {
   const router = useRouter()
   const searchParams = useSearchParams()
+
+  // Permission shortcuts — admins (isAdmin=true) bypass all checks
+  const canCreate = isAdmin || permissions.create_products !== false
+  const canEdit = isAdmin || permissions.edit_products !== false
+  const canViewPricing = isAdmin || permissions.view_pricing !== false
+  const canImport = isAdmin || permissions.import_products !== false
+  const canExport = isAdmin || permissions.export_products !== false
 
   // Derived from props
   // TAX_OPTIONS: value = tax_rate_id (UUID), so we store the id and resolve display text
@@ -909,14 +945,18 @@ export default function ProductsTable({
               {actionsOpen && (
                 <div className="inv-dropdown" style={{ display: 'block', minWidth: 200, padding: 6 }} onClick={e => e.stopPropagation()}>
                   <div className="dd-section-label">DATA</div>
+                  {canExport && (
                   <div className="dd-item" onClick={() => { setActionsOpen(false); setShowExport(true) }}>
                     <div className="dd-icon-wrap"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></div>
                     Export Products
                   </div>
+                  )}
+                  {canImport && (
                   <div className="dd-item" onClick={() => { setActionsOpen(false); setShowImport(true) }}>
                     <div className="dd-icon-wrap"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div>
                     Import Products
                   </div>
+                  )}
                   <div className="dd-sep" />
                   <div className="dd-section-label">STOCK</div>
                   <div className="dd-item" onClick={() => { setActionsOpen(false); router.push('/products/adjustments') }}>
@@ -934,10 +974,12 @@ export default function ProductsTable({
                 </div>
               )}
             </div>
+              {canCreate && (
               <button className="btn btn-primary" onClick={openAdd}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-              Add Product
-            </button>
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+                Add Product
+              </button>
+              )}
           </div>
         </div>
         <div className="tab-bar">
@@ -985,7 +1027,7 @@ export default function ProductsTable({
           {colOpen && (
             <div className="inv-dropdown col-dropdown" style={{ display: 'block' }}>
               <div className="col-dropdown-title">Show / Hide Columns</div>
-              {COLS.map(col => (
+              {COLS.filter(col => canViewPricing || !['sell_price', 'cost_price'].includes(col.key)).map(col => (
                 <label key={col.key} className="col-check-item">
                   <input type="checkbox" checked={v.has(col.key)} onChange={e => {
                     setVisibleCols(prev => {
@@ -1087,8 +1129,8 @@ export default function ProductsTable({
                 {v.has('status') && <th>Status</th>}
                 {v.has('unit') && <th>Unit</th>}
                 {v.has('barcode') && <th>Barcode</th>}
-                {v.has('sell_price') && <th style={{ textAlign: 'right' }}>Sale Price</th>}
-                {v.has('cost_price') && <th style={{ textAlign: 'right' }}>Cost Price</th>}
+                {canViewPricing && v.has('sell_price') && <th style={{ textAlign: 'right' }}>Sale Price</th>}
+                {canViewPricing && v.has('cost_price') && <th style={{ textAlign: 'right' }}>Cost Price</th>}
                 {v.has('on_hand') && <th style={{ textAlign: 'right' }}>On Hand</th>}
                 {v.has('on_order') && <th style={{ textAlign: 'right' }}>On Order</th>}
                 {v.has('committed') && <th style={{ textAlign: 'right' }}>Committed</th>}
@@ -1119,12 +1161,13 @@ export default function ProductsTable({
                     {v.has('status') && <td>{p.is_active ? <span className="badge" style={{ background: '#D1FAE5', color: '#065F46' }}>Active</span> : <span className="badge" style={{ background: '#F3F4F6', color: '#6B7280' }}>Inactive</span>}</td>}
                     {v.has('unit') && <td className="td-muted">{p.unit ?? '—'}</td>}
                     {v.has('barcode') && <td className="td-mono">{p.barcode ?? '—'}</td>}
-                    {v.has('sell_price') && <td style={{ textAlign: 'right' }} className="td-muted">{fmt(p.sell_price, dp)}</td>}
-                    {v.has('cost_price') && <td style={{ textAlign: 'right' }} className="td-muted">{fmt(p.cost_price, dp)}</td>}
+                    {canViewPricing && v.has('sell_price') && <td style={{ textAlign: 'right' }} className="td-muted">{fmt(p.sell_price, dp)}</td>}
+                    {canViewPricing && v.has('cost_price') && <td style={{ textAlign: 'right' }} className="td-muted">{fmt(p.cost_price, dp)}</td>}
                     {v.has('on_hand') && <td style={{ textAlign: 'right' }}>{p.track_stock ? <span style={{ fontWeight: 600, color: stock.onHand <= 0 ? 'var(--danger)' : 'var(--slate)' }}>{stock.onHand}</span> : <span className="td-muted">—</span>}</td>}
                     {v.has('on_order') && <td style={{ textAlign: 'right' }} className="td-muted">{p.track_stock ? stock.onOrder : '—'}</td>}
                     {v.has('committed') && <td style={{ textAlign: 'right' }} className="td-muted">{p.track_stock ? stock.committed : '—'}</td>}
                     {v.has('available') && <td style={{ textAlign: 'right' }}>{p.track_stock ? <span style={{ fontWeight: 600, color: stock.available <= 0 ? 'var(--danger)' : '#059669' }}>{stock.available}</span> : <span className="td-muted">—</span>}</td>}
+                    {canEdit && (
                     <td>
                       <div className="row-actions">
                         <button className="row-action-btn" onClick={e => { e.stopPropagation(); openEdit(p) }} title="Edit">
@@ -1132,6 +1175,7 @@ export default function ProductsTable({
                         </button>
                       </div>
                     </td>
+                    )}
                   </tr>
                 )
               })}
@@ -1176,7 +1220,7 @@ export default function ProductsTable({
                   {(isView ? curProduct?.is_active : form.is_active) ? 'Active' : 'Inactive'}
                 </span>
                 <div style={{ width: 1, height: 20, background: 'var(--gray-100)', margin: '0 4px' }} />
-                {isView && (
+                {isView && canEdit && (
                   <button className="btn btn-outline" style={{ height: 32 }} onClick={() => activeProduct && openEdit(activeProduct)}>
                     <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
                     Edit Product
@@ -1193,6 +1237,7 @@ export default function ProductsTable({
                 .filter(t => {
                   if (t === 'stock' || t === 'orders') return isView
                   if (t === 'custom') return customFields.length > 0 || customLists.length > 0
+                  if (t === 'pricing') return canViewPricing
                   return true
                 })
                 .map(t => (
@@ -1269,9 +1314,11 @@ export default function ProductsTable({
 
                   <Section title="Buying Details">
                     <div className="modal-grid-2">
+                      {canViewPricing && (
                       <Field label="Cost Price (Buy)">
                         <MInput value={isView ? String(curProduct?.cost_price ?? '') : form.cost_price} onChange={val => setF('cost_price', val)} onBlur={val => { if (val && !isView) setF('cost_price', Number(val).toFixed(dp)) }} type="number" placeholder={Number(0).toFixed(dp)} prefix="$" disabled={isView} />
                       </Field>
+                      )}
                       <Field label="Buy UOM">
                         <UomSelect value={isView ? (curProduct?.buy_uom ?? 'Each') : form.buy_uom} onChange={val => setF('buy_uom', val)} disabled={isView} label="Buy UOM" options={UOM_LIST} />
                       </Field>
@@ -1293,7 +1340,7 @@ export default function ProductsTable({
                       )
                       return null
                     })()}
-                    {(modal === 'edit' || isView) && activeProduct && (
+                    {canViewPricing && (modal === 'edit' || isView) && activeProduct && (
                       <div className="modal-grid-2">
                         <Field label="Last Cost" hint="(most recent PO)">
                           <div className="modal-input" style={{ background: 'var(--gray-50)', color: 'var(--gray-400)', cursor: 'default' }}>{activeProduct.last_cost ? `$${Number(activeProduct.last_cost).toFixed(dp)}` : '—'}</div>
@@ -1307,9 +1354,11 @@ export default function ProductsTable({
 
                   <Section title="Selling Details">
                     <div className="modal-grid-2">
+                      {canViewPricing && (
                       <Field label="Unit Price (Sell)">
                         <MInput value={isView ? String(curProduct?.sell_price ?? '') : form.sell_price} onChange={val => setF('sell_price', val)} onBlur={val => { if (val && !isView) setF('sell_price', Number(val).toFixed(dp)) }} type="number" placeholder={Number(0).toFixed(dp)} prefix="$" disabled={isView} />
                       </Field>
+                      )}
                       <Field label="Sell UOM">
                         <UomSelect value={isView ? (curProduct?.sell_uom ?? 'Each') : form.sell_uom} onChange={val => setF('sell_uom', val)} disabled={isView} label="Sell UOM" options={UOM_LIST} />
                       </Field>

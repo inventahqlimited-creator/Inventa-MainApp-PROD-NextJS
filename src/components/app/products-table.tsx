@@ -421,6 +421,14 @@ function ImportModal({ orgId, customFields, customLists, taxRates, suppliers, pr
     })).filter(x => x.colIdx >= 0)
 
     // Phase 2: create
+    // Pre-load existing SKUs for client-side duplicate check
+    if (skipDupes) {
+      const sb = createClient()
+      const { data: existingProds } = await sb.from('products').select('sku').eq('org_id', orgId).not('sku', 'is', null)
+      const skuSet = new Set((existingProds ?? []).map((p: { sku: string }) => (p.sku ?? '').toLowerCase()))
+      ;(window as Record<string, unknown>).__importExistingSkus = skuSet
+    }
+
     const created: unknown[] = []
     for (const line of dataRows) {
       const cols = parseRow(line)
@@ -495,10 +503,17 @@ function ImportModal({ orgId, customFields, customLists, taxRates, suppliers, pr
         // NOTE: pricing is handled separately after product creation — not sent here
       }
 
+      // Handle skip-duplicates client-side instead of passing to API
+      const skuVal = payload.sku as string | null
+      if (skipDupes && skuVal) {
+        const existingSkus = (window as Record<string, unknown>).__importExistingSkus as Set<string> | undefined
+        if (existingSkus?.has(skuVal.toLowerCase())) continue
+      }
+
       const res = await fetch('/api/org/products', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...payload, skip_if_sku_exists: skipDupes }),
+        body: JSON.stringify(payload),
       })
       if (res.ok) {
         const newProduct = await res.json()
@@ -526,14 +541,32 @@ function ImportModal({ orgId, customFields, customLists, taxRates, suppliers, pr
           }
         }
       } else {
-        let errMsg = `Row failed (status ${res.status})`
+        let rawMsg = ''
         try {
           const errBody = await res.json()
-          errMsg = errBody?.error || errBody?.message || JSON.stringify(errBody)
+          rawMsg = errBody?.error || errBody?.message || JSON.stringify(errBody)
         } catch { /* body wasn't JSON */ }
-        console.error('[import] row failed:', name, res.status, errMsg)
-        rowErrors.push(`"${name}": ${errMsg}`)
-        // Stop after first error so we can see what's wrong
+        console.error('[import] row failed:', name, res.status, rawMsg)
+
+        // Translate technical errors into friendly language
+        let friendlyMsg: string
+        if (res.status === 409 || rawMsg.toLowerCase().includes('duplicate') || rawMsg.toLowerCase().includes('unique')) {
+          friendlyMsg = 'a product with this SKU already exists'
+        } else if (rawMsg.toLowerCase().includes('not null') || rawMsg.toLowerCase().includes('null value')) {
+          friendlyMsg = 'a required field is missing'
+        } else if (rawMsg.toLowerCase().includes('foreign key') || rawMsg.toLowerCase().includes('violates')) {
+          friendlyMsg = 'one or more values don\'t match your account settings'
+        } else if (rawMsg.toLowerCase().includes('column') && rawMsg.toLowerCase().includes('schema')) {
+          friendlyMsg = 'the file format doesn\'t match the template — please re-download the template'
+        } else if (res.status >= 500) {
+          friendlyMsg = 'a server error occurred, please try again'
+        } else if (res.status === 401 || res.status === 403) {
+          friendlyMsg = 'you don\'t have permission to import products'
+        } else {
+          friendlyMsg = 'couldn\'t be saved — please check the row and try again'
+        }
+
+        rowErrors.push(`"${name}" — ${friendlyMsg}`)
         if (rowErrors.length >= 3) break
       }
     }
@@ -543,8 +576,7 @@ function ImportModal({ orgId, customFields, customLists, taxRates, suppliers, pr
       setImported(created.length)
       onImported(created)
     } else {
-      // Stay on the upload screen and show errors (or a generic message)
-      if (rowErrors.length === 0) rowErrors.push('No products were imported. Check that your CSV matches the template format.')
+      if (rowErrors.length === 0) rowErrors.push('No products were imported. Make sure your file matches the template format.')
       setErrors(rowErrors)
     }
   }

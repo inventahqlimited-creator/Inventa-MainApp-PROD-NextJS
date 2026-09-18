@@ -194,17 +194,16 @@ export default function ContactsTable({
   const [orders, setOrders] = useState<Record<string, unknown>[]>([])
   const [ordersLoading, setOrdersLoading] = useState(false)
 
-  // Auto-open modal when ?new=1 param is present
+  // Auto-open modal when ?new=1 param is present (runs on mount AND when already on page)
   useEffect(() => {
     if (searchParams.get('new') === '1') {
       openAdd()
-      // Clean the URL param without navigation
       const url = new URL(window.location.href)
       url.searchParams.delete('new')
       window.history.replaceState({}, '', url.toString())
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+  }, [searchParams])
 
   function set(field: keyof ModalForm, value: string | boolean) {
     setForm(f => ({ ...f, [field]: value }))

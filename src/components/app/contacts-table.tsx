@@ -195,6 +195,10 @@ export default function ContactsTable({
   const [actionsOpen, setActionsOpen] = useState(false)
   const [advOpen, setAdvOpen] = useState(false)
 
+  // Export / Import modals
+  const [showExport, setShowExport] = useState(false)
+  const [showImport, setShowImport] = useState(false)
+
   // Advanced filters
   const [advTerms, setAdvTerms] = useState('')
   const [advTaxRate, setAdvTaxRate] = useState('')
@@ -534,13 +538,13 @@ export default function ContactsTable({
                 {actionsOpen && (
                   <div className="inv-dropdown" style={{ display: 'block', minWidth: 190, padding: 6 }} onClick={e => e.stopPropagation()}>
                     {permissions.export_contacts && (
-                      <div className="dd-item" onClick={() => { setActionsOpen(false) }}>
+                      <div className="dd-item" onClick={() => { setActionsOpen(false); setShowExport(true) }}>
                         <div className="dd-icon-wrap"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg></div>
                         Export Contacts
                       </div>
                     )}
                     {permissions.import_contacts && (
-                      <div className="dd-item" onClick={() => { setActionsOpen(false) }}>
+                      <div className="dd-item" onClick={() => { setActionsOpen(false); setShowImport(true) }}>
                         <div className="dd-icon-wrap"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg></div>
                         Import Contacts
                       </div>
@@ -1158,6 +1162,418 @@ export default function ContactsTable({
           </div>
         </div>
       )}
+
+      {/* ── Export Modal ── */}
+      {showExport && (
+        <ExportModal
+          contacts={contacts}
+          customFields={customFields}
+          customLists={customLists}
+          onClose={() => setShowExport(false)}
+        />
+      )}
+
+      {/* ── Import Modal ── */}
+      {showImport && (
+        <ImportModal
+          orgId={orgId}
+          customFields={customFields}
+          customLists={customLists}
+          onImported={newContacts => setContacts(prev => [...prev, ...newContacts])}
+          onClose={() => setShowImport(false)}
+        />
+      )}
+    </div>
+  )
+}
+
+// ── Export Modal ──────────────────────────────────────────────────────
+
+function ExportModal({
+  contacts,
+  customFields,
+  customLists,
+  onClose,
+}: {
+  contacts: { id: string; name: string; type: string; email: string | null; phone: string | null; bill_street: string | null; bill_city: string | null; bill_postcode: string | null; bill_country: string | null; ship_name: string | null; ship_street: string | null; ship_city: string | null; ship_postcode: string | null; ship_country: string | null; currency: string | null; tier: string | null; terms: string | null; tax_rate: string | null; balance_owing: number | null; credit_limit: number | null; disc_type: string | null; disc_value: number | null; tax_number: string | null; website: string | null; notes: string | null; is_active: boolean | null; status: string | null }[]
+  customFields: { id: string; name: string; field_type: string }[]
+  customLists: { id: string; name: string; options: { id: string; value: string }[] }[]
+  onClose: () => void
+}) {
+  const counts = {
+    all: contacts.length,
+    customer: contacts.filter(c => c.type === 'customer').length,
+    supplier: contacts.filter(c => c.type === 'supplier').length,
+  }
+
+  function doExport(type: 'all' | 'customer' | 'supplier') {
+    const rows = type === 'all' ? contacts : contacts.filter(c => c.type === type)
+
+    const STANDARD_HEADERS = [
+      'Name', 'Type', 'Email', 'Phone', 'Website', 'Tax Number',
+      'Currency', 'Price Tier', 'Payment Terms', 'Tax Rate',
+      'Credit Limit', 'Discount Type', 'Discount Value', 'Balance Owing',
+      'Billing Street', 'Billing City', 'Billing Postcode', 'Billing Country',
+      'Ship Name', 'Shipping Street', 'Shipping City', 'Shipping Postcode', 'Shipping Country',
+      'Status', 'Notes',
+    ]
+    const cfHeaders = customFields.map(f => f.name)
+    const clHeaders = customLists.map(l => l.name)
+    const headers = [...STANDARD_HEADERS, ...cfHeaders, ...clHeaders]
+
+    const escapeCSV = (v: unknown) => {
+      const s = v == null ? '' : String(v)
+      return s.includes(',') || s.includes('"') || s.includes('\n') ? `"${s.replace(/"/g, '""')}"` : s
+    }
+
+    const lines = [
+      headers.map(escapeCSV).join(','),
+      ...rows.map(c => {
+        const cf = ((c as Record<string, unknown>).custom_fields ?? {}) as Record<string, string>
+        const standard = [
+          c.name, c.type, c.email, c.phone, c.website, c.tax_number,
+          c.currency, c.tier, c.terms, c.tax_rate,
+          c.credit_limit, c.disc_type, c.disc_value, c.balance_owing,
+          c.bill_street, c.bill_city, c.bill_postcode, c.bill_country,
+          c.ship_name, c.ship_street, c.ship_city, c.ship_postcode, c.ship_country,
+          c.status, c.notes,
+        ]
+        const cfVals = customFields.map(f => cf[f.id] ?? '')
+        const clVals = customLists.map(l => cf[l.id] ?? '')
+        return [...standard, ...cfVals, ...clVals].map(escapeCSV).join(',')
+      }),
+    ]
+
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = `contacts-${type}-${new Date().toISOString().slice(0, 10)}.csv`
+    a.click()
+    URL.revokeObjectURL(url)
+    onClose()
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <div style={{ background: 'var(--white)', borderRadius: 16, width: '100%', maxWidth: 420, boxShadow: '0 20px 60px rgba(0,0,0,0.2)', padding: 28 }}>
+        <div style={{ fontFamily: 'var(--font-display)', fontSize: 17, fontWeight: 700, color: 'var(--slate)', marginBottom: 6 }}>Export Contacts</div>
+        <div style={{ fontSize: 13, color: 'var(--gray-400)', marginBottom: 24 }}>Choose which contacts to export as a CSV file.</div>
+
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {([
+            { key: 'all', label: 'All Contacts', count: counts.all },
+            { key: 'customer', label: 'Customers Only', count: counts.customer },
+            { key: 'supplier', label: 'Suppliers Only', count: counts.supplier },
+          ] as const).map(opt => (
+            <button
+              key={opt.key}
+              onClick={() => doExport(opt.key)}
+              style={{
+                width: '100%', textAlign: 'left', padding: '14px 18px',
+                background: 'var(--white)', border: '1.5px solid var(--gray-200)',
+                borderRadius: 10, cursor: 'pointer', fontSize: 14, fontWeight: 600,
+                color: 'var(--slate)', fontFamily: 'var(--font-display)',
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                transition: 'border-color 0.15s',
+              }}
+              onMouseEnter={e => (e.currentTarget.style.borderColor = 'var(--indigo)')}
+              onMouseLeave={e => (e.currentTarget.style.borderColor = 'var(--gray-200)')}
+            >
+              <span>{opt.label}</span>
+              <span style={{ fontSize: 12.5, fontWeight: 400, color: 'var(--gray-400)' }}>{opt.count} total</span>
+            </button>
+          ))}
+        </div>
+
+        <button
+          onClick={onClose}
+          style={{ width: '100%', marginTop: 16, padding: '12px', background: 'var(--gray-50)', border: '1.5px solid var(--gray-200)', borderRadius: 10, fontSize: 13.5, fontWeight: 600, color: 'var(--gray-400)', cursor: 'pointer', fontFamily: 'var(--font-display)' }}
+        >
+          Cancel
+        </button>
+      </div>
+    </div>
+  )
+}
+
+// ── Import Modal ──────────────────────────────────────────────────────
+
+function ImportModal({
+  orgId,
+  customFields,
+  customLists,
+  onImported,
+  onClose,
+}: {
+  orgId: string
+  customFields: { id: string; name: string; field_type: string }[]
+  customLists: { id: string; name: string; options: { id: string; value: string }[] }[]
+  onImported: (contacts: Record<string, unknown>[]) => void
+  onClose: () => void
+}) {
+  const [file, setFile] = useState<File | null>(null)
+  const [importAs, setImportAs] = useState<'customer' | 'supplier'>('customer')
+  const [ignoreDupes, setIgnoreDupes] = useState(true)
+  const [importing, setImporting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [validationErrors, setValidationErrors] = useState<string[]>([])
+  const [result, setResult] = useState<{ imported: number; skipped: number } | null>(null)
+  const fileRef = useRef<HTMLInputElement>(null)
+  const dropRef = useRef<HTMLDivElement>(null)
+
+  function downloadTemplate() {
+    const STANDARD_HEADERS = [
+      'Name', 'Email', 'Phone', 'Website', 'Tax Number',
+      'Currency', 'Price Tier', 'Payment Terms', 'Tax Rate',
+      'Credit Limit', 'Discount Type', 'Discount Value',
+      'Billing Street', 'Billing City', 'Billing Postcode', 'Billing Country',
+      'Ship Name', 'Shipping Street', 'Shipping City', 'Shipping Postcode', 'Shipping Country',
+      'Notes',
+    ]
+    const cfHeaders = customFields.map(f => f.name)
+    const clHeaders = customLists.map(l => l.name)
+    const headers = [...STANDARD_HEADERS, ...cfHeaders, ...clHeaders]
+    const blob = new Blob([headers.join(',') + '\n'], { type: 'text/csv' })
+    const url = URL.createObjectURL(blob)
+    const a = document.createElement('a')
+    a.href = url
+    a.download = 'contacts-import-template.csv'
+    a.click()
+    URL.revokeObjectURL(url)
+  }
+
+  const parseCSVLine = (line: string): string[] => {
+    const result: string[] = []
+    let cur = '', inQ = false
+    for (let i = 0; i < line.length; i++) {
+      const ch = line[i]
+      if (ch === '"') {
+        if (inQ && line[i + 1] === '"') { cur += '"'; i++ }
+        else inQ = !inQ
+      } else if (ch === ',' && !inQ) { result.push(cur); cur = '' }
+      else cur += ch
+    }
+    result.push(cur)
+    return result
+  }
+
+  async function handleImport() {
+    if (!file) { setError('Please select a CSV file.'); return }
+    setImporting(true); setError(null); setValidationErrors([])
+
+    const text = await file.text()
+    const rawLines = text.split('\n').map(l => l.trim())
+    const lines = rawLines.filter(Boolean)
+    if (lines.length < 2) { setError('CSV file appears empty — it must have a header row and at least one data row.'); setImporting(false); return }
+
+    const headers = parseCSVLine(lines[0]).map(h => h.trim())
+
+    // Must have a Name column
+    if (!headers.map(h => h.toLowerCase()).includes('name')) {
+      setError('CSV is missing a required "Name" column.')
+      setImporting(false); return
+    }
+
+    const fieldMap: Record<string, string> = {
+      'name': 'name', 'email': 'email', 'phone': 'phone', 'website': 'website',
+      'tax number': 'tax_number', 'currency': 'currency', 'price tier': 'tier',
+      'payment terms': 'terms', 'tax rate': 'tax_rate', 'credit limit': 'credit_limit',
+      'discount type': 'disc_type', 'discount value': 'disc_value',
+      'billing street': 'bill_street', 'billing city': 'bill_city',
+      'billing postcode': 'bill_postcode', 'billing country': 'bill_country',
+      'ship name': 'ship_name', 'shipping street': 'ship_street',
+      'shipping city': 'ship_city', 'shipping postcode': 'ship_postcode',
+      'shipping country': 'ship_country', 'notes': 'notes',
+    }
+
+    const cfNameToId: Record<string, string> = {}
+    customFields.forEach(f => { cfNameToId[f.name.toLowerCase()] = f.id })
+    customLists.forEach(l => { cfNameToId[l.name.toLowerCase()] = l.id })
+
+    // ── Phase 1: validate ALL rows ────────────────────────────────────
+    const errors: string[] = []
+    const parsedRows: Record<string, unknown>[] = []
+
+    for (let i = 1; i < lines.length; i++) {
+      const rowNum = i + 1 // 1-based, accounting for header
+      const vals = parseCSVLine(lines[i])
+      const row: Record<string, unknown> = { type: importAs, org_id: orgId }
+      const customFieldValues: Record<string, string> = {}
+
+      headers.forEach((h, idx) => {
+        const val = vals[idx]?.trim() ?? ''
+        const lower = h.toLowerCase()
+        if (fieldMap[lower]) {
+          if (val) row[fieldMap[lower]] = val
+        } else if (cfNameToId[lower]) {
+          if (val) customFieldValues[cfNameToId[lower]] = val
+        }
+      })
+
+      if (Object.keys(customFieldValues).length > 0) row.custom_fields = customFieldValues
+
+      // Mandatory field check
+      if (!String(row.name ?? '').trim()) {
+        errors.push(`Row ${rowNum}: "Name" is required but is empty.`)
+      }
+
+      parsedRows.push(row)
+    }
+
+    if (errors.length > 0) {
+      setValidationErrors(errors)
+      setImporting(false)
+      return
+    }
+
+    // ── Phase 2: all rows valid — create them all ─────────────────────
+    let imported = 0, skipped = 0
+    const newContacts: Record<string, unknown>[] = []
+
+    for (const row of parsedRows) {
+      const res = await fetch('/api/org/contacts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(row),
+      })
+
+      if (res.ok) {
+        const created = await res.json()
+        newContacts.push(created)
+        imported++
+      } else {
+        const body = await res.json().catch(() => ({}))
+        const errMsg = (body.error ?? '').toLowerCase()
+        // Count duplicate email as a skip when ignore_duplicates is on, otherwise count as skipped with a note
+        if (ignoreDupes && errMsg.includes('email')) {
+          skipped++
+        } else {
+          skipped++
+        }
+      }
+    }
+
+    onImported(newContacts as Parameters<typeof onImported>[0])
+    setResult({ imported, skipped })
+    setImporting(false)
+  }
+
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20 }}>
+      <div style={{ background: 'var(--white)', borderRadius: 16, width: '100%', maxWidth: 480, boxShadow: '0 20px 60px rgba(0,0,0,0.2)', padding: 28 }}>
+        <div style={{ fontFamily: 'var(--font-display)', fontSize: 17, fontWeight: 700, color: 'var(--slate)', marginBottom: 6 }}>Import Contacts</div>
+        <div style={{ fontSize: 13, color: 'var(--gray-400)', marginBottom: 20 }}>Upload a CSV file to import contacts into your account.</div>
+
+        {result ? (
+          <div style={{ textAlign: 'center', padding: '24px 0' }}>
+            <div style={{ fontSize: 40, marginBottom: 12 }}>✓</div>
+            <div style={{ fontFamily: 'var(--font-display)', fontSize: 16, fontWeight: 700, color: 'var(--slate)', marginBottom: 6 }}>Import complete</div>
+            <div style={{ fontSize: 13.5, color: 'var(--gray-400)' }}>
+              {result.imported} contact{result.imported !== 1 ? 's' : ''} imported
+              {result.skipped > 0 ? `, ${result.skipped} skipped` : ''}.
+            </div>
+            <button className="btn btn-primary" style={{ marginTop: 20 }} onClick={onClose}>Done</button>
+          </div>
+        ) : (
+          <>
+            {error && (
+              <div style={{ padding: '10px 14px', background: '#FEE2E2', border: '1px solid #FCA5A5', borderRadius: 8, fontSize: 13, color: '#B91C1C', marginBottom: 16 }}>{error}</div>
+            )}
+
+            {validationErrors.length > 0 && (
+              <div style={{ padding: '12px 14px', background: '#FEF2F2', border: '1px solid #FCA5A5', borderRadius: 8, marginBottom: 16 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, color: '#B91C1C', marginBottom: 6 }}>
+                  Import blocked — {validationErrors.length} row{validationErrors.length !== 1 ? 's have' : ' has'} missing required data. Fix the file and try again.
+                </div>
+                <div style={{ maxHeight: 140, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 3 }}>
+                  {validationErrors.map((e, i) => (
+                    <div key={i} style={{ fontSize: 12, color: '#B91C1C' }}>• {e}</div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Drop zone */}
+            <div
+              ref={dropRef}
+              onClick={() => fileRef.current?.click()}
+              onDragOver={e => { e.preventDefault(); dropRef.current!.style.borderColor = 'var(--indigo)' }}
+              onDragLeave={() => { dropRef.current!.style.borderColor = 'var(--gray-200)' }}
+              onDrop={e => {
+                e.preventDefault()
+                dropRef.current!.style.borderColor = 'var(--gray-200)'
+                const f = e.dataTransfer.files[0]
+                if (f && f.name.endsWith('.csv')) { setFile(f); setError(null); setValidationErrors([]) }
+                else setError('Please upload a .csv file.')
+              }}
+              style={{
+                border: '2px dashed var(--gray-200)', borderRadius: 10, padding: '28px 20px',
+                textAlign: 'center', cursor: 'pointer', marginBottom: 20,
+                transition: 'border-color 0.15s',
+              }}
+            >
+              <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--slate)' }}>
+                {file ? file.name : 'Drop CSV file here or click to browse'}
+              </div>
+              <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 4 }}>
+                {file ? `${(file.size / 1024).toFixed(1)} KB` : 'No file selected'}
+              </div>
+              <input ref={fileRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={e => { const f = e.target.files?.[0]; if (f) { setFile(f); setError(null); setValidationErrors([]) } else setError('Please upload a .csv file.') }} />
+            </div>
+
+            {/* Import as */}
+            <div style={{ marginBottom: 16 }}>
+              <div style={{ fontSize: 11, fontWeight: 700, color: 'var(--gray-400)', letterSpacing: '0.06em', textTransform: 'uppercase', marginBottom: 8 }}>Import As</div>
+              <div style={{ display: 'flex', gap: 20 }}>
+                {(['customer', 'supplier'] as const).map(t => (
+                  <label key={t} style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 13.5, cursor: 'pointer', color: 'var(--slate)' }}>
+                    <input
+                      type="radio"
+                      name="importAs"
+                      value={t}
+                      checked={importAs === t}
+                      onChange={() => setImportAs(t)}
+                      style={{ accentColor: 'var(--teal)', cursor: 'pointer' }}
+                    />
+                    {t.charAt(0).toUpperCase() + t.slice(1)}
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* Ignore duplicates */}
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 10, fontSize: 13, color: 'var(--slate)', cursor: 'pointer', marginBottom: 20 }}>
+              <input
+                type="checkbox"
+                checked={ignoreDupes}
+                onChange={e => setIgnoreDupes(e.target.checked)}
+                style={{ accentColor: 'var(--teal)', marginTop: 2, cursor: 'pointer' }}
+              />
+              Ignore duplicates — do not update existing contacts with the same email address
+            </label>
+
+            {/* Sample template */}
+            <div style={{ padding: '12px 16px', background: 'var(--gray-50)', borderRadius: 8, fontSize: 12.5, color: 'var(--gray-400)', marginBottom: 20 }}>
+              Not sure about the format?{' '}
+              <button
+                onClick={downloadTemplate}
+                style={{ background: 'none', border: 'none', color: 'var(--teal)', fontWeight: 600, cursor: 'pointer', fontSize: 12.5, padding: 0, textDecoration: 'underline' }}
+              >
+                Download Sample Template
+              </button>
+            </div>
+
+            {/* Footer */}
+            <div style={{ display: 'flex', gap: 10 }}>
+              <button className="btn btn-outline" style={{ flex: 1 }} onClick={onClose} disabled={importing}>Cancel</button>
+              <button className="btn btn-primary" style={{ flex: 2 }} onClick={handleImport} disabled={importing || !file}>
+                {importing ? 'Importing…' : 'Import'}
+              </button>
+            </div>
+          </>
+        )}
+      </div>
     </div>
   )
 }

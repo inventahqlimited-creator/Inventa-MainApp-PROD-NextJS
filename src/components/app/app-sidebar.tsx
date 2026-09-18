@@ -7,6 +7,7 @@ type SidebarPermissions = {
   view_products?: boolean
 }
 
+const MAIN_NAV = [
   {
     href: '/dashboard',
     label: 'Dashboard',

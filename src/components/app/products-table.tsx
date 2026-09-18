@@ -506,10 +506,10 @@ function ImportModal({ orgId, customFields, customLists, taxRates, suppliers, pr
         // Insert price level rows directly if any
         if (pricingData.length > 0 && newProduct?.id) {
           const sb = createClient()
-          const pricingRows = pricingData.map(pd => {
+          const pricingRows = pricingData.flatMap(pd => {
             const pl = priceLevels.find(p => p.name === pd.price_level)
-            return pl ? { org_id: orgId, product_id: newProduct.id, level_id: pl.id, price: pd.price, break_qty: pd.break_qty } : null
-          }).filter(Boolean)
+            return pl ? [{ org_id: orgId, product_id: newProduct.id, level_id: pl.id, price: pd.price, break_qty: pd.break_qty }] : []
+          })
           if (pricingRows.length > 0) await sb.from('product_pricing').insert(pricingRows)
         }
       } else {

@@ -1179,7 +1179,7 @@ export default function ContactsTable({
           orgId={orgId}
           customFields={customFields}
           customLists={customLists}
-          onImported={newContacts => setContacts(prev => [...prev, ...newContacts])}
+          onImported={newContacts => setContacts(prev => [...prev, ...(newContacts as Contact[])])}
           onClose={() => setShowImport(false)}
         />
       )}

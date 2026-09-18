@@ -209,13 +209,21 @@ export default function NewAdjustment({
                   const change = l.quantity_after - l.quantity_before
                   return (
                     <tr key={idx} style={{ borderBottom: '1px solid var(--gray-100)' }}>
-                      <td className="li-td"><span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--gray-400)' }}>{l.product_sku}</span></td>
-                      <td className="li-td"><span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{l.product_name}</span></td>
+                      {/* Bug 1 fix: show SKU under product name */}
+                      <td className="li-td"><span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--gray-400)' }}>{l.product_sku || '—'}</span></td>
+                      <td className="li-td">
+                        <span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{l.product_name}</span>
+                        {l.product_sku && (
+                          <div style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--gray-400)', marginTop: 1 }}>{l.product_sku}</div>
+                        )}
+                      </td>
                       <td className="li-td" style={{ textAlign: 'center', color: 'var(--gray-400)', fontSize: 13 }}>{l.unit}</td>
                       <td className="li-td" style={{ textAlign: 'right', color: 'var(--gray-400)', fontWeight: 500 }}>{l.quantity_before}</td>
                       <td className="li-td" style={{ textAlign: 'right' }}>
+                        {/* Bug 4 fix: onFocus selects all so typing replaces the 0 */}
                         <input className="li-input right" type="number" step="1" value={l.quantity_after}
                           onChange={e => updateLine(idx, 'quantity_after', parseFloat(e.target.value) || 0)}
+                          onFocus={e => e.target.select()}
                           style={{ width: 90, textAlign: 'right' }} />
                       </td>
                       <td className="li-td" style={{ textAlign: 'right', fontWeight: 700, color: change > 0 ? '#059669' : change < 0 ? 'var(--danger)' : 'var(--gray-400)', fontSize: 13 }}>
@@ -242,28 +250,33 @@ export default function NewAdjustment({
             </table>
           </div>
 
+          {/* Bug 2 fix: search is full-width, directly below the table, not inline-block floating */}
           {selectedLocation && (
-            <div style={{ padding: '10px 0 2px', position: 'relative', display: 'inline-block' }} onClick={e => e.stopPropagation()}>
-              <svg style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--gray-400)', pointerEvents: 'none', zIndex: 1 }} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-              <input className="modal-input" placeholder="Search by item code or name…" value={itemSearch}
-                onChange={e => setItemSearch(e.target.value)} onFocus={() => setItemDropOpen(true)}
-                style={{ paddingLeft: 32, background: 'var(--gray-50)', width: 300 }} autoComplete="off" />
+            <div style={{ padding: '10px 0 2px', position: 'relative' }} onClick={e => e.stopPropagation()}>
+              <div style={{ position: 'relative' }}>
+                <svg style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--gray-400)', pointerEvents: 'none', zIndex: 1 }} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <input className="modal-input" placeholder="Search by item code or name to add products…" value={itemSearch}
+                  onChange={e => { setItemSearch(e.target.value); setItemDropOpen(true) }}
+                  onFocus={() => setItemDropOpen(true)}
+                  style={{ paddingLeft: 32, background: 'var(--gray-50)', width: '100%' }} autoComplete="off" />
+              </div>
+              {/* Bug 3 fix: dropdown shows SKU (already shown in code — this keeps it) */}
               {itemDropOpen && filteredProducts.length > 0 && (
-                <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, width: 460, background: 'var(--white)', border: '1px solid rgba(0,0,0,0.08)', borderRadius: 14, boxShadow: 'var(--shadow-lg)', zIndex: 200, overflow: 'hidden' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', padding: '8px 14px 6px', background: 'var(--gray-50)', borderBottom: '1px solid var(--gray-100)' }}>
+                <div style={{ position: 'absolute', top: 'calc(100% - 4px)', left: 0, right: 0, background: 'var(--white)', border: '1px solid rgba(0,0,0,0.08)', borderRadius: 14, boxShadow: 'var(--shadow-lg)', zIndex: 200, overflow: 'hidden' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px 80px', padding: '8px 14px 6px', background: 'var(--gray-50)', borderBottom: '1px solid var(--gray-100)' }}>
                     <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)' }}>Product</span>
                     <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)' }}>SKU</span>
-                    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)' }}>On Hand</span>
+                    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)', textAlign: 'right' }}>On Hand</span>
                   </div>
                   <div style={{ maxHeight: 260, overflowY: 'auto', padding: 6 }}>
                     {filteredProducts.map(p => {
                       const already = lines.some(l => l.product_id === p.id)
                       const qty = getStockQty(p.id)
                       return (
-                        <div key={p.id} className="fp-item" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', alignItems: 'center', gap: 8, opacity: already ? 0.5 : 1 }} onClick={() => !already && addLine(p)}>
+                        <div key={p.id} className="fp-item" style={{ display: 'grid', gridTemplateColumns: '1fr 140px 80px', alignItems: 'center', gap: 8, opacity: already ? 0.5 : 1 }} onClick={() => !already && addLine(p)}>
                           <span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{p.name}</span>
                           <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--gray-400)' }}>{p.sku ?? '—'}</span>
-                          <span style={{ fontSize: 13, fontWeight: 600, color: qty <= 0 ? 'var(--danger)' : 'var(--slate)' }}>{qty}</span>
+                          <span style={{ fontSize: 13, fontWeight: 600, color: qty <= 0 ? 'var(--danger)' : 'var(--slate)', textAlign: 'right' }}>{qty}</span>
                         </div>
                       )
                     })}

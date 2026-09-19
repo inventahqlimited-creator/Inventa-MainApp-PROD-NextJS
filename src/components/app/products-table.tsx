@@ -1571,7 +1571,16 @@ export default function ProductsTable({
                 </>
               )}
 
-              {modalTab === 'stock' && (
+              {modalTab === 'stock' && (() => {
+                // Show extra columns if this product has tracking on, OR if any product in the org has it on, OR if org-level setting is on
+                const anySerial = orgSettings.serial_tracking !== false || initialProducts.some(p => p.serial_tracking)
+                const anyBatch  = orgSettings.batch_tracking  !== false || initialProducts.some(p => p.batch_tracking)
+                const anyExpiry = orgSettings.expiry_tracking !== false || initialProducts.some(p => p.expiry_tracking)
+                const showSerial = anySerial
+                const showBatch  = anyBatch
+                const showExpiry = anyExpiry
+                const extraCols  = showSerial || showBatch || showExpiry
+                return (
                 <div>
                   {locations.length === 0 ? (
                     <div style={{ textAlign: 'center', padding: '32px', color: 'var(--gray-400)', fontSize: 13, background: 'var(--gray-50)', borderRadius: 12 }}>No locations configured for this organisation.</div>
@@ -1585,6 +1594,9 @@ export default function ProductsTable({
                             <th className="li-th" style={{ textAlign: 'right' }}>On Order</th>
                             <th className="li-th" style={{ textAlign: 'right' }}>Committed</th>
                             <th className="li-th" style={{ textAlign: 'right' }}>Available</th>
+                            {showBatch  && <th className="li-th">Batch / Lot</th>}
+                            {showSerial && <th className="li-th">Serial #</th>}
+                            {showExpiry && <th className="li-th">Expiry Date</th>}
                           </tr>
                         </thead>
                         <tbody>
@@ -1601,15 +1613,24 @@ export default function ProductsTable({
                                 <td className="li-td" style={{ textAlign: 'right', color: 'var(--gray-400)' }}>{onOrder}</td>
                                 <td className="li-td" style={{ textAlign: 'right', color: 'var(--gray-400)' }}>{committed}</td>
                                 <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: available <= 0 ? 'var(--danger)' : '#059669' }}>{available}</td>
+                                {showBatch  && <td className="li-td" style={{ color: 'var(--gray-400)', fontSize: 12 }}>—</td>}
+                                {showSerial && <td className="li-td" style={{ color: 'var(--gray-400)', fontSize: 12 }}>—</td>}
+                                {showExpiry && <td className="li-td" style={{ color: 'var(--gray-400)', fontSize: 12 }}>—</td>}
                               </tr>
                             )
                           })}
                         </tbody>
                       </table>
+                      {extraCols && (
+                        <div style={{ padding: '10px 14px', background: 'var(--gray-50)', borderTop: '1px solid var(--gray-100)', fontSize: 12, color: 'var(--gray-400)' }}>
+                          Batch, serial and expiry data will appear here once tracking entries are recorded.
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
-              )}
+                )
+              })()}
 
               {modalTab === 'orders' && (
                 <div>

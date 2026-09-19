@@ -86,10 +86,11 @@ export default function NewAdjustment({
     setSaving(true)
     setError(null)
 
+    // Always create as Draft first so lines exist before stock is applied
     const payload = {
       location_id: selectedLocation.id,
       location_name: selectedLocation.name,
-      status,
+      status: 'Draft',
       adjustment_date: adjustmentDate,
       reason: reason || null,
       notes: notes || null,
@@ -102,8 +103,20 @@ export default function NewAdjustment({
       body: JSON.stringify(payload),
     })
     const data = await res.json()
+    if (!res.ok) { setError(data.error ?? 'Something went wrong'); setSaving(false); return }
+
+    if (status === 'Completed') {
+      // PATCH sets status to Completed and applies stock changes
+      const patchRes = await fetch(`/api/org/adjustments/${data.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'Completed' }),
+      })
+      const patchData = await patchRes.json()
+      if (!patchRes.ok) { setError(patchData.error ?? 'Failed to complete adjustment'); setSaving(false); return }
+    }
+
     setSaving(false)
-    if (!res.ok) { setError(data.error ?? 'Something went wrong'); return }
     router.push(`/products/adjustments/${data.id}`)
   }
 
@@ -187,7 +200,7 @@ export default function NewAdjustment({
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
               <thead>
                 <tr style={{ background: 'var(--gray-50)' }}>
-                  <th className="li-th" style={{ width: 120 }}>Item Code</th>
+                  <th className="li-th" style={{ width: 120 }}>SKU</th>
                   <th className="li-th">Product</th>
                   <th className="li-th" style={{ width: 70, textAlign: 'center' }}>Unit</th>
                   <th className="li-th" style={{ width: 110, textAlign: 'right' }}>Current Qty</th>
@@ -209,13 +222,9 @@ export default function NewAdjustment({
                   const change = l.quantity_after - l.quantity_before
                   return (
                     <tr key={idx} style={{ borderBottom: '1px solid var(--gray-100)' }}>
-                      {/* Bug 1 fix: show SKU under product name */}
                       <td className="li-td"><span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--gray-400)' }}>{l.product_sku || '—'}</span></td>
                       <td className="li-td">
                         <span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{l.product_name}</span>
-                        {l.product_sku && (
-                          <div style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--gray-400)', marginTop: 1 }}>{l.product_sku}</div>
-                        )}
                       </td>
                       <td className="li-td" style={{ textAlign: 'center', color: 'var(--gray-400)', fontSize: 13 }}>{l.unit}</td>
                       <td className="li-td" style={{ textAlign: 'right', color: 'var(--gray-400)', fontWeight: 500 }}>{l.quantity_before}</td>
@@ -263,9 +272,9 @@ export default function NewAdjustment({
               {/* Bug 3 fix: dropdown shows SKU (already shown in code — this keeps it) */}
               {itemDropOpen && filteredProducts.length > 0 && (
                 <div style={{ position: 'absolute', top: 'calc(100% - 4px)', left: 0, right: 0, background: 'var(--white)', border: '1px solid rgba(0,0,0,0.08)', borderRadius: 14, boxShadow: 'var(--shadow-lg)', zIndex: 200, overflow: 'hidden' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 140px 80px', padding: '8px 14px 6px', background: 'var(--gray-50)', borderBottom: '1px solid var(--gray-100)' }}>
-                    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)' }}>Product</span>
+                  <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr 80px', padding: '8px 14px 6px', background: 'var(--gray-50)', borderBottom: '1px solid var(--gray-100)' }}>
                     <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)' }}>SKU</span>
+                    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)' }}>Product</span>
                     <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)', textAlign: 'right' }}>On Hand</span>
                   </div>
                   <div style={{ maxHeight: 260, overflowY: 'auto', padding: 6 }}>
@@ -273,9 +282,9 @@ export default function NewAdjustment({
                       const already = lines.some(l => l.product_id === p.id)
                       const qty = getStockQty(p.id)
                       return (
-                        <div key={p.id} className="fp-item" style={{ display: 'grid', gridTemplateColumns: '1fr 140px 80px', alignItems: 'center', gap: 8, opacity: already ? 0.5 : 1 }} onClick={() => !already && addLine(p)}>
-                          <span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{p.name}</span>
+                        <div key={p.id} className="fp-item" style={{ display: 'grid', gridTemplateColumns: '100px 1fr 80px', alignItems: 'center', gap: 8, opacity: already ? 0.5 : 1 }} onClick={() => !already && addLine(p)}>
                           <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--gray-400)' }}>{p.sku ?? '—'}</span>
+                          <span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{p.name}</span>
                           <span style={{ fontSize: 13, fontWeight: 600, color: qty <= 0 ? 'var(--danger)' : 'var(--slate)', textAlign: 'right' }}>{qty}</span>
                         </div>
                       )

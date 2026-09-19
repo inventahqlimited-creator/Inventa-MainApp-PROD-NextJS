@@ -19,6 +19,27 @@ type LineItem = {
 
 const REASONS = ['Stocktake', 'Damaged', 'Expired', 'Found', 'Lost', 'Theft', 'Sample', 'Write-off', 'Other']
 
+function ConfirmModal({ title, message, confirmLabel, onConfirm, onCancel }: {
+  title: string
+  message: string
+  confirmLabel: string
+  onConfirm: () => void
+  onCancel: () => void
+}) {
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ background: 'var(--white)', borderRadius: 16, padding: '28px 32px', maxWidth: 420, width: '90%', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
+        <div style={{ fontFamily: 'var(--font-display)', fontSize: 17, fontWeight: 700, color: 'var(--slate)', marginBottom: 10 }}>{title}</div>
+        <div style={{ fontSize: 14, color: 'var(--gray-500)', lineHeight: 1.6, marginBottom: 24 }}>{message}</div>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+          <button className="btn btn-outline" style={{ height: 38 }} onClick={onCancel}>Keep editing</button>
+          <button className="btn btn-primary" style={{ height: 38, padding: '0 20px' }} onClick={onConfirm}>{confirmLabel}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function NewAdjustment({
   orgId,
   locations,
@@ -42,6 +63,7 @@ export default function NewAdjustment({
   const [itemDropOpen, setItemDropOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [confirmComplete, setConfirmComplete] = useState(false)
 
   const filteredProducts = useMemo(() =>
     products.filter(p =>
@@ -122,6 +144,16 @@ export default function NewAdjustment({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+
+      {confirmComplete && (
+        <ConfirmModal
+          title="Complete Adjustment"
+          message="This will apply the quantity changes to your stock levels. Are you sure?"
+          confirmLabel="Complete Adjustment"
+          onConfirm={() => { setConfirmComplete(false); save('Completed') }}
+          onCancel={() => setConfirmComplete(false)}
+        />
+      )}
 
       <div style={{ background: 'var(--white)', borderBottom: '1px solid var(--gray-100)', padding: '16px 28px', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>
         <button onClick={() => router.push('/products/adjustments')} className="sq-btn">
@@ -304,7 +336,7 @@ export default function NewAdjustment({
         </button>
         <div style={{ display: 'flex', gap: 10 }}>
           <button className="btn btn-outline" style={{ height: 38 }} onClick={() => save('Draft')} disabled={saving}>Save Draft</button>
-          <button className="btn btn-primary" style={{ height: 38, padding: '0 20px' }} onClick={() => save('Completed')} disabled={saving}>
+          <button className="btn btn-primary" style={{ height: 38, padding: '0 20px' }} onClick={() => setConfirmComplete(true)} disabled={saving}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
             {saving ? 'Saving…' : 'Complete Adjustment'}
           </button>

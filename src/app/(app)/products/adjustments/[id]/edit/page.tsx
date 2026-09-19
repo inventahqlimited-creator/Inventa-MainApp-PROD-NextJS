@@ -23,8 +23,8 @@ export default async function EditAdjustmentPage({ params }: { params: Promise<{
   const [{ data: adjustment }, { data: lines }, { data: locations }, { data: products }, { data: stockLevels }] = await Promise.all([
     adminClient.from('adjustment_orders').select('*').eq('id', id).eq('org_id', m.org_id).single(),
     adminClient.from('adjustment_order_lines').select('*').eq('adj_id', id).eq('org_id', m.org_id).order('sort_order'),
-    adminClient.from('locations').select('id, name').eq('org_id', m.org_id).eq('is_active', true).order('name'),
-    adminClient.from('products').select('id, name, sku, sell_uom, track_stock, type').eq('org_id', m.org_id).eq('is_active', true).order('name'),
+    adminClient.from('locations').select('id, name').eq('org_id', m.org_id).order('name'),
+    adminClient.from('products').select('id, name, sku, sell_uom, track_stock, type').eq('org_id', m.org_id).order('name'),
     adminClient.from('stock_levels').select('product_id, location_id, quantity').eq('org_id', m.org_id),
   ])
 

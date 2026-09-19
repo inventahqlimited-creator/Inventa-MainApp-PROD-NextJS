@@ -38,6 +38,29 @@ function statusBadge(status: string) {
   return <span className="badge badge-draft">{status}</span>
 }
 
+// Bug 6 fix: In-app confirm modal instead of browser confirm()
+function ConfirmModal({ title, message, confirmLabel, confirmClass, onConfirm, onCancel }: {
+  title: string
+  message: string
+  confirmLabel: string
+  confirmClass?: string
+  onConfirm: () => void
+  onCancel: () => void
+}) {
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ background: 'var(--white)', borderRadius: 16, padding: '28px 32px', maxWidth: 420, width: '90%', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
+        <div style={{ fontFamily: 'var(--font-display)', fontSize: 17, fontWeight: 700, color: 'var(--slate)', marginBottom: 10 }}>{title}</div>
+        <div style={{ fontSize: 14, color: 'var(--gray-500)', lineHeight: 1.6, marginBottom: 24 }}>{message}</div>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+          <button className="btn btn-outline" style={{ height: 38 }} onClick={onCancel}>Keep editing</button>
+          <button className={`btn ${confirmClass ?? 'btn-primary'}`} style={{ height: 38, padding: '0 20px' }} onClick={onConfirm}>{confirmLabel}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function ViewAdjustment({
   adjustment: initialAdj,
   lines,
@@ -50,12 +73,17 @@ export default function ViewAdjustment({
   const router = useRouter()
   const [adj, setAdj] = useState(initialAdj)
   const [saving, setSaving] = useState(false)
+  // Bug 6 fix: modal state instead of browser confirm()
+  const [modal, setModal] = useState<'cancel' | 'complete' | null>(null)
 
   const canComplete = adj.status.toLowerCase() === 'draft'
   const canCancel = adj.status.toLowerCase() === 'draft'
+  // Bug 5 fix: draft adjustments are editable
+  const isDraft = adj.status.toLowerCase() === 'draft'
 
   async function updateStatus(status: string) {
     setSaving(true)
+    setModal(null)
     const res = await fetch(`/api/org/adjustments/${adj.id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
@@ -67,6 +95,29 @@ export default function ViewAdjustment({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+
+      {/* Bug 6 fix: in-app cancel modal */}
+      {modal === 'cancel' && (
+        <ConfirmModal
+          title="Cancel Adjustment"
+          message="Are you sure you want to cancel this adjustment? This action cannot be undone."
+          confirmLabel="Yes, Cancel"
+          confirmClass="btn btn-outline"
+          onConfirm={() => updateStatus('Cancelled')}
+          onCancel={() => setModal(null)}
+        />
+      )}
+
+      {/* Bug 6 fix: in-app complete modal */}
+      {modal === 'complete' && (
+        <ConfirmModal
+          title="Complete Adjustment"
+          message="This will apply the quantity changes to your stock levels. Are you sure?"
+          confirmLabel="Complete Adjustment"
+          onConfirm={() => updateStatus('Completed')}
+          onCancel={() => setModal(null)}
+        />
+      )}
 
       <div style={{ background: 'var(--white)', borderBottom: '1px solid var(--gray-100)', padding: '16px 28px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
@@ -120,7 +171,7 @@ export default function ViewAdjustment({
           <table style={{ width: '100%', borderCollapse: 'collapse', marginTop: 4 }}>
             <thead>
               <tr style={{ background: 'var(--gray-50)' }}>
-                <th className="li-th" style={{ width: 120 }}>Item Code</th>
+                <th className="li-th" style={{ width: 120 }}>SKU</th>
                 <th className="li-th">Product</th>
                 <th className="li-th" style={{ width: 70, textAlign: 'center' }}>Unit</th>
                 <th className="li-th" style={{ width: 110, textAlign: 'right' }}>Before</th>
@@ -138,7 +189,9 @@ export default function ViewAdjustment({
                 return (
                   <tr key={l.id} style={{ borderBottom: '1px solid var(--gray-100)' }}>
                     <td className="li-td"><span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--gray-400)' }}>{l.product_sku ?? '—'}</span></td>
-                    <td className="li-td"><span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{l.product_name ?? '—'}</span></td>
+                    <td className="li-td">
+                      <span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{l.product_name ?? '—'}</span>
+                    </td>
                     <td className="li-td" style={{ textAlign: 'center', color: 'var(--gray-400)' }}>{l.unit ?? '—'}</td>
                     <td className="li-td" style={{ textAlign: 'right', color: 'var(--gray-400)' }}>{l.quantity_before}</td>
                     <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: 'var(--slate)' }}>{l.quantity_after}</td>
@@ -160,21 +213,33 @@ export default function ViewAdjustment({
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
             Back
           </button>
+          {/* Bug 6 fix: open in-app modal instead of browser confirm() */}
           {canCancel && (
             <button className="btn btn-outline" style={{ height: 38, color: 'var(--danger)', borderColor: 'var(--danger)' }}
-              onClick={() => { if (confirm('Cancel this adjustment?')) updateStatus('Cancelled') }} disabled={saving}>
+              onClick={() => setModal('cancel')} disabled={saving}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="15" y1="9" x2="9" y2="15"/><line x1="9" y1="9" x2="15" y2="15"/></svg>
               Cancel
             </button>
           )}
         </div>
-        {canComplete && (
-          <button className="btn btn-primary" style={{ height: 38, padding: '0 20px' }}
-            onClick={() => { if (confirm('Mark as completed? Stock levels will be updated.')) updateStatus('Completed') }} disabled={saving}>
-            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-            {saving ? 'Saving…' : 'Complete Adjustment'}
-          </button>
-        )}
+        <div style={{ display: 'flex', gap: 10 }}>
+          {/* Bug 5 fix: edit button for draft adjustments */}
+          {isDraft && (
+            <button className="btn btn-outline" style={{ height: 38 }}
+              onClick={() => router.push(`/products/adjustments/${adj.id}/edit`)}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+              Edit
+            </button>
+          )}
+          {/* Bug 6 fix: open in-app modal instead of browser confirm() */}
+          {canComplete && (
+            <button className="btn btn-primary" style={{ height: 38, padding: '0 20px' }}
+              onClick={() => setModal('complete')} disabled={saving}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+              {saving ? 'Saving…' : 'Complete Adjustment'}
+            </button>
+          )}
+        </div>
       </div>
     </div>
   )

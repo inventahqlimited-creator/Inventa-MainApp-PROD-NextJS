@@ -749,12 +749,12 @@ export default function ProductsTable({
   const UOM_LIST = uoms.length > 0 ? uoms.map(u => u.name) : UOM_OPTIONS
   // Price level names: prefer from settings, fall back to hardcoded
   const PRICE_LEVEL_NAMES = priceLevels.length > 0 ? priceLevels.map(pl => pl.name) : PRICE_LEVELS
-  // Tracking options gated by org-level settings
+  // Tracking options — always shown per-product; org-level setting marks them as disabled (greyed) not hidden
   const trackingOptions = [
-    { key: 'serial_tracking' as keyof ModalForm, label: 'Serial Number Tracking', sub: 'Track individual serial numbers per unit', enabled: orgSettings.serial_tracking !== false },
-    { key: 'batch_tracking' as keyof ModalForm, label: 'Batch / Lot Tracking', sub: 'Group items into batches for traceability', enabled: orgSettings.batch_tracking !== false },
-    { key: 'expiry_tracking' as keyof ModalForm, label: 'Expiry Date Tracking', sub: 'Record and alert on expiry dates', enabled: orgSettings.expiry_tracking !== false },
-  ].filter(t => t.enabled)
+    { key: 'serial_tracking' as keyof ModalForm, label: 'Serial Number Tracking', sub: 'Track individual serial numbers per unit', orgEnabled: orgSettings.serial_tracking !== false },
+    { key: 'batch_tracking' as keyof ModalForm, label: 'Batch / Lot Tracking', sub: 'Group items into batches for traceability', orgEnabled: orgSettings.batch_tracking !== false },
+    { key: 'expiry_tracking' as keyof ModalForm, label: 'Expiry Date Tracking', sub: 'Record and alert on expiry dates', orgEnabled: orgSettings.expiry_tracking !== false },
+  ]
 
   const [products, setProducts] = useState(initialProducts)
   const [search, setSearch] = useState('')
@@ -1469,25 +1469,25 @@ export default function ProductsTable({
                     </div>
                   </Section>
 
-                  {trackingOptions.length > 0 && (
                   <Section title="Tracking">
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      {trackingOptions.map(({ key, label, sub }) => (
-                        <div key={key} className="pm-toggle-row">
+                      {trackingOptions.map(({ key, label, sub, orgEnabled }) => (
+                        <div key={key} className="pm-toggle-row" style={{ opacity: orgEnabled ? 1 : 0.45 }}>
                           <div>
                             <div className="pm-toggle-lbl">{label}</div>
-                            <div className="pm-toggle-sub">{sub}</div>
+                            <div className="pm-toggle-sub">
+                              {orgEnabled ? sub : <>{sub} <span style={{ color: 'var(--gray-400)', fontStyle: 'italic' }}>— disabled in global settings</span></>}
+                            </div>
                           </div>
                           <Toggle
                             active={isView ? !!(curProduct as Record<string, unknown>)?.[key] : form[key] as boolean}
                             onChange={val => setF(key, val)}
-                            disabled={isView}
+                            disabled={isView || !orgEnabled}
                           />
                         </div>
                       ))}
                     </div>
                   </Section>
-                  )}
 
                   <Section title="Supplier">
                     <div className="modal-grid-2">

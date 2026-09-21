@@ -26,7 +26,6 @@ export async function GET(request: NextRequest) {
 
   const adminClient = createAdminClient()
 
-  // Get products with this tracking on
   const { data: trackedProducts } = await adminClient
     .from('products')
     .select('id')
@@ -37,9 +36,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ lockedCount: 0 })
   }
 
-  const productIds = trackedProducts.map((p: { id: string }) => p.id)
+  const productIds: string[] = trackedProducts.map((p: { id: string }) => p.id)
 
-  // Count how many of those have stock > 0
   const { data: stockLevels } = await adminClient
     .from('stock_levels')
     .select('product_id, quantity')
@@ -64,7 +62,6 @@ export async function POST(request: NextRequest) {
 
   const adminClient = createAdminClient()
 
-  // Get products with this tracking on
   const { data: trackedProducts } = await adminClient
     .from('products')
     .select('id')
@@ -72,9 +69,8 @@ export async function POST(request: NextRequest) {
     .eq(key, true)
 
   if (trackedProducts && trackedProducts.length > 0) {
-    const productIds = trackedProducts.map((p: { id: string }) => p.id)
+    const productIds: string[] = trackedProducts.map((p: { id: string }) => p.id)
 
-    // Find which have stock > 0 (locked — keep their tracking on)
     const { data: stockLevels } = await adminClient
       .from('stock_levels')
       .select('product_id')
@@ -83,9 +79,8 @@ export async function POST(request: NextRequest) {
       .gt('quantity', 0)
 
     const lockedIds = new Set((stockLevels ?? []).map((s: { product_id: string }) => s.product_id))
-    const unlockableIds = productIds.filter(id => !lockedIds.has(id))
+    const unlockableIds = productIds.filter((id: string) => !lockedIds.has(id))
 
-    // Turn off product-level tracking for products with no stock
     if (unlockableIds.length > 0) {
       await adminClient
         .from('products')
@@ -95,7 +90,6 @@ export async function POST(request: NextRequest) {
     }
   }
 
-  // Turn off global setting
   await adminClient
     .from('organisations')
     .update({ [key]: false })

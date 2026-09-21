@@ -23,6 +23,15 @@ type Line = {
   quantity_before: number
   quantity_after: number
   reason: string | null
+  batch_number: string | null
+  serial_number: string | null
+  expiry_date: string | null
+}
+
+type TrackingFlags = {
+  showSerial: boolean
+  showBatch: boolean
+  showExpiry: boolean
 }
 
 function fmtDate(d: string | null) {
@@ -65,10 +74,12 @@ export default function ViewAdjustment({
   adjustment: initialAdj,
   lines,
   orgId,
+  trackingFlags = { showSerial: false, showBatch: false, showExpiry: false },
 }: {
   adjustment: Adjustment
   lines: Line[]
   orgId: string
+  trackingFlags?: TrackingFlags
 }) {
   const router = useRouter()
   const [adj, setAdj] = useState(initialAdj)
@@ -178,11 +189,14 @@ export default function ViewAdjustment({
                 <th className="li-th" style={{ width: 110, textAlign: 'right' }}>After</th>
                 <th className="li-th" style={{ width: 90, textAlign: 'right' }}>Change</th>
                 <th className="li-th" style={{ width: 130 }}>Reason</th>
+                {trackingFlags.showBatch  && <th className="li-th" style={{ width: 120 }}>Batch / Lot</th>}
+                {trackingFlags.showSerial && <th className="li-th" style={{ width: 120 }}>Serial #</th>}
+                {trackingFlags.showExpiry && <th className="li-th" style={{ width: 110 }}>Expiry Date</th>}
               </tr>
             </thead>
             <tbody>
               {lines.length === 0 && (
-                <tr><td colSpan={7} style={{ textAlign: 'center', padding: '24px 0', color: 'var(--gray-400)', fontSize: 13 }}>No products.</td></tr>
+                <tr><td colSpan={7 + (trackingFlags.showBatch ? 1 : 0) + (trackingFlags.showSerial ? 1 : 0) + (trackingFlags.showExpiry ? 1 : 0)} style={{ textAlign: 'center', padding: '24px 0', color: 'var(--gray-400)', fontSize: 13 }}>No products.</td></tr>
               )}
               {lines.map(l => {
                 const change = l.quantity_after - l.quantity_before
@@ -199,6 +213,9 @@ export default function ViewAdjustment({
                       {change > 0 ? `+${change}` : change}
                     </td>
                     <td className="li-td" style={{ color: 'var(--gray-400)', fontSize: 12.5 }}>{l.reason ?? '—'}</td>
+                    {trackingFlags.showBatch  && <td className="li-td" style={{ color: 'var(--gray-400)', fontSize: 12 }}>{l.batch_number ?? '—'}</td>}
+                    {trackingFlags.showSerial && <td className="li-td" style={{ color: 'var(--gray-400)', fontSize: 12 }}>{l.serial_number ?? '—'}</td>}
+                    {trackingFlags.showExpiry && <td className="li-td" style={{ color: 'var(--gray-400)', fontSize: 12 }}>{l.expiry_date ? new Date(l.expiry_date).toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}</td>}
                   </tr>
                 )
               })}

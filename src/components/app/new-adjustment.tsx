@@ -7,6 +7,12 @@ type Location = { id: string; name: string }
 type Product = { id: string; name: string; sku: string | null; sell_uom: string | null; track_stock: boolean | null; type: string }
 type StockLevel = { product_id: string; location_id: string; quantity: number }
 
+type TrackingFlags = {
+  showSerial: boolean
+  showBatch: boolean
+  showExpiry: boolean
+}
+
 type LineItem = {
   product_id: string
   product_name: string
@@ -15,6 +21,9 @@ type LineItem = {
   quantity_before: number
   quantity_after: number
   reason: string
+  batch_number: string
+  serial_number: string
+  expiry_date: string
 }
 
 const REASONS = ['Stocktake', 'Damaged', 'Expired', 'Found', 'Lost', 'Theft', 'Sample', 'Write-off', 'Other']
@@ -45,11 +54,13 @@ export default function NewAdjustment({
   locations,
   products,
   stockLevels,
+  trackingFlags = { showSerial: false, showBatch: false, showExpiry: false },
 }: {
   orgId: string
   locations: Location[]
   products: Product[]
   stockLevels: StockLevel[]
+  trackingFlags?: TrackingFlags
 }) {
   const router = useRouter()
   const [selectedLocation, setSelectedLocation] = useState<Location | null>(null)
@@ -89,6 +100,9 @@ export default function NewAdjustment({
       quantity_before: qty,
       quantity_after: qty,
       reason,
+      batch_number: '',
+      serial_number: '',
+      expiry_date: '',
     }])
     setItemSearch('')
     setItemDropOpen(false)
@@ -116,7 +130,7 @@ export default function NewAdjustment({
       adjustment_date: adjustmentDate,
       reason: reason || null,
       notes: notes || null,
-      lines: lines.map((l, i) => ({ ...l, sort_order: i })),
+      lines: lines.map((l, i) => ({ ...l, sort_order: i, batch_number: l.batch_number || null, serial_number: l.serial_number || null, expiry_date: l.expiry_date || null })),
     }
 
     const res = await fetch('/api/org/adjustments', {
@@ -239,13 +253,16 @@ export default function NewAdjustment({
                   <th className="li-th" style={{ width: 110, textAlign: 'right' }}>New Qty</th>
                   <th className="li-th" style={{ width: 80, textAlign: 'right' }}>Change</th>
                   <th className="li-th" style={{ width: 150 }}>Reason</th>
+                  {trackingFlags.showBatch  && <th className="li-th" style={{ width: 120 }}>Batch / Lot</th>}
+                  {trackingFlags.showSerial && <th className="li-th" style={{ width: 120 }}>Serial #</th>}
+                  {trackingFlags.showExpiry && <th className="li-th" style={{ width: 120 }}>Expiry Date</th>}
                   <th className="li-th" style={{ width: 36 }} />
                 </tr>
               </thead>
               <tbody>
                 {lines.length === 0 && (
                   <tr>
-                    <td colSpan={8} style={{ textAlign: 'center', padding: '24px 0', color: 'var(--gray-400)', fontSize: 13 }}>
+                    <td colSpan={8 + (trackingFlags.showBatch ? 1 : 0) + (trackingFlags.showSerial ? 1 : 0) + (trackingFlags.showExpiry ? 1 : 0)} style={{ textAlign: 'center', padding: '24px 0', color: 'var(--gray-400)', fontSize: 13 }}>
                       {selectedLocation ? 'Search below to add products.' : 'Select a location first.'}
                     </td>
                   </tr>
@@ -277,6 +294,21 @@ export default function NewAdjustment({
                           {REASONS.map(r => <option key={r} value={r}>{r}</option>)}
                         </select>
                       </td>
+                      {trackingFlags.showBatch && (
+                        <td className="li-td">
+                          <input className="li-input" type="text" value={l.batch_number} onChange={e => updateLine(idx, 'batch_number', e.target.value)} placeholder="Batch…" style={{ width: 100 }} />
+                        </td>
+                      )}
+                      {trackingFlags.showSerial && (
+                        <td className="li-td">
+                          <input className="li-input" type="text" value={l.serial_number} onChange={e => updateLine(idx, 'serial_number', e.target.value)} placeholder="Serial…" style={{ width: 100 }} />
+                        </td>
+                      )}
+                      {trackingFlags.showExpiry && (
+                        <td className="li-td">
+                          <input className="li-input" type="date" value={l.expiry_date} onChange={e => updateLine(idx, 'expiry_date', e.target.value)} style={{ width: 110 }} />
+                        </td>
+                      )}
                       <td className="li-td">
                         <button onClick={() => removeLine(idx)} style={{ width: 26, height: 26, borderRadius: 7, border: 'none', background: 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--gray-400)' }}
                           onMouseOver={e => (e.currentTarget.style.color = 'var(--danger)')}

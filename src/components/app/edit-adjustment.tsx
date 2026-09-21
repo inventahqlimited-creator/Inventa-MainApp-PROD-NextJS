@@ -7,6 +7,12 @@ type Location = { id: string; name: string }
 type Product = { id: string; name: string; sku: string | null; sell_uom: string | null; track_stock: boolean | null; type: string }
 type StockLevel = { product_id: string; location_id: string; quantity: number }
 
+type TrackingFlags = {
+  showSerial: boolean
+  showBatch: boolean
+  showExpiry: boolean
+}
+
 type LineItem = {
   product_id: string
   product_name: string
@@ -15,9 +21,33 @@ type LineItem = {
   quantity_before: number
   quantity_after: number
   reason: string
+  batch_number: string
+  serial_number: string
+  expiry_date: string
 }
 
 const REASONS = ['Stocktake', 'Damaged', 'Expired', 'Found', 'Lost', 'Theft', 'Sample', 'Write-off', 'Other']
+
+function ConfirmModal({ title, message, confirmLabel, onConfirm, onCancel }: {
+  title: string
+  message: string
+  confirmLabel: string
+  onConfirm: () => void
+  onCancel: () => void
+}) {
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <div style={{ background: 'var(--white)', borderRadius: 16, padding: '28px 32px', maxWidth: 420, width: '90%', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
+        <div style={{ fontFamily: 'var(--font-display)', fontSize: 17, fontWeight: 700, color: 'var(--slate)', marginBottom: 10 }}>{title}</div>
+        <div style={{ fontSize: 14, color: 'var(--gray-500)', lineHeight: 1.6, marginBottom: 24 }}>{message}</div>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+          <button className="btn btn-outline" style={{ height: 38 }} onClick={onCancel}>Keep editing</button>
+          <button className="btn btn-primary" style={{ height: 38, padding: '0 20px' }} onClick={onConfirm}>{confirmLabel}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
 
 export default function EditAdjustment({
   adjId,
@@ -27,6 +57,7 @@ export default function EditAdjustment({
   locations,
   products,
   stockLevels,
+  trackingFlags = { showSerial: false, showBatch: false, showExpiry: false },
 }: {
   adjId: string
   initialAdj: {
@@ -45,11 +76,15 @@ export default function EditAdjustment({
     quantity_before: number
     quantity_after: number
     reason: string | null
+    batch_number?: string | null
+    serial_number?: string | null
+    expiry_date?: string | null
   }[]
   orgId: string
   locations: Location[]
   products: Product[]
   stockLevels: StockLevel[]
+  trackingFlags?: TrackingFlags
 }) {
   const router = useRouter()
 
@@ -69,12 +104,16 @@ export default function EditAdjustment({
       quantity_before: l.quantity_before,
       quantity_after: l.quantity_after,
       reason: l.reason ?? '',
+      batch_number: l.batch_number ?? '',
+      serial_number: l.serial_number ?? '',
+      expiry_date: l.expiry_date ?? '',
     }))
   )
   const [itemSearch, setItemSearch] = useState('')
   const [itemDropOpen, setItemDropOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [confirmComplete, setConfirmComplete] = useState(false)
 
   const filteredProducts = useMemo(() =>
     products.filter(p =>
@@ -100,6 +139,9 @@ export default function EditAdjustment({
       quantity_before: qty,
       quantity_after: qty,
       reason,
+      batch_number: '',
+      serial_number: '',
+      expiry_date: '',
     }])
     setItemSearch('')
     setItemDropOpen(false)
@@ -152,6 +194,16 @@ export default function EditAdjustment({
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+
+      {confirmComplete && (
+        <ConfirmModal
+          title="Complete Adjustment"
+          message="This will apply the quantity changes to your stock levels. Are you sure?"
+          confirmLabel="Complete Adjustment"
+          onConfirm={() => { setConfirmComplete(false); save('Completed') }}
+          onCancel={() => setConfirmComplete(false)}
+        />
+      )}
 
       <div style={{ background: 'var(--white)', borderBottom: '1px solid var(--gray-100)', padding: '16px 28px', display: 'flex', alignItems: 'center', gap: 12, flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>
         <button onClick={() => router.back()} className="sq-btn">
@@ -237,13 +289,16 @@ export default function EditAdjustment({
                   <th className="li-th" style={{ width: 110, textAlign: 'right' }}>New Qty</th>
                   <th className="li-th" style={{ width: 80, textAlign: 'right' }}>Change</th>
                   <th className="li-th" style={{ width: 150 }}>Reason</th>
+                  {trackingFlags.showBatch  && <th className="li-th" style={{ width: 120 }}>Batch / Lot</th>}
+                  {trackingFlags.showSerial && <th className="li-th" style={{ width: 120 }}>Serial #</th>}
+                  {trackingFlags.showExpiry && <th className="li-th" style={{ width: 120 }}>Expiry Date</th>}
                   <th className="li-th" style={{ width: 36 }} />
                 </tr>
               </thead>
               <tbody>
                 {lines.length === 0 && (
                   <tr>
-                    <td colSpan={8} style={{ textAlign: 'center', padding: '24px 0', color: 'var(--gray-400)', fontSize: 13 }}>
+                    <td colSpan={8 + (trackingFlags.showBatch ? 1 : 0) + (trackingFlags.showSerial ? 1 : 0) + (trackingFlags.showExpiry ? 1 : 0)} style={{ textAlign: 'center', padding: '24px 0', color: 'var(--gray-400)', fontSize: 13 }}>
                       {selectedLocation ? 'Search below to add products.' : 'Select a location first.'}
                     </td>
                   </tr>
@@ -274,6 +329,21 @@ export default function EditAdjustment({
                           {REASONS.map(r => <option key={r} value={r}>{r}</option>)}
                         </select>
                       </td>
+                      {trackingFlags.showBatch && (
+                        <td className="li-td">
+                          <input className="li-input" type="text" value={l.batch_number} onChange={e => updateLine(idx, 'batch_number', e.target.value)} placeholder="Batch…" style={{ width: 100 }} />
+                        </td>
+                      )}
+                      {trackingFlags.showSerial && (
+                        <td className="li-td">
+                          <input className="li-input" type="text" value={l.serial_number} onChange={e => updateLine(idx, 'serial_number', e.target.value)} placeholder="Serial…" style={{ width: 100 }} />
+                        </td>
+                      )}
+                      {trackingFlags.showExpiry && (
+                        <td className="li-td">
+                          <input className="li-input" type="date" value={l.expiry_date} onChange={e => updateLine(idx, 'expiry_date', e.target.value)} style={{ width: 110 }} />
+                        </td>
+                      )}
                       <td className="li-td">
                         <button onClick={() => removeLine(idx)} style={{ width: 26, height: 26, borderRadius: 7, border: 'none', background: 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--gray-400)' }}
                           onMouseOver={e => (e.currentTarget.style.color = 'var(--danger)')}
@@ -333,7 +403,7 @@ export default function EditAdjustment({
           <button className="btn btn-outline" style={{ height: 38 }} onClick={() => save('Draft')} disabled={saving}>
             {saving ? 'Saving…' : 'Save Draft'}
           </button>
-          <button className="btn btn-primary" style={{ height: 38, padding: '0 20px' }} onClick={() => save('Completed')} disabled={saving}>
+          <button className="btn btn-primary" style={{ height: 38, padding: '0 20px' }} onClick={() => setConfirmComplete(true)} disabled={saving}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
             {saving ? 'Saving…' : 'Complete Adjustment'}
           </button>

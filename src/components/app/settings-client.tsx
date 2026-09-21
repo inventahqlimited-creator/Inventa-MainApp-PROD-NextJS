@@ -1250,12 +1250,48 @@ export default function SettingsClient({
   const [expiryTracking, setExpiryTracking] = useState(Boolean(org.expiry_tracking))
   const [decimalQty, setDecimalQty] = useState(Boolean(org.decimal_qty))
   const [decimalQtyPlaces, setDecimalQtyPlaces] = useState(String(org.decimal_qty_places ?? '2'))
+  // Confirm modal for disabling global tracking when products with stock exist
+  const [trackingConfirm, setTrackingConfirm] = useState<{ key: string; label: string; lockedCount: number } | null>(null)
 
   async function saveProductSetting(key: string, value: unknown) {
     await fetch('/api/org/settings', {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ [key]: value }),
     })
+    showToast('success', 'Setting saved')
+  }
+
+  async function handleTrackingToggle(key: 'serial_tracking' | 'batch_tracking' | 'expiry_tracking', newValue: boolean, setFn: (v: boolean) => void, label: string) {
+    if (newValue) {
+      // Turning ON — no guard needed
+      setFn(true)
+      saveProductSetting(key, true)
+      return
+    }
+    // Turning OFF — check how many products with this tracking on also have stock
+    const res = await fetch(`/api/org/settings/tracking-impact?key=${key}`)
+    const data = res.ok ? await res.json() : { lockedCount: 0 }
+    if (data.lockedCount > 0) {
+      setTrackingConfirm({ key, label, lockedCount: data.lockedCount })
+    } else {
+      // No products with stock affected — just turn off
+      setFn(false)
+      saveProductSetting(key, false)
+    }
+  }
+
+  async function confirmTrackingDisable() {
+    if (!trackingConfirm) return
+    const { key } = trackingConfirm
+    // Turn off global + turn off product-level tracking for products with NO stock
+    await fetch('/api/org/settings/tracking-impact', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key }),
+    })
+    if (key === 'serial_tracking') setSerialTracking(false)
+    if (key === 'batch_tracking') setBatchTracking(false)
+    if (key === 'expiry_tracking') setExpiryTracking(false)
+    setTrackingConfirm(null)
     showToast('success', 'Setting saved')
   }
 
@@ -1848,11 +1884,25 @@ export default function SettingsClient({
         {/* ── PRODUCTS ── */}
         {tab === 'products' && (
           <>
+            {trackingConfirm && (
+              <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ background: 'var(--white)', borderRadius: 16, padding: '28px 32px', maxWidth: 440, width: '90%', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }}>
+                  <div style={{ fontFamily: 'var(--font-display)', fontSize: 17, fontWeight: 700, color: 'var(--slate)', marginBottom: 10 }}>Disable {trackingConfirm.label}?</div>
+                  <div style={{ fontSize: 14, color: 'var(--gray-500)', lineHeight: 1.6, marginBottom: 24 }}>
+                    <strong>{trackingConfirm.lockedCount} product{trackingConfirm.lockedCount !== 1 ? 's' : ''}</strong> with existing stock will keep their product-level tracking on — their records can't be changed while stock exists. Products with no stock will have this tracking disabled.
+                  </div>
+                  <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+                    <button className="btn btn-outline" style={{ height: 38 }} onClick={() => setTrackingConfirm(null)}>Cancel</button>
+                    <button className="btn btn-primary" style={{ height: 38, padding: '0 20px' }} onClick={confirmTrackingDisable}>Continue</button>
+                  </div>
+                </div>
+              </div>
+            )}
             <Card title="Inventory Tracking" subtitle="Configure serial and batch tracking defaults">
               <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <ToggleRow label="Serial Number Tracking" sub="Track individual serial numbers for each unit received" active={serialTracking} onChange={v => { setSerialTracking(v); saveProductSetting('serial_tracking', v) }} />
-                <ToggleRow label="Batch / Lot Tracking" sub="Group received items into batches or lots for traceability" active={batchTracking} onChange={v => { setBatchTracking(v); saveProductSetting('batch_tracking', v) }} />
-                <ToggleRow label="Expiry Date Tracking" sub="All new products will have expiry date tracking enabled by default" active={expiryTracking} onChange={v => { setExpiryTracking(v); saveProductSetting('expiry_tracking', v) }} />
+                <ToggleRow label="Serial Number Tracking" sub="Track individual serial numbers for each unit received" active={serialTracking} onChange={v => handleTrackingToggle('serial_tracking', v, setSerialTracking, 'Serial Number Tracking')} />
+                <ToggleRow label="Batch / Lot Tracking" sub="Group received items into batches or lots for traceability" active={batchTracking} onChange={v => handleTrackingToggle('batch_tracking', v, setBatchTracking, 'Batch / Lot Tracking')} />
+                <ToggleRow label="Expiry Date Tracking" sub="All new products will have expiry date tracking enabled by default" active={expiryTracking} onChange={v => handleTrackingToggle('expiry_tracking', v, setExpiryTracking, 'Expiry Date Tracking')} />
               </div>
             </Card>
             <Card title="Quantity Settings" subtitle="Control how quantities are entered and displayed">

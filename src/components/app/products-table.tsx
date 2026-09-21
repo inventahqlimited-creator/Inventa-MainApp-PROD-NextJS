@@ -1471,21 +1471,31 @@ export default function ProductsTable({
 
                   <Section title="Tracking">
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-                      {trackingOptions.map(({ key, label, sub, orgEnabled }) => (
-                        <div key={key} className="pm-toggle-row" style={{ opacity: orgEnabled ? 1 : 0.45 }}>
-                          <div>
-                            <div className="pm-toggle-lbl">{label}</div>
-                            <div className="pm-toggle-sub">
-                              {orgEnabled ? sub : <>{sub} <span style={{ color: 'var(--gray-400)', fontStyle: 'italic' }}>— disabled in global settings</span></>}
+                      {trackingOptions.map(({ key, label, sub, orgEnabled }) => {
+                        // Lock disable if this product has tracked stock already saved
+                        const productId = modal === 'edit' ? activeProduct?.id : null
+                        const hasStock = productId ? (stockMap[productId]?.onHand ?? 0) > 0 : false
+                        const savedValue = activeProduct ? !!(activeProduct as Record<string, unknown>)[key] : false
+                        const trackingLocked = modal === 'edit' && hasStock && savedValue
+                        const currentActive = isView ? !!(curProduct as Record<string, unknown>)?.[key] : form[key] as boolean
+                        return (
+                          <div key={key} className="pm-toggle-row">
+                            <div>
+                              <div className="pm-toggle-lbl">{label}</div>
+                              <div className="pm-toggle-sub">
+                                {sub}
+                                {trackingLocked && <span style={{ color: 'var(--gray-400)', fontStyle: 'italic', display: 'block', marginTop: 2 }}>Cannot disable — product has existing stock records</span>}
+                                {!trackingLocked && !orgEnabled && <span style={{ color: 'var(--warning, #D97706)', fontStyle: 'italic', display: 'block', marginTop: 2 }}>Global setting is off — enable in Settings → Products to take effect</span>}
+                              </div>
                             </div>
+                            <Toggle
+                              active={currentActive}
+                              onChange={val => setF(key, val)}
+                              disabled={isView || trackingLocked}
+                            />
                           </div>
-                          <Toggle
-                            active={isView ? !!(curProduct as Record<string, unknown>)?.[key] : form[key] as boolean}
-                            onChange={val => setF(key, val)}
-                            disabled={isView || !orgEnabled}
-                          />
-                        </div>
-                      ))}
+                        )
+                      })}
                     </div>
                   </Section>
 

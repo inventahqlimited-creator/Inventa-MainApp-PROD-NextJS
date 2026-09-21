@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ lockedCount: 0 })
   }
 
-  const productIds = trackedProducts.map(p => p.id)
+  const productIds = trackedProducts.map((p: { id: string }) => p.id)
 
   // Count how many of those have stock > 0
   const { data: stockLevels } = await adminClient
@@ -47,7 +47,7 @@ export async function GET(request: NextRequest) {
     .in('product_id', productIds)
     .gt('quantity', 0)
 
-  const lockedProductIds = new Set((stockLevels ?? []).map(s => s.product_id))
+  const lockedProductIds = new Set((stockLevels ?? []).map((s: { product_id: string }) => s.product_id))
   const lockedCount = lockedProductIds.size
 
   return NextResponse.json({ lockedCount })
@@ -72,7 +72,7 @@ export async function POST(request: NextRequest) {
     .eq(key, true)
 
   if (trackedProducts && trackedProducts.length > 0) {
-    const productIds = trackedProducts.map(p => p.id)
+    const productIds = trackedProducts.map((p: { id: string }) => p.id)
 
     // Find which have stock > 0 (locked — keep their tracking on)
     const { data: stockLevels } = await adminClient
@@ -82,7 +82,7 @@ export async function POST(request: NextRequest) {
       .in('product_id', productIds)
       .gt('quantity', 0)
 
-    const lockedIds = new Set((stockLevels ?? []).map(s => s.product_id))
+    const lockedIds = new Set((stockLevels ?? []).map((s: { product_id: string }) => s.product_id))
     const unlockableIds = productIds.filter(id => !lockedIds.has(id))
 
     // Turn off product-level tracking for products with no stock

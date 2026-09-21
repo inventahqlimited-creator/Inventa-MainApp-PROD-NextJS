@@ -1,10 +1,14 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 
 type Location = { id: string; name: string }
-type Product = { id: string; name: string; sku: string | null; sell_uom: string | null; track_stock: boolean | null; type: string }
+type Product = {
+  id: string; name: string; sku: string | null; sell_uom: string | null
+  track_stock: boolean | null; type: string
+  serial_tracking: boolean | null; batch_tracking: boolean | null; expiry_tracking: boolean | null
+}
 type StockLevel = { product_id: string; location_id: string; quantity: number }
 
 type TrackingFlags = {
@@ -24,16 +28,16 @@ type LineItem = {
   batch_number: string
   serial_number: string
   expiry_date: string
+  // per-line product tracking flags
+  needs_serial: boolean
+  needs_batch: boolean
+  needs_expiry: boolean
 }
 
 const REASONS = ['Stocktake', 'Damaged', 'Expired', 'Found', 'Lost', 'Theft', 'Sample', 'Write-off', 'Other']
 
 function ConfirmModal({ title, message, confirmLabel, onConfirm, onCancel }: {
-  title: string
-  message: string
-  confirmLabel: string
-  onConfirm: () => void
-  onCancel: () => void
+  title: string; message: string; confirmLabel: string; onConfirm: () => void; onCancel: () => void
 }) {
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -45,6 +49,129 @@ function ConfirmModal({ title, message, confirmLabel, onConfirm, onCancel }: {
           <button className="btn btn-primary" style={{ height: 38, padding: '0 20px' }} onClick={onConfirm}>{confirmLabel}</button>
         </div>
       </div>
+    </div>
+  )
+}
+
+// ── Expiry Date Input with auto-format dd/mm/yyyy and calendar picker ──
+function ExpiryInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
+  const [displayVal, setDisplayVal] = useState('')
+  const [showCal, setShowCal] = useState(false)
+  const [calMonth, setCalMonth] = useState(() => new Date())
+  const wrapRef = useRef<HTMLDivElement>(null)
+
+  // Convert ISO yyyy-mm-dd → display dd/mm/yyyy
+  useEffect(() => {
+    if (!value) { setDisplayVal(''); return }
+    const [y, m, d] = value.split('-')
+    if (y && m && d) setDisplayVal(`${d}/${m}/${y}`)
+    else setDisplayVal(value)
+  }, [value])
+
+  // Close calendar on outside click
+  useEffect(() => {
+    function handler(e: MouseEvent) {
+      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setShowCal(false)
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  function handleType(raw: string) {
+    const digits = raw.replace(/\D/g, '').slice(0, 8)
+    let fmt = ''
+    if (digits.length <= 2) fmt = digits
+    else if (digits.length <= 4) fmt = `${digits.slice(0,2)}/${digits.slice(2)}`
+    else fmt = `${digits.slice(0,2)}/${digits.slice(2,4)}/${digits.slice(4)}`
+    setDisplayVal(fmt)
+    if (digits.length === 8) {
+      const d = digits.slice(0,2), mo = digits.slice(2,4), y = digits.slice(4,8)
+      const iso = `${y}-${mo}-${d}`
+      const dt = new Date(iso)
+      if (!isNaN(dt.getTime())) onChange(iso)
+      else onChange('')
+    } else {
+      onChange('')
+    }
+  }
+
+  function pickDay(d: Date) {
+    const iso = d.toISOString().split('T')[0]
+    onChange(iso)
+    setShowCal(false)
+  }
+
+  const year = calMonth.getFullYear()
+  const month = calMonth.getMonth()
+  const firstDay = new Date(year, month, 1).getDay()
+  const daysInMonth = new Date(year, month + 1, 0).getDate()
+  const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December']
+  const selectedDate = value ? new Date(value + 'T00:00:00') : null
+
+  const cells: (number | null)[] = []
+  for (let i = 0; i < firstDay; i++) cells.push(null)
+  for (let i = 1; i <= daysInMonth; i++) cells.push(i)
+
+  return (
+    <div ref={wrapRef} style={{ position: 'relative', display: 'inline-block' }}>
+      <div style={{ position: 'relative' }}>
+        <input
+          className="li-input"
+          value={displayVal}
+          onChange={e => handleType(e.target.value)}
+          onFocus={() => setShowCal(true)}
+          placeholder="DD/MM/YYYY"
+          style={{ width: 110, paddingRight: 28 }}
+          maxLength={10}
+          autoComplete="off"
+        />
+        <button
+          type="button"
+          onClick={() => setShowCal(s => !s)}
+          style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: 'var(--gray-400)', display: 'flex', alignItems: 'center' }}
+        >
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+        </button>
+      </div>
+      {showCal && (
+        <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 300, background: 'var(--white)', borderRadius: 14, boxShadow: '0 8px 32px rgba(0,0,0,0.16)', border: '1px solid var(--gray-100)', padding: 14, width: 240 }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+            <button type="button" onClick={() => setCalMonth(new Date(year, month - 1, 1))} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px 8px', borderRadius: 8, color: 'var(--gray-400)', fontSize: 16 }}>‹</button>
+            <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 13, color: 'var(--slate)' }}>{MONTHS[month]} {year}</span>
+            <button type="button" onClick={() => setCalMonth(new Date(year, month + 1, 1))} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px 8px', borderRadius: 8, color: 'var(--gray-400)', fontSize: 16 }}>›</button>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2, marginBottom: 4 }}>
+            {['Su','Mo','Tu','We','Th','Fr','Sa'].map(d => (
+              <div key={d} style={{ textAlign: 'center', fontSize: 10, fontWeight: 700, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)', padding: '2px 0' }}>{d}</div>
+            ))}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2 }}>
+            {cells.map((day, i) => {
+              if (!day) return <div key={i} />
+              const thisDate = new Date(year, month, day)
+              const isSelected = selectedDate && thisDate.toDateString() === selectedDate.toDateString()
+              const isToday = thisDate.toDateString() === new Date().toDateString()
+              return (
+                <button
+                  key={i}
+                  type="button"
+                  onClick={() => pickDay(thisDate)}
+                  style={{
+                    background: isSelected ? 'var(--teal)' : isToday ? 'var(--teal-surface, #F0FDFA)' : 'none',
+                    color: isSelected ? 'var(--white)' : isToday ? 'var(--teal)' : 'var(--slate)',
+                    border: 'none', borderRadius: 7, cursor: 'pointer', padding: '5px 2px',
+                    fontSize: 12, fontWeight: isSelected || isToday ? 700 : 400,
+                    fontFamily: 'var(--font-ui)',
+                  }}
+                >{day}</button>
+              )
+            })}
+          </div>
+          <div style={{ marginTop: 10, borderTop: '1px solid var(--gray-100)', paddingTop: 8, display: 'flex', justifyContent: 'center' }}>
+            <button type="button" onClick={() => pickDay(new Date())} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11.5, color: 'var(--teal)', fontWeight: 600, fontFamily: 'var(--font-ui)' }}>Today</button>
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -88,6 +215,13 @@ export default function EditAdjustment({
 }) {
   const router = useRouter()
 
+  // Build a product lookup map for tracking flags
+  const productMap = useMemo(() => {
+    const m: Record<string, Product> = {}
+    products.forEach(p => { m[p.id] = p })
+    return m
+  }, [products])
+
   const initLocation = locations.find(l => l.id === initialAdj.location_id) ?? null
   const [selectedLocation, setSelectedLocation] = useState<Location | null>(initLocation)
   const [locationOpen, setLocationOpen] = useState(false)
@@ -96,24 +230,36 @@ export default function EditAdjustment({
   const [reasonOpen, setReasonOpen] = useState(false)
   const [notes, setNotes] = useState(initialAdj.notes ?? '')
   const [lines, setLines] = useState<LineItem[]>(
-    initialLines.map(l => ({
-      product_id: l.product_id ?? '',
-      product_name: l.product_name ?? '',
-      product_sku: l.product_sku ?? '',
-      unit: l.unit ?? 'Each',
-      quantity_before: l.quantity_before,
-      quantity_after: l.quantity_after,
-      reason: l.reason ?? '',
-      batch_number: l.batch_number ?? '',
-      serial_number: l.serial_number ?? '',
-      expiry_date: l.expiry_date ?? '',
-    }))
+    initialLines.map(l => {
+      const prod = l.product_id ? productMap[l.product_id] : null
+      return {
+        product_id: l.product_id ?? '',
+        product_name: l.product_name ?? '',
+        product_sku: l.product_sku ?? '',
+        unit: l.unit ?? 'Each',
+        quantity_before: l.quantity_before,
+        quantity_after: l.quantity_after,
+        reason: l.reason ?? '',
+        batch_number: l.batch_number ?? '',
+        serial_number: l.serial_number ?? '',
+        expiry_date: l.expiry_date ?? '',
+        needs_serial: !!prod?.serial_tracking,
+        needs_batch: !!prod?.batch_tracking,
+        needs_expiry: !!prod?.expiry_tracking,
+      }
+    })
   )
   const [itemSearch, setItemSearch] = useState('')
   const [itemDropOpen, setItemDropOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [lineErrors, setLineErrors] = useState<Record<number, Record<string, string>>>({})
   const [confirmComplete, setConfirmComplete] = useState(false)
+
+  // Dynamic column visibility: show if org flag OR any line needs it
+  const showSerial = trackingFlags.showSerial || lines.some(l => l.needs_serial)
+  const showBatch  = trackingFlags.showBatch  || lines.some(l => l.needs_batch)
+  const showExpiry = trackingFlags.showExpiry || lines.some(l => l.needs_expiry)
 
   const filteredProducts = useMemo(() =>
     products.filter(p =>
@@ -142,26 +288,88 @@ export default function EditAdjustment({
       batch_number: '',
       serial_number: '',
       expiry_date: '',
+      needs_serial: !!p.serial_tracking,
+      needs_batch: !!p.batch_tracking,
+      needs_expiry: !!p.expiry_tracking,
     }])
     setItemSearch('')
     setItemDropOpen(false)
   }
 
-  function updateLine(idx: number, field: keyof LineItem, value: string | number) {
+  function updateLine(idx: number, field: keyof LineItem, value: string | number | boolean) {
     setLines(prev => prev.map((l, i) => i === idx ? { ...l, [field]: value } : l))
+    // Clear field-level error on change
+    if (lineErrors[idx]?.[field as string]) {
+      setLineErrors(prev => {
+        const next = { ...prev }
+        if (next[idx]) { delete next[idx][field as string]; if (!Object.keys(next[idx]).length) delete next[idx] }
+        return next
+      })
+    }
   }
 
   function removeLine(idx: number) {
     setLines(prev => prev.filter((_, i) => i !== idx))
+    setLineErrors(prev => {
+      const next: typeof prev = {}
+      Object.entries(prev).forEach(([k, v]) => { const ki = parseInt(k); if (ki < idx) next[ki] = v; else if (ki > idx) next[ki - 1] = v })
+      return next
+    })
+  }
+
+  function validate(): boolean {
+    const errs: Record<number, Record<string, string>> = {}
+    lines.forEach((l, idx) => {
+      const e: Record<string, string> = {}
+      if (l.needs_serial) {
+        if (!l.serial_number.trim()) e.serial_number = 'Serial number required'
+        else if (Math.abs(l.quantity_after - l.quantity_before) !== 1) {
+          e.quantity_after = 'Serial tracked items must adjust by exactly 1 unit per row'
+        }
+      }
+      if (l.needs_batch && !l.batch_number.trim()) e.batch_number = 'Batch number required'
+      if (l.needs_expiry && !l.expiry_date) e.expiry_date = 'Expiry date required'
+      if (Object.keys(e).length) errs[idx] = e
+    })
+    setLineErrors(errs)
+    return Object.keys(errs).length === 0
+  }
+
+  function handleQtyChange(idx: number, val: number) {
+    updateLine(idx, 'quantity_after', val)
+    const l = lines[idx]
+    if (l.needs_serial && l.serial_number.trim()) {
+      const change = val - l.quantity_before
+      if (Math.abs(change) !== 1) {
+        setLineErrors(prev => ({ ...prev, [idx]: { ...prev[idx], quantity_after: 'Serial tracked items must adjust by exactly 1 unit per row' } }))
+      } else {
+        setLineErrors(prev => {
+          const next = { ...prev }
+          if (next[idx]) { delete next[idx].quantity_after; if (!Object.keys(next[idx]).length) delete next[idx] }
+          return next
+        })
+      }
+    }
+  }
+
+  function handleSerialChange(idx: number, val: string) {
+    updateLine(idx, 'serial_number', val)
+    const l = lines[idx]
+    if (val.trim()) {
+      const change = l.quantity_after - l.quantity_before
+      if (Math.abs(change) !== 1) {
+        setLineErrors(prev => ({ ...prev, [idx]: { ...prev[idx], quantity_after: 'Serial tracked items must adjust by exactly 1 unit per row' } }))
+      }
+    }
   }
 
   async function save(status: 'Draft' | 'Completed') {
     if (!selectedLocation) { setError('Please select a location.'); return }
     if (lines.length === 0) { setError('Add at least one product.'); return }
+    if (status === 'Completed' && !validate()) { setError('Please fill in all required tracking fields before completing.'); return }
     setSaving(true)
     setError(null)
 
-    // PUT saves lines + header (always as Draft first to avoid double stock application)
     const putRes = await fetch(`/api/org/adjustments/${adjId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -171,14 +379,19 @@ export default function EditAdjustment({
         adjustment_date: adjustmentDate,
         reason: reason || null,
         notes: notes || null,
-        lines: lines.map((l, i) => ({ ...l, sort_order: i })),
+        lines: lines.map((l, i) => ({
+          ...l,
+          sort_order: i,
+          batch_number: l.batch_number || null,
+          serial_number: l.serial_number || null,
+          expiry_date: l.expiry_date || null,
+        })),
       }),
     })
     const putData = await putRes.json()
     if (!putRes.ok) { setError(putData.error ?? 'Failed to save'); setSaving(false); return }
 
     if (status === 'Completed') {
-      // PATCH sets status to Completed and applies stock changes
       const patchRes = await fetch(`/api/org/adjustments/${adjId}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
@@ -191,6 +404,8 @@ export default function EditAdjustment({
     setSaving(false)
     router.push(`/products/adjustments/${adjId}`)
   }
+
+  const extraCols = (showBatch ? 1 : 0) + (showSerial ? 1 : 0) + (showExpiry ? 1 : 0)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
@@ -289,35 +504,40 @@ export default function EditAdjustment({
                   <th className="li-th" style={{ width: 110, textAlign: 'right' }}>New Qty</th>
                   <th className="li-th" style={{ width: 80, textAlign: 'right' }}>Change</th>
                   <th className="li-th" style={{ width: 150 }}>Reason</th>
-                  {trackingFlags.showBatch  && <th className="li-th" style={{ width: 120 }}>Batch / Lot</th>}
-                  {trackingFlags.showSerial && <th className="li-th" style={{ width: 120 }}>Serial #</th>}
-                  {trackingFlags.showExpiry && <th className="li-th" style={{ width: 120 }}>Expiry Date</th>}
+                  {showBatch  && <th className="li-th" style={{ width: 120 }}>Batch / Lot</th>}
+                  {showSerial && <th className="li-th" style={{ width: 120 }}>Serial #</th>}
+                  {showExpiry && <th className="li-th" style={{ width: 130 }}>Expiry Date</th>}
                   <th className="li-th" style={{ width: 36 }} />
                 </tr>
               </thead>
               <tbody>
                 {lines.length === 0 && (
                   <tr>
-                    <td colSpan={8 + (trackingFlags.showBatch ? 1 : 0) + (trackingFlags.showSerial ? 1 : 0) + (trackingFlags.showExpiry ? 1 : 0)} style={{ textAlign: 'center', padding: '24px 0', color: 'var(--gray-400)', fontSize: 13 }}>
+                    <td colSpan={8 + extraCols} style={{ textAlign: 'center', padding: '24px 0', color: 'var(--gray-400)', fontSize: 13 }}>
                       {selectedLocation ? 'Search below to add products.' : 'Select a location first.'}
                     </td>
                   </tr>
                 )}
                 {lines.map((l, idx) => {
                   const change = l.quantity_after - l.quantity_before
+                  const errs = lineErrors[idx] ?? {}
                   return (
-                    <tr key={idx} style={{ borderBottom: '1px solid var(--gray-100)' }}>
+                    <tr key={idx} style={{ borderBottom: '1px solid var(--gray-100)', verticalAlign: 'top' }}>
                       <td className="li-td"><span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--gray-400)' }}>{l.product_sku || '—'}</span></td>
                       <td className="li-td">
                         <span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{l.product_name}</span>
+                        {l.needs_serial && <span style={{ display: 'block', fontSize: 10, color: 'var(--teal)', marginTop: 2, fontWeight: 600 }}>Serial tracked</span>}
+                        {l.needs_batch  && <span style={{ display: 'block', fontSize: 10, color: 'var(--teal)', marginTop: 1, fontWeight: 600 }}>Batch tracked</span>}
+                        {l.needs_expiry && <span style={{ display: 'block', fontSize: 10, color: 'var(--teal)', marginTop: 1, fontWeight: 600 }}>Expiry tracked</span>}
                       </td>
                       <td className="li-td" style={{ textAlign: 'center', color: 'var(--gray-400)', fontSize: 13 }}>{l.unit}</td>
                       <td className="li-td" style={{ textAlign: 'right', color: 'var(--gray-400)', fontWeight: 500 }}>{l.quantity_before}</td>
                       <td className="li-td" style={{ textAlign: 'right' }}>
-                        <input className="li-input right" type="number" step="1" value={l.quantity_after}
-                          onChange={e => updateLine(idx, 'quantity_after', parseFloat(e.target.value) || 0)}
+                        <input className={`li-input right${errs.quantity_after ? ' li-input-error' : ''}`} type="number" step="1" value={l.quantity_after}
+                          onChange={e => handleQtyChange(idx, parseFloat(e.target.value) || 0)}
                           onFocus={e => e.target.select()}
                           style={{ width: 90, textAlign: 'right' }} />
+                        {errs.quantity_after && <div style={{ fontSize: 10.5, color: 'var(--danger)', marginTop: 2, lineHeight: 1.3 }}>{errs.quantity_after}</div>}
                       </td>
                       <td className="li-td" style={{ textAlign: 'right', fontWeight: 700, color: change > 0 ? '#059669' : change < 0 ? 'var(--danger)' : 'var(--gray-400)', fontSize: 13 }}>
                         {change > 0 ? `+${change}` : change}
@@ -329,19 +549,38 @@ export default function EditAdjustment({
                           {REASONS.map(r => <option key={r} value={r}>{r}</option>)}
                         </select>
                       </td>
-                      {trackingFlags.showBatch && (
+                      {showBatch && (
                         <td className="li-td">
-                          <input className="li-input" type="text" value={l.batch_number} onChange={e => updateLine(idx, 'batch_number', e.target.value)} placeholder="Batch…" style={{ width: 100 }} />
+                          {l.needs_batch ? (
+                            <>
+                              <input className={`li-input${errs.batch_number ? ' li-input-error' : ''}`} type="text" value={l.batch_number}
+                                onChange={e => updateLine(idx, 'batch_number', e.target.value)}
+                                placeholder="Batch…" style={{ width: 100 }} />
+                              {errs.batch_number && <div style={{ fontSize: 10.5, color: 'var(--danger)', marginTop: 2 }}>{errs.batch_number}</div>}
+                            </>
+                          ) : <span style={{ color: 'var(--gray-300)', fontSize: 12 }}>—</span>}
                         </td>
                       )}
-                      {trackingFlags.showSerial && (
+                      {showSerial && (
                         <td className="li-td">
-                          <input className="li-input" type="text" value={l.serial_number} onChange={e => updateLine(idx, 'serial_number', e.target.value)} placeholder="Serial…" style={{ width: 100 }} />
+                          {l.needs_serial ? (
+                            <>
+                              <input className={`li-input${errs.serial_number ? ' li-input-error' : ''}`} type="text" value={l.serial_number}
+                                onChange={e => handleSerialChange(idx, e.target.value)}
+                                placeholder="Serial…" style={{ width: 100 }} />
+                              {errs.serial_number && <div style={{ fontSize: 10.5, color: 'var(--danger)', marginTop: 2 }}>{errs.serial_number}</div>}
+                            </>
+                          ) : <span style={{ color: 'var(--gray-300)', fontSize: 12 }}>—</span>}
                         </td>
                       )}
-                      {trackingFlags.showExpiry && (
-                        <td className="li-td">
-                          <input className="li-input" type="date" value={l.expiry_date} onChange={e => updateLine(idx, 'expiry_date', e.target.value)} style={{ width: 110 }} />
+                      {showExpiry && (
+                        <td className="li-td" style={{ overflow: 'visible' }}>
+                          {l.needs_expiry ? (
+                            <>
+                              <ExpiryInput value={l.expiry_date} onChange={v => updateLine(idx, 'expiry_date', v)} />
+                              {errs.expiry_date && <div style={{ fontSize: 10.5, color: 'var(--danger)', marginTop: 2 }}>{errs.expiry_date}</div>}
+                            </>
+                          ) : <span style={{ color: 'var(--gray-300)', fontSize: 12 }}>—</span>}
                         </td>
                       )}
                       <td className="li-td">

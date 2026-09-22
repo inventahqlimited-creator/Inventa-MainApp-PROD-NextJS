@@ -1,7 +1,9 @@
 'use client'
+// src/components/app/adjustments-table.tsx
 
 import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
+import StockTickModal from './stock-tick-modal'
 
 type Adjustment = {
   id: string
@@ -15,6 +17,17 @@ type Adjustment = {
 }
 
 type Location = { id: string; name: string }
+
+type Product = {
+  id: string
+  name: string
+  sku: string | null
+  sell_uom: string | null
+  track_stock: boolean | null
+  serial_tracking: boolean | null
+  batch_tracking: boolean | null
+  expiry_tracking: boolean | null
+}
 
 function fmtDate(d: string | null) {
   if (!d) return '—'
@@ -44,10 +57,12 @@ export default function AdjustmentsTable({
   adjustments,
   locations,
   orgId,
+  products,
 }: {
   adjustments: Adjustment[]
   locations: Location[]
   orgId: string
+  products: Product[]
 }) {
   const router = useRouter()
   const [search, setSearch] = useState('')
@@ -58,6 +73,7 @@ export default function AdjustmentsTable({
   const [reasonOpen, setReasonOpen] = useState(false)
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(25)
+  const [showStockTick, setShowStockTick] = useState(false)
 
   const filtered = useMemo(() => {
     return adjustments.filter(a => {
@@ -102,6 +118,9 @@ export default function AdjustmentsTable({
             </div>
           </div>
           <div className="page-header-actions">
+            <button className="btn btn-outline" onClick={() => setShowStockTick(true)}>
+              Stock Tick
+            </button>
             <button className="btn btn-primary" onClick={() => router.push('/products/adjustments/new')}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               New Adjustment
@@ -223,6 +242,35 @@ export default function AdjustmentsTable({
           </div>
         </div>
       </div>
+
+      {/* Stock Tick Modal */}
+      {showStockTick && (
+        <div className="modal-backdrop" onMouseDown={e => { if (e.target === e.currentTarget) setShowStockTick(false) }}>
+          <div className="modal-box" style={{ maxWidth: 500 }} onMouseDown={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <div>
+                <div className="modal-title">Stock Tick</div>
+                <div className="modal-subtitle">Download your current stock, update quantities, and re-import.</div>
+              </div>
+              <button className="modal-close" onClick={() => setShowStockTick(false)}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                  <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+                </svg>
+              </button>
+            </div>
+            <StockTickModal
+              orgId={orgId}
+              products={products}
+              locations={locations}
+              onClose={() => setShowStockTick(false)}
+              onImported={() => {
+                setShowStockTick(false)
+                router.refresh()
+              }}
+            />
+          </div>
+        </div>
+      )}
     </div>
   )
 }

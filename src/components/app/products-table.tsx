@@ -1644,15 +1644,11 @@ export default function ProductsTable({
                       </div>
 
                       {/* ── Stock group breakdown ── */}
-                      {hasTracking && (
+                      {hasTracking && (stockGroupsLoading || hasGroups) && (
                         <div>
                           <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase' as const, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)', marginBottom: 8 }}>Stock Groups</div>
                           {stockGroupsLoading ? (
                             <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--gray-400)', fontSize: 13 }}>Loading…</div>
-                          ) : !hasGroups ? (
-                            <div style={{ background: 'var(--gray-50)', borderRadius: 10, padding: '16px', fontSize: 13, color: 'var(--gray-400)', textAlign: 'center' }}>
-                              No stock groups recorded yet. Groups are created when adjustments are completed.
-                            </div>
                           ) : (
                             <div style={{ background: 'var(--white)', border: '1.5px solid var(--gray-200)', borderRadius: 12, overflow: 'hidden' }}>
                               <table style={{ width: '100%', borderCollapse: 'collapse' }}>

@@ -71,6 +71,7 @@ function ExpiryInput({ value, onChange }: { value: string; onChange: (v: string)
   const [calMonth, setCalMonth] = useState(() => new Date())
   const [calPos, setCalPos] = useState({ top: 0, left: 0 })
   const wrapRef = useRef<HTMLDivElement>(null)
+  const calRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     if (!value) { setDisplayVal(''); return }
@@ -81,7 +82,10 @@ function ExpiryInput({ value, onChange }: { value: string; onChange: (v: string)
 
   useEffect(() => {
     function handler(e: MouseEvent) {
-      if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setShowCal(false)
+      const target = e.target as Node
+      const inWrap = wrapRef.current?.contains(target)
+      const inCal  = calRef.current?.contains(target)
+      if (!inWrap && !inCal) setShowCal(false)
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
@@ -131,7 +135,7 @@ function ExpiryInput({ value, onChange }: { value: string; onChange: (v: string)
   for (let i = 1; i <= daysInMonth; i++) cells.push(i)
 
   const calendar = showCal ? createPortal(
-    <div style={{ position: 'absolute', top: calPos.top, left: calPos.left, zIndex: 9999, background: 'var(--white)', borderRadius: 14, boxShadow: '0 8px 32px rgba(0,0,0,0.16)', border: '1px solid var(--gray-100)', padding: 14, width: 240 }}>
+    <div ref={calRef} style={{ position: 'absolute', top: calPos.top, left: calPos.left, zIndex: 9999, background: 'var(--white)', borderRadius: 14, boxShadow: '0 8px 32px rgba(0,0,0,0.16)', border: '1px solid var(--gray-100)', padding: 14, width: 240 }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
         <button type="button" onClick={() => setCalMonth(new Date(year, month - 1, 1))} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px 8px', borderRadius: 8, color: 'var(--gray-400)', fontSize: 16 }}>‹</button>
         <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 13, color: 'var(--slate)' }}>{MONTHS[month]} {year}</span>

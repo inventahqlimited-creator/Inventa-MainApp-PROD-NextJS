@@ -78,14 +78,16 @@ export default function StocktakeModal({
     setErrors([])
 
     const text = await file.text()
-    const lines = text.split('\n').map(l => l.trim()).filter(Boolean)
+    // Normalise line endings (handle \r\n from Excel on Windows)
+    const lines = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n').split('\n').map(l => l.trim()).filter(Boolean)
     if (lines.length < 2) {
       setErrors(['File is empty or has no data rows.'])
       setImporting(false)
       return
     }
 
-    const rawHeaders = lines[0].split(',').map(h => h.replace(/^"|"$/g, '').trim().toLowerCase())
+    // Use the same CSV parser for headers so quoted fields are handled correctly
+    const rawHeaders = parseRow(lines[0]).map(h => h.replace(/^﻿/, '').trim().toLowerCase())
 
     const nameIdx = rawHeaders.findIndex(h => h === 'product name' || h.includes('product name'))
     const skuIdx = rawHeaders.findIndex(h => h === 'sku')

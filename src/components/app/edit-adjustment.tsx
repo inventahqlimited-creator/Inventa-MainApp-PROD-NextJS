@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useMemo, useRef, useEffect } from 'react'
+import { useState, useMemo, useRef, useEffect, useCallback } from 'react'
+import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 
 type Location = { id: string; name: string }
@@ -53,14 +54,14 @@ function ConfirmModal({ title, message, confirmLabel, onConfirm, onCancel }: {
   )
 }
 
-// ── Expiry Date Input with auto-format dd/mm/yyyy and calendar picker ──
+// ── Expiry Date Input with auto-format dd/mm/yyyy and portal calendar picker ──
 function ExpiryInput({ value, onChange }: { value: string; onChange: (v: string) => void }) {
   const [displayVal, setDisplayVal] = useState('')
   const [showCal, setShowCal] = useState(false)
   const [calMonth, setCalMonth] = useState(() => new Date())
+  const [calPos, setCalPos] = useState({ top: 0, left: 0 })
   const wrapRef = useRef<HTMLDivElement>(null)
 
-  // Convert ISO yyyy-mm-dd → display dd/mm/yyyy
   useEffect(() => {
     if (!value) { setDisplayVal(''); return }
     const [y, m, d] = value.split('-')
@@ -68,13 +69,20 @@ function ExpiryInput({ value, onChange }: { value: string; onChange: (v: string)
     else setDisplayVal(value)
   }, [value])
 
-  // Close calendar on outside click
   useEffect(() => {
     function handler(e: MouseEvent) {
       if (wrapRef.current && !wrapRef.current.contains(e.target as Node)) setShowCal(false)
     }
     document.addEventListener('mousedown', handler)
     return () => document.removeEventListener('mousedown', handler)
+  }, [])
+
+  const openCal = useCallback(() => {
+    if (wrapRef.current) {
+      const r = wrapRef.current.getBoundingClientRect()
+      setCalPos({ top: r.bottom + window.scrollY + 4, left: r.left + window.scrollX })
+    }
+    setShowCal(true)
   }, [])
 
   function handleType(raw: string) {
@@ -112,6 +120,36 @@ function ExpiryInput({ value, onChange }: { value: string; onChange: (v: string)
   for (let i = 0; i < firstDay; i++) cells.push(null)
   for (let i = 1; i <= daysInMonth; i++) cells.push(i)
 
+  const calendar = showCal ? createPortal(
+    <div style={{ position: 'absolute', top: calPos.top, left: calPos.left, zIndex: 9999, background: 'var(--white)', borderRadius: 14, boxShadow: '0 8px 32px rgba(0,0,0,0.16)', border: '1px solid var(--gray-100)', padding: 14, width: 240 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+        <button type="button" onClick={() => setCalMonth(new Date(year, month - 1, 1))} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px 8px', borderRadius: 8, color: 'var(--gray-400)', fontSize: 16 }}>‹</button>
+        <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 13, color: 'var(--slate)' }}>{MONTHS[month]} {year}</span>
+        <button type="button" onClick={() => setCalMonth(new Date(year, month + 1, 1))} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px 8px', borderRadius: 8, color: 'var(--gray-400)', fontSize: 16 }}>›</button>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2, marginBottom: 4 }}>
+        {['Su','Mo','Tu','We','Th','Fr','Sa'].map(d => (
+          <div key={d} style={{ textAlign: 'center', fontSize: 10, fontWeight: 700, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)', padding: '2px 0' }}>{d}</div>
+        ))}
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2 }}>
+        {cells.map((day, i) => {
+          if (!day) return <div key={i} />
+          const thisDate = new Date(year, month, day)
+          const isSelected = selectedDate && thisDate.toDateString() === selectedDate.toDateString()
+          const isToday = thisDate.toDateString() === new Date().toDateString()
+          return (
+            <button key={i} type="button" onClick={() => pickDay(thisDate)} style={{ background: isSelected ? 'var(--teal)' : isToday ? 'var(--teal-surface, #F0FDFA)' : 'none', color: isSelected ? 'var(--white)' : isToday ? 'var(--teal)' : 'var(--slate)', border: 'none', borderRadius: 7, cursor: 'pointer', padding: '5px 2px', fontSize: 12, fontWeight: isSelected || isToday ? 700 : 400, fontFamily: 'var(--font-ui)' }}>{day}</button>
+          )
+        })}
+      </div>
+      <div style={{ marginTop: 10, borderTop: '1px solid var(--gray-100)', paddingTop: 8, display: 'flex', justifyContent: 'center' }}>
+        <button type="button" onClick={() => pickDay(new Date())} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11.5, color: 'var(--teal)', fontWeight: 600, fontFamily: 'var(--font-ui)' }}>Today</button>
+      </div>
+    </div>,
+    document.body
+  ) : null
+
   return (
     <div ref={wrapRef} style={{ position: 'relative', display: 'inline-block' }}>
       <div style={{ position: 'relative' }}>
@@ -119,7 +157,7 @@ function ExpiryInput({ value, onChange }: { value: string; onChange: (v: string)
           className="li-input"
           value={displayVal}
           onChange={e => handleType(e.target.value)}
-          onFocus={() => setShowCal(true)}
+          onFocus={openCal}
           placeholder="DD/MM/YYYY"
           style={{ width: 110, paddingRight: 28 }}
           maxLength={10}
@@ -127,51 +165,13 @@ function ExpiryInput({ value, onChange }: { value: string; onChange: (v: string)
         />
         <button
           type="button"
-          onClick={() => setShowCal(s => !s)}
+          onClick={() => showCal ? setShowCal(false) : openCal()}
           style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', background: 'none', border: 'none', cursor: 'pointer', padding: 0, color: 'var(--gray-400)', display: 'flex', alignItems: 'center' }}
         >
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
         </button>
       </div>
-      {showCal && (
-        <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 300, background: 'var(--white)', borderRadius: 14, boxShadow: '0 8px 32px rgba(0,0,0,0.16)', border: '1px solid var(--gray-100)', padding: 14, width: 240 }}>
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-            <button type="button" onClick={() => setCalMonth(new Date(year, month - 1, 1))} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px 8px', borderRadius: 8, color: 'var(--gray-400)', fontSize: 16 }}>‹</button>
-            <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 13, color: 'var(--slate)' }}>{MONTHS[month]} {year}</span>
-            <button type="button" onClick={() => setCalMonth(new Date(year, month + 1, 1))} style={{ background: 'none', border: 'none', cursor: 'pointer', padding: '4px 8px', borderRadius: 8, color: 'var(--gray-400)', fontSize: 16 }}>›</button>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2, marginBottom: 4 }}>
-            {['Su','Mo','Tu','We','Th','Fr','Sa'].map(d => (
-              <div key={d} style={{ textAlign: 'center', fontSize: 10, fontWeight: 700, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)', padding: '2px 0' }}>{d}</div>
-            ))}
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(7, 1fr)', gap: 2 }}>
-            {cells.map((day, i) => {
-              if (!day) return <div key={i} />
-              const thisDate = new Date(year, month, day)
-              const isSelected = selectedDate && thisDate.toDateString() === selectedDate.toDateString()
-              const isToday = thisDate.toDateString() === new Date().toDateString()
-              return (
-                <button
-                  key={i}
-                  type="button"
-                  onClick={() => pickDay(thisDate)}
-                  style={{
-                    background: isSelected ? 'var(--teal)' : isToday ? 'var(--teal-surface, #F0FDFA)' : 'none',
-                    color: isSelected ? 'var(--white)' : isToday ? 'var(--teal)' : 'var(--slate)',
-                    border: 'none', borderRadius: 7, cursor: 'pointer', padding: '5px 2px',
-                    fontSize: 12, fontWeight: isSelected || isToday ? 700 : 400,
-                    fontFamily: 'var(--font-ui)',
-                  }}
-                >{day}</button>
-              )
-            })}
-          </div>
-          <div style={{ marginTop: 10, borderTop: '1px solid var(--gray-100)', paddingTop: 8, display: 'flex', justifyContent: 'center' }}>
-            <button type="button" onClick={() => pickDay(new Date())} style={{ background: 'none', border: 'none', cursor: 'pointer', fontSize: 11.5, color: 'var(--teal)', fontWeight: 600, fontFamily: 'var(--font-ui)' }}>Today</button>
-          </div>
-        </div>
-      )}
+      {calendar}
     </div>
   )
 }

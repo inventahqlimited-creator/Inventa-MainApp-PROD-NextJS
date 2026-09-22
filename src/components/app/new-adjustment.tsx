@@ -240,52 +240,60 @@ export default function NewAdjustment({
 
   const isTracked = (p: Product) => !!(p.serial_tracking || p.batch_tracking || p.expiry_tracking)
 
+  const blankTrackedLine = (p: Product): LineItem => ({
+    _key: makeKey(),
+    product_id: p.id,
+    product_name: p.name,
+    product_sku: p.sku ?? '',
+    unit: p.sell_uom ?? 'Each',
+    quantity_before: 0,
+    quantity_after: 0,
+    reason,
+    batch_number: '',
+    serial_number: '',
+    expiry_date: '',
+    needs_serial: !!p.serial_tracking,
+    needs_batch: !!p.batch_tracking,
+    needs_expiry: !!p.expiry_tracking,
+  })
+
   async function addLine(p: Product) {
     setItemSearch('')
     setItemDropOpen(false)
 
     if (isTracked(p) && selectedLocation) {
-      // Fetch existing stock groups for this product + location
-      const res = await fetch(`/api/org/products/${p.id}/stock-groups?location_id=${selectedLocation.id}`)
-      const groups: StockGroup[] = res.ok ? await res.json() : []
+      const alreadyAdded = lines.some(l => l.product_id === p.id)
 
-      if (groups.length > 0) {
-        // Expand into one line per group
-        const newLines: LineItem[] = groups.map(g => ({
-          _key: makeKey(),
-          product_id: p.id,
-          product_name: p.name,
-          product_sku: p.sku ?? '',
-          unit: p.sell_uom ?? 'Each',
-          quantity_before: g.quantity,
-          quantity_after: g.quantity,
-          reason,
-          batch_number: g.batch_number ?? '',
-          serial_number: g.serial_number ?? '',
-          expiry_date: g.expiry_date ?? '',
-          needs_serial: !!p.serial_tracking,
-          needs_batch: !!p.batch_tracking,
-          needs_expiry: !!p.expiry_tracking,
-        }))
-        setLines(prev => [...prev, ...newLines])
+      if (alreadyAdded) {
+        // Subsequent add — blank line for a new lot, no qty
+        setLines(prev => [...prev, blankTrackedLine(p)])
       } else {
-        // No groups yet — one blank line
-        setLines(prev => [...prev, {
-          _key: makeKey(),
-          product_id: p.id,
-          product_name: p.name,
-          product_sku: p.sku ?? '',
-          unit: p.sell_uom ?? 'Each',
-          quantity_before: 0,
-          quantity_after: 0,
-          reason,
-          batch_number: '',
-          serial_number: '',
-          expiry_date: '',
-          needs_serial: !!p.serial_tracking,
-          needs_batch: !!p.batch_tracking,
-          needs_expiry: !!p.expiry_tracking,
-        }])
+        // First time — expand into existing stock groups
+        const res = await fetch(`/api/org/products/${p.id}/stock-groups?location_id=${selectedLocation.id}`)
+        const groups: StockGroup[] = res.ok ? await res.json() : []
+
+        if (groups.length > 0) {
+          const newLines: LineItem[] = groups.map(g => ({
+            _key: makeKey(),
+            product_id: p.id,
+            product_name: p.name,
+            product_sku: p.sku ?? '',
+            unit: p.sell_uom ?? 'Each',
+            quantity_before: g.quantity,
+            quantity_after: g.quantity,
+            reason,
+            batch_number: g.batch_number ?? '',
+            serial_number: g.serial_number ?? '',
+            expiry_date: g.expiry_date ?? '',
+            needs_serial: !!p.serial_tracking,
+            needs_batch: !!p.batch_tracking,
+            needs_expiry: !!p.expiry_tracking,
+          }))
+          setLines(prev => [...prev, ...newLines])
+        } else {
+          // No groups exist yet — one blank line
+          setLines(prev => [...prev, blankTrackedLine(p)])
+        }
       }
     } else {
       // Untracked product — single line with total stock qty

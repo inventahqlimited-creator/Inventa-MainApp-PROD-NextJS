@@ -1650,9 +1650,9 @@ export default function ProductsTable({
                           {stockGroupsLoading ? (
                             <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--gray-400)', fontSize: 13 }}>Loading…</div>
                           ) : (
-                            <div style={{ background: 'var(--white)', border: '1.5px solid var(--gray-200)', borderRadius: 12, overflow: 'hidden' }}>
+                            <div style={{ background: 'var(--white)', border: '1.5px solid var(--gray-200)', borderRadius: 12, overflow: 'hidden', maxHeight: 280, overflowY: 'auto' }}>
                               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                                <thead>
+                                <thead style={{ position: 'sticky', top: 0, zIndex: 1 }}>
                                   <tr style={{ background: 'var(--gray-50)' }}>
                                     <th className="li-th">Location</th>
                                     <th className="li-th" style={{ textAlign: 'right' }}>Qty</th>

@@ -1,3 +1,4 @@
+// src/app/(app)/products/adjustments/page.tsx
 import { createAdminClient } from '@/lib/supabase/server'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
@@ -20,7 +21,7 @@ export default async function AdjustmentsPage() {
   if (!membership) redirect('/login')
   const m = membership as { org_id: string; role: string }
 
-  const [{ data: adjustments }, { data: locations }] = await Promise.all([
+  const [{ data: adjustments }, { data: locations }, { data: products }] = await Promise.all([
     adminClient
       .from('adjustment_orders')
       .select('id, adj_number, location_id, location_name, status, adjustment_date, reason, notes')
@@ -32,6 +33,11 @@ export default async function AdjustmentsPage() {
       .eq('org_id', m.org_id)
       .eq('active', true)
       .order('name'),
+    adminClient
+      .from('products')
+      .select('id, name, sku, sell_uom, track_stock, serial_tracking, batch_tracking, expiry_tracking')
+      .eq('org_id', m.org_id)
+      .order('name'),
   ])
 
   return (
@@ -39,6 +45,10 @@ export default async function AdjustmentsPage() {
       adjustments={adjustments ?? []}
       locations={locations ?? []}
       orgId={m.org_id}
+      products={(products ?? []) as {
+        id: string; name: string; sku: string | null; sell_uom: string | null; track_stock: boolean | null;
+        serial_tracking: boolean | null; batch_tracking: boolean | null; expiry_tracking: boolean | null
+      }[]}
     />
   )
 }

@@ -255,7 +255,7 @@ export default function StocktakeModal({
       </div>
 
       <div style={{ background: 'var(--gray-50)', border: '1px solid var(--gray-200)', borderRadius: 9, padding: '10px 14px', marginTop: 14, fontSize: 12.5, color: 'var(--gray-400)' }}>
-        Download your current stock with all lot details to update quantities.{' '}
+        Download the full stocktake file as a starting point — then delete any rows you don't need, edit quantities, or add new rows for new lots.{' '}
         <span
           style={{ color: 'var(--teal)', textDecoration: 'underline', cursor: 'pointer', fontWeight: 500 }}
           onClick={downloadStocktake}

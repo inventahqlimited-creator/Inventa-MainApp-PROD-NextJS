@@ -347,7 +347,7 @@ export default function NewAdjustment({
         else if ((l.quantity_after - l.quantity_before) !== 1 && l.quantity_after !== 1) {
           // Serial = exactly 1 unit change (after must be before+1 or after must be 1 if adding)
           if (Math.abs(l.quantity_after - l.quantity_before) !== 1) {
-            e.quantity_after = 'Serial tracked items must adjust by exactly 1 unit per row'
+            e.quantity_after = 'Serial-tracked items can only change by 1 unit at a time — add a separate row for each unit'
           }
         }
       }
@@ -366,7 +366,7 @@ export default function NewAdjustment({
     if (l.needs_serial && l.serial_number.trim()) {
       const change = val - l.quantity_before
       if (Math.abs(change) !== 1) {
-        setLineErrors(prev => ({ ...prev, [idx]: { ...prev[idx], quantity_after: 'Serial tracked items must adjust by exactly 1 unit per row' } }))
+        setLineErrors(prev => ({ ...prev, [idx]: { ...prev[idx], quantity_after: 'Serial-tracked items can only change by 1 unit at a time — add a separate row for each unit' } }))
       } else {
         setLineErrors(prev => {
           const next = { ...prev }
@@ -384,7 +384,7 @@ export default function NewAdjustment({
     if (val.trim()) {
       const change = l.quantity_after - l.quantity_before
       if (Math.abs(change) !== 1) {
-        setLineErrors(prev => ({ ...prev, [idx]: { ...prev[idx], quantity_after: 'Serial tracked items must adjust by exactly 1 unit per row' } }))
+        setLineErrors(prev => ({ ...prev, [idx]: { ...prev[idx], quantity_after: 'Serial-tracked items can only change by 1 unit at a time — add a separate row for each unit' } }))
       }
     }
   }

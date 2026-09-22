@@ -3,7 +3,7 @@
 
 import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
-import StockTickModal from './stock-tick-modal'
+import StocktakeModal from './stocktake-modal'
 
 type Adjustment = {
   id: string
@@ -119,7 +119,7 @@ export default function AdjustmentsTable({
           </div>
           <div className="page-header-actions">
             <button className="btn btn-outline" onClick={() => setShowStockTick(true)}>
-              Stock Tick
+              Stocktake
             </button>
             <button className="btn btn-primary" onClick={() => router.push('/products/adjustments/new')}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
@@ -249,7 +249,7 @@ export default function AdjustmentsTable({
           <div className="modal-box" style={{ maxWidth: 500 }} onMouseDown={e => e.stopPropagation()}>
             <div className="modal-header">
               <div>
-                <div className="modal-title">Stock Tick</div>
+                <div className="modal-title">Stocktake</div>
                 <div className="modal-subtitle">Download your current stock, update quantities, and re-import.</div>
               </div>
               <button className="modal-close" onClick={() => setShowStockTick(false)}>
@@ -258,7 +258,7 @@ export default function AdjustmentsTable({
                 </svg>
               </button>
             </div>
-            <StockTickModal
+            <StocktakeModal
               orgId={orgId}
               products={products}
               locations={locations}

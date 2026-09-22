@@ -24,15 +24,23 @@ async function applyStockChanges(adminClient: ReturnType<typeof createAdminClien
 
   const { data: lines, error: linesError } = await adminClient
     .from('adjustment_order_lines')
-    .select('product_id, quantity_before, quantity_after')
+    .select('product_id, quantity_before, quantity_after, batch_number, serial_number, expiry_date')
     .eq('adj_id', adjId)
 
   if (linesError) return { error: linesError.message }
 
-  for (const line of (lines ?? []) as { product_id: string; quantity_before: number; quantity_after: number }[]) {
+  for (const line of (lines ?? []) as {
+    product_id: string
+    quantity_before: number
+    quantity_after: number
+    batch_number: string | null
+    serial_number: string | null
+    expiry_date: string | null
+  }[]) {
     if (!line.product_id) continue
     const delta = line.quantity_after - line.quantity_before
 
+    // ── Update stock_levels (total per product+location) ──
     const { data: existing } = await adminClient
       .from('stock_levels')
       .select('id, quantity')
@@ -57,6 +65,50 @@ async function applyStockChanges(adminClient: ReturnType<typeof createAdminClien
           quantity: line.quantity_after,
         })
       if (insertError) return { error: insertError.message }
+    }
+
+    // ── Upsert stock_groups (per lot: batch + serial + expiry) ──
+    // Find existing group matching this exact lot
+    const groupQuery = adminClient
+      .from('stock_groups')
+      .select('id, quantity')
+      .eq('org_id', orgId)
+      .eq('product_id', line.product_id)
+      .eq('location_id', locationId)
+
+    // Match nulls explicitly
+    const batchMatch  = line.batch_number  ?? null
+    const serialMatch = line.serial_number ?? null
+    const expiryMatch = line.expiry_date   ?? null
+
+    const q = batchMatch  ? groupQuery.eq('batch_number',  batchMatch)  : groupQuery.is('batch_number',  null)
+    const q2 = serialMatch ? q.eq('serial_number', serialMatch) : q.is('serial_number', null)
+    const q3 = expiryMatch ? q2.eq('expiry_date',  expiryMatch) : q2.is('expiry_date',  null)
+
+    const { data: existingGroup } = await q3.maybeSingle()
+
+    if (existingGroup) {
+      const g = existingGroup as { id: string; quantity: number }
+      const newQty = g.quantity + delta
+      if (newQty <= 0) {
+        // Remove the group if quantity reaches zero
+        await adminClient.from('stock_groups').delete().eq('id', g.id)
+      } else {
+        await adminClient
+          .from('stock_groups')
+          .update({ quantity: newQty, updated_at: new Date().toISOString() })
+          .eq('id', g.id)
+      }
+    } else if (line.quantity_after > 0) {
+      await adminClient.from('stock_groups').insert({
+        org_id: orgId,
+        product_id: line.product_id,
+        location_id: locationId,
+        batch_number:  line.batch_number  || null,
+        serial_number: line.serial_number || null,
+        expiry_date:   line.expiry_date   || null,
+        quantity:      line.quantity_after,
+      })
     }
   }
 

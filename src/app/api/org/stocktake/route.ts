@@ -44,7 +44,7 @@ export async function GET(_request: Request) {
       .eq('org_id', orgId),
   ])
 
-  const locationMap = new Map((locations ?? []).map((l: { id: string; name: string }) => [l.id, l.name]))
+  const locationMap = new Map<string, string>((locations ?? []).map((l: { id: string; name: string }) => [l.id, l.name] as [string, string]))
 
   const headers = ['Product Name', 'SKU', 'Location', 'Quantity', 'Batch Number', 'Serial Number', 'Expiry Date']
 

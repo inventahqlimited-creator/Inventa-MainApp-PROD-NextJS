@@ -18,7 +18,17 @@ type TrackingFlags = {
   showExpiry: boolean
 }
 
+type StockGroup = {
+  id: string
+  location_id: string
+  batch_number: string | null
+  serial_number: string | null
+  expiry_date: string | null
+  quantity: number
+}
+
 type LineItem = {
+  _key: string
   product_id: string
   product_name: string
   product_sku: string
@@ -222,26 +232,77 @@ export default function NewAdjustment({
     return stockLevels.find(s => s.product_id === productId && s.location_id === selectedLocation.id)?.quantity ?? 0
   }
 
-  function addLine(p: Product) {
-    if (lines.find(l => l.product_id === p.id)) return
-    const qty = getStockQty(p.id)
-    setLines(prev => [...prev, {
-      product_id: p.id,
-      product_name: p.name,
-      product_sku: p.sku ?? '',
-      unit: p.sell_uom ?? 'Each',
-      quantity_before: qty,
-      quantity_after: qty,
-      reason,
-      batch_number: '',
-      serial_number: '',
-      expiry_date: '',
-      needs_serial: !!p.serial_tracking,
-      needs_batch: !!p.batch_tracking,
-      needs_expiry: !!p.expiry_tracking,
-    }])
+  function makeKey() { return Math.random().toString(36).slice(2) + Date.now().toString(36) }
+
+  const isTracked = (p: Product) => !!(p.serial_tracking || p.batch_tracking || p.expiry_tracking)
+
+  async function addLine(p: Product) {
     setItemSearch('')
     setItemDropOpen(false)
+
+    if (isTracked(p) && selectedLocation) {
+      // Fetch existing stock groups for this product + location
+      const res = await fetch(`/api/org/products/${p.id}/stock-groups?location_id=${selectedLocation.id}`)
+      const groups: StockGroup[] = res.ok ? await res.json() : []
+
+      if (groups.length > 0) {
+        // Expand into one line per group
+        const newLines: LineItem[] = groups.map(g => ({
+          _key: makeKey(),
+          product_id: p.id,
+          product_name: p.name,
+          product_sku: p.sku ?? '',
+          unit: p.sell_uom ?? 'Each',
+          quantity_before: g.quantity,
+          quantity_after: g.quantity,
+          reason,
+          batch_number: g.batch_number ?? '',
+          serial_number: g.serial_number ?? '',
+          expiry_date: g.expiry_date ?? '',
+          needs_serial: !!p.serial_tracking,
+          needs_batch: !!p.batch_tracking,
+          needs_expiry: !!p.expiry_tracking,
+        }))
+        setLines(prev => [...prev, ...newLines])
+      } else {
+        // No groups yet — one blank line
+        setLines(prev => [...prev, {
+          _key: makeKey(),
+          product_id: p.id,
+          product_name: p.name,
+          product_sku: p.sku ?? '',
+          unit: p.sell_uom ?? 'Each',
+          quantity_before: 0,
+          quantity_after: 0,
+          reason,
+          batch_number: '',
+          serial_number: '',
+          expiry_date: '',
+          needs_serial: !!p.serial_tracking,
+          needs_batch: !!p.batch_tracking,
+          needs_expiry: !!p.expiry_tracking,
+        }])
+      }
+    } else {
+      // Untracked product — single line with total stock qty
+      const qty = getStockQty(p.id)
+      setLines(prev => [...prev, {
+        _key: makeKey(),
+        product_id: p.id,
+        product_name: p.name,
+        product_sku: p.sku ?? '',
+        unit: p.sell_uom ?? 'Each',
+        quantity_before: qty,
+        quantity_after: qty,
+        reason,
+        batch_number: '',
+        serial_number: '',
+        expiry_date: '',
+        needs_serial: false,
+        needs_batch: false,
+        needs_expiry: false,
+      }])
+    }
   }
 
   function updateLine(idx: number, field: keyof LineItem, value: string | number | boolean) {
@@ -475,7 +536,7 @@ export default function NewAdjustment({
                   const change = l.quantity_after - l.quantity_before
                   const errs = lineErrors[idx] ?? {}
                   return (
-                    <tr key={idx} style={{ borderBottom: '1px solid var(--gray-100)', verticalAlign: 'top' }}>
+                    <tr key={l._key} style={{ borderBottom: '1px solid var(--gray-100)', verticalAlign: 'top' }}>
                       <td className="li-td"><span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--gray-400)' }}>{l.product_sku || '—'}</span></td>
                       <td className="li-td">
                         <span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{l.product_name}</span>
@@ -568,10 +629,9 @@ export default function NewAdjustment({
                   </div>
                   <div style={{ maxHeight: 260, overflowY: 'auto', padding: 6 }}>
                     {filteredProducts.map(p => {
-                      const already = lines.some(l => l.product_id === p.id)
                       const qty = getStockQty(p.id)
                       return (
-                        <div key={p.id} className="fp-item" style={{ display: 'grid', gridTemplateColumns: '100px 1fr 80px', alignItems: 'center', gap: 8, opacity: already ? 0.5 : 1 }} onClick={() => !already && addLine(p)}>
+                        <div key={p.id} className="fp-item" style={{ display: 'grid', gridTemplateColumns: '100px 1fr 80px', alignItems: 'center', gap: 8 }} onClick={() => addLine(p)}>
                           <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--gray-400)' }}>{p.sku ?? '—'}</span>
                           <span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{p.name}</span>
                           <span style={{ fontSize: 13, fontWeight: 600, color: qty <= 0 ? 'var(--danger)' : 'var(--slate)', textAlign: 'right' }}>{qty}</span>

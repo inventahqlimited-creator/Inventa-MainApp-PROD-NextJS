@@ -18,13 +18,19 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
   const orgId = (membership as { org_id: string }).org_id
 
   const { id: productId } = await params
+  const url = new URL(_request.url)
+  const locationId = url.searchParams.get('location_id')
 
-  const { data, error } = await adminClient
+  let query = adminClient
     .from('stock_groups')
     .select('id, location_id, batch_number, serial_number, expiry_date, quantity')
     .eq('org_id', orgId)
     .eq('product_id', productId)
     .gt('quantity', 0)
+
+  if (locationId) query = query.eq('location_id', locationId)
+
+  const { data, error } = await query
     .order('location_id')
     .order('expiry_date', { nullsFirst: false })
     .order('batch_number', { nullsFirst: false })

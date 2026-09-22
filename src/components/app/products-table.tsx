@@ -794,6 +794,8 @@ export default function ProductsTable({
   const [pricing, setPricing] = useState<PricingRow[]>([])
   const [productOrders, setProductOrders] = useState<Record<string, unknown>[]>([])
   const [ordersLoading, setOrdersLoading] = useState(false)
+  const [stockGroups, setStockGroups] = useState<{ id: string; location_id: string; batch_number: string | null; serial_number: string | null; expiry_date: string | null; quantity: number }[]>([])
+  const [stockGroupsLoading, setStockGroupsLoading] = useState(false)
 
   // Initialize pricing rows from priceLevels prop
   useEffect(() => {
@@ -822,6 +824,7 @@ export default function ProductsTable({
     setModalTab('details')
     setError(null)
     setProductOrders([])
+    setStockGroups([])
     setCustomFieldValues(p.custom_fields ?? {})
   }
 
@@ -882,6 +885,14 @@ export default function ProductsTable({
     const res = await fetch(`/api/org/products/${productId}/orders`)
     if (res.ok) setProductOrders(await res.json())
     setOrdersLoading(false)
+  }
+
+  async function loadStockGroups(productId: string) {
+    setStockGroupsLoading(true)
+    const res = await fetch(`/api/org/products/${productId}/stock-groups`)
+    if (res.ok) setStockGroups(await res.json())
+    else setStockGroups([])
+    setStockGroupsLoading(false)
   }
 
   async function handleSave() {
@@ -1343,6 +1354,7 @@ export default function ProductsTable({
                 <div key={t} className={`modal-tab${modalTab === t ? ' active' : ''}`} onClick={() => {
                   setModalTab(t)
                   if (t === 'orders' && activeProduct && productOrders.length === 0) loadOrders(activeProduct.id)
+                  if (t === 'stock' && activeProduct) loadStockGroups(activeProduct.id)
                 }}>
                   {t === 'details' ? 'Details' : t === 'pricing' ? 'Price Levels' : t === 'stock' ? 'Stock Details' : t === 'orders' ? 'Orders' : 'Custom Fields'}
                 </div>
@@ -1582,60 +1594,100 @@ export default function ProductsTable({
               )}
 
               {modalTab === 'stock' && (() => {
-                // Show extra columns if this product has tracking on, OR if any product in the org has it on, OR if org-level setting is on
-                const anySerial = orgSettings.serial_tracking !== false || initialProducts.some(p => p.serial_tracking)
-                const anyBatch  = orgSettings.batch_tracking  !== false || initialProducts.some(p => p.batch_tracking)
-                const anyExpiry = orgSettings.expiry_tracking !== false || initialProducts.some(p => p.expiry_tracking)
-                const showSerial = anySerial
-                const showBatch  = anyBatch
-                const showExpiry = anyExpiry
-                const extraCols  = showSerial || showBatch || showExpiry
+                const prod = activeProduct
+                const showSerial = !!(prod?.serial_tracking)
+                const showBatch  = !!(prod?.batch_tracking)
+                const showExpiry = !!(prod?.expiry_tracking)
+                const hasTracking = showSerial || showBatch || showExpiry
+                // Groups for this product
+                const groups = stockGroups.filter(g => g.quantity > 0)
+                const hasGroups = groups.length > 0
+
                 return (
                 <div>
                   {locations.length === 0 ? (
                     <div style={{ textAlign: 'center', padding: '32px', color: 'var(--gray-400)', fontSize: 13, background: 'var(--gray-50)', borderRadius: 12 }}>No locations configured for this organisation.</div>
                   ) : (
-                    <div style={{ background: 'var(--white)', border: '1.5px solid var(--gray-200)', borderRadius: 12, overflow: 'hidden' }}>
-                      <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-                        <thead>
-                          <tr style={{ background: 'var(--gray-50)' }}>
-                            <th className="li-th">Location</th>
-                            <th className="li-th" style={{ textAlign: 'right' }}>On Hand</th>
-                            <th className="li-th" style={{ textAlign: 'right' }}>On Order</th>
-                            <th className="li-th" style={{ textAlign: 'right' }}>Committed</th>
-                            <th className="li-th" style={{ textAlign: 'right' }}>Available</th>
-                            {showBatch  && <th className="li-th">Batch / Lot</th>}
-                            {showSerial && <th className="li-th">Serial #</th>}
-                            {showExpiry && <th className="li-th">Expiry Date</th>}
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {locations.map(loc => {
-                            const s = stockLevels.find(sl => sl.product_id === activeProduct?.id && sl.location_id === loc.id)
-                            const onHand = s?.quantity ?? 0
-                            const onOrder = s?.on_order ?? 0
-                            const committed = s?.committed ?? 0
-                            const available = onHand - committed
-                            return (
-                              <tr key={loc.id} style={{ borderBottom: '1px solid var(--gray-100)' }}>
-                                <td className="li-td" style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{loc.name}</td>
-                                <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: onHand <= 0 ? 'var(--danger)' : 'var(--slate)' }}>{onHand}</td>
-                                <td className="li-td" style={{ textAlign: 'right', color: 'var(--gray-400)' }}>{onOrder}</td>
-                                <td className="li-td" style={{ textAlign: 'right', color: 'var(--gray-400)' }}>{committed}</td>
-                                <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: available <= 0 ? 'var(--danger)' : '#059669' }}>{available}</td>
-                                {showBatch  && <td className="li-td" style={{ color: 'var(--gray-400)', fontSize: 12 }}>—</td>}
-                                {showSerial && <td className="li-td" style={{ color: 'var(--gray-400)', fontSize: 12 }}>—</td>}
-                                {showExpiry && <td className="li-td" style={{ color: 'var(--gray-400)', fontSize: 12 }}>—</td>}
-                              </tr>
-                            )
-                          })}
-                        </tbody>
-                      </table>
-                      {extraCols && (
-                        <div style={{ padding: '10px 14px', background: 'var(--gray-50)', borderTop: '1px solid var(--gray-100)', fontSize: 12, color: 'var(--gray-400)' }}>
-                          Batch, serial and expiry data will appear here once tracking entries are recorded.
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+
+                      {/* ── Summary row per location ── */}
+                      <div style={{ background: 'var(--white)', border: '1.5px solid var(--gray-200)', borderRadius: 12, overflow: 'hidden' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                          <thead>
+                            <tr style={{ background: 'var(--gray-50)' }}>
+                              <th className="li-th">Location</th>
+                              <th className="li-th" style={{ textAlign: 'right' }}>On Hand</th>
+                              <th className="li-th" style={{ textAlign: 'right' }}>On Order</th>
+                              <th className="li-th" style={{ textAlign: 'right' }}>Committed</th>
+                              <th className="li-th" style={{ textAlign: 'right' }}>Available</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {locations.map(loc => {
+                              const s = stockLevels.find(sl => sl.product_id === activeProduct?.id && sl.location_id === loc.id)
+                              const onHand = s?.quantity ?? 0
+                              const onOrder = s?.on_order ?? 0
+                              const committed = s?.committed ?? 0
+                              const available = onHand - committed
+                              return (
+                                <tr key={loc.id} style={{ borderBottom: '1px solid var(--gray-100)' }}>
+                                  <td className="li-td" style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{loc.name}</td>
+                                  <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: onHand <= 0 ? 'var(--danger)' : 'var(--slate)' }}>{onHand}</td>
+                                  <td className="li-td" style={{ textAlign: 'right', color: 'var(--gray-400)' }}>{onOrder}</td>
+                                  <td className="li-td" style={{ textAlign: 'right', color: 'var(--gray-400)' }}>{committed}</td>
+                                  <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: available <= 0 ? 'var(--danger)' : '#059669' }}>{available}</td>
+                                </tr>
+                              )
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* ── Stock group breakdown ── */}
+                      {hasTracking && (
+                        <div>
+                          <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase' as const, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)', marginBottom: 8 }}>Stock Groups</div>
+                          {stockGroupsLoading ? (
+                            <div style={{ textAlign: 'center', padding: '20px 0', color: 'var(--gray-400)', fontSize: 13 }}>Loading…</div>
+                          ) : !hasGroups ? (
+                            <div style={{ background: 'var(--gray-50)', borderRadius: 10, padding: '16px', fontSize: 13, color: 'var(--gray-400)', textAlign: 'center' }}>
+                              No stock groups recorded yet. Groups are created when adjustments are completed.
+                            </div>
+                          ) : (
+                            <div style={{ background: 'var(--white)', border: '1.5px solid var(--gray-200)', borderRadius: 12, overflow: 'hidden' }}>
+                              <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+                                <thead>
+                                  <tr style={{ background: 'var(--gray-50)' }}>
+                                    <th className="li-th">Location</th>
+                                    <th className="li-th" style={{ textAlign: 'right' }}>Qty</th>
+                                    {showBatch  && <th className="li-th">Batch / Lot</th>}
+                                    {showSerial && <th className="li-th">Serial #</th>}
+                                    {showExpiry && <th className="li-th">Expiry Date</th>}
+                                  </tr>
+                                </thead>
+                                <tbody>
+                                  {groups.map(g => {
+                                    const loc = locations.find(l => l.id === g.location_id)
+                                    const expiryDisplay = g.expiry_date
+                                      ? new Date(g.expiry_date + 'T00:00:00').toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: 'numeric' })
+                                      : '—'
+                                    return (
+                                      <tr key={g.id} style={{ borderBottom: '1px solid var(--gray-100)' }}>
+                                        <td className="li-td" style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{loc?.name ?? '—'}</td>
+                                        <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: 'var(--slate)' }}>{g.quantity}</td>
+                                        {showBatch  && <td className="li-td" style={{ color: g.batch_number  ? 'var(--slate)' : 'var(--gray-300)', fontSize: 12 }}>{g.batch_number  ?? '—'}</td>}
+                                        {showSerial && <td className="li-td" style={{ color: g.serial_number ? 'var(--slate)' : 'var(--gray-300)', fontSize: 12 }}>{g.serial_number ?? '—'}</td>}
+                                        {showExpiry && <td className="li-td" style={{ color: g.expiry_date   ? 'var(--slate)' : 'var(--gray-300)', fontSize: 12 }}>{expiryDisplay}</td>}
+                                      </tr>
+                                    )
+                                  })}
+                                </tbody>
+                              </table>
+                            </div>
+                          )}
                         </div>
                       )}
+
                     </div>
                   )}
                 </div>

@@ -89,9 +89,12 @@ export default function AppTopbar({
               {canCreateContact && (
               <div className="dd-item" onClick={() => { setQuickOpen(false); router.push('/contacts?new=1') }}>
                 <div className="dd-icon-wrap">
+                  {/* Matches sidebar Contacts icon — two-person group */}
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
-                    <circle cx="12" cy="7" r="4"/>
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                    <circle cx="9" cy="7" r="4"/>
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87"/>
+                    <path d="M16 3.13a4 4 0 0 1 0 7.75"/>
                   </svg>
                 </div>
                 New Contact
@@ -100,8 +103,11 @@ export default function AppTopbar({
               {canViewProducts && canCreateProduct && (
               <div className="dd-item" onClick={() => { setQuickOpen(false); router.push('/products?new=1') }}>
                 <div className="dd-icon-wrap">
+                  {/* Matches sidebar Products icon — box with inner lines */}
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/>
+                    <polyline points="3.27 6.96 12 12.01 20.73 6.96"/>
+                    <line x1="12" y1="22.08" x2="12" y2="12"/>
                   </svg>
                 </div>
                 New Product
@@ -145,6 +151,9 @@ export default function AppTopbar({
           )}
         </div>
 
+        {/* Separator between + and notification bell */}
+        <div className="topbar-divider" />
+
         {/* Notification bell — SECOND */}
         <button className="icon-btn" title="Notifications">
           <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
@@ -183,6 +192,16 @@ export default function AppTopbar({
                 <div className="profile-dropdown-biz">{orgName}</div>
                 <div className="profile-dropdown-email">{email}</div>
               </div>
+              <div className="dd-item" onClick={() => { setProfileOpen(false); router.push('/settings/profile') }}>
+                <div className="dd-icon-wrap">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+                    <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
+                    <circle cx="12" cy="7" r="4"/>
+                  </svg>
+                </div>
+                Profile
+              </div>
+              <div className="dd-sep" />
               <div className="dd-item dd-item-danger" onClick={handleSignOut}>
                 <div className="dd-icon-wrap">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">

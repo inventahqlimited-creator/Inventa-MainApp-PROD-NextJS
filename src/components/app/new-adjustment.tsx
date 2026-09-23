@@ -39,7 +39,6 @@ type LineItem = {
   batch_number: string
   serial_number: string
   expiry_date: string
-  // per-line product tracking flags
   needs_serial: boolean
   needs_batch: boolean
   needs_expiry: boolean
@@ -218,6 +217,44 @@ export default function NewAdjustment({
   const [lineErrors, setLineErrors] = useState<Record<number, Record<string, string>>>({})
   const [confirmComplete, setConfirmComplete] = useState(false)
 
+  // ── Pre-fill from stocktake CSV import ──
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem('stocktake_prefill')
+      if (!raw) return
+      sessionStorage.removeItem('stocktake_prefill')
+
+      const prefill = JSON.parse(raw) as {
+        location_id: string | null
+        location_name: string | null
+        reason: string
+        lines: LineItem[]
+      }
+
+      // Set location
+      if (prefill.location_id) {
+        const loc = locations.find(l => l.id === prefill.location_id)
+        if (loc) setSelectedLocation(loc)
+      }
+
+      // Set reason
+      if (prefill.reason) setReason(prefill.reason)
+
+      // Fill in quantity_before from stockLevels
+      const enrichedLines = prefill.lines.map(l => {
+        const locationId = prefill.location_id
+        const before = locationId
+          ? (stockLevels.find(s => s.product_id === l.product_id && s.location_id === locationId)?.quantity ?? 0)
+          : 0
+        return { ...l, quantity_before: before }
+      })
+
+      setLines(enrichedLines)
+    } catch {
+      // ignore sessionStorage errors
+    }
+  }, [locations, stockLevels])
+
   // Recompute whether tracking columns should show based on lines currently added
   const showSerial = trackingFlags.showSerial || lines.some(l => l.needs_serial)
   const showBatch  = trackingFlags.showBatch  || lines.some(l => l.needs_batch)
@@ -265,10 +302,8 @@ export default function NewAdjustment({
       const alreadyAdded = lines.some(l => l.product_id === p.id)
 
       if (alreadyAdded) {
-        // Subsequent add — blank line for a new lot, no qty
         setLines(prev => [...prev, blankTrackedLine(p)])
       } else {
-        // First time — expand into existing stock groups
         const res = await fetch(`/api/org/products/${p.id}/stock-groups?location_id=${selectedLocation.id}`)
         const groups: StockGroup[] = res.ok ? await res.json() : []
 
@@ -291,12 +326,10 @@ export default function NewAdjustment({
           }))
           setLines(prev => [...prev, ...newLines])
         } else {
-          // No groups exist yet — one blank line
           setLines(prev => [...prev, blankTrackedLine(p)])
         }
       }
     } else {
-      // Untracked product — single line with total stock qty
       const qty = getStockQty(p.id)
       setLines(prev => [...prev, {
         _key: makeKey(),
@@ -319,7 +352,6 @@ export default function NewAdjustment({
 
   function updateLine(idx: number, field: keyof LineItem, value: string | number | boolean) {
     setLines(prev => prev.map((l, i) => i === idx ? { ...l, [field]: value } : l))
-    // Clear field-level error on change
     if (lineErrors[idx]?.[field as string]) {
       setLineErrors(prev => {
         const next = { ...prev }
@@ -344,11 +376,8 @@ export default function NewAdjustment({
       const e: Record<string, string> = {}
       if (l.needs_serial) {
         if (!l.serial_number.trim()) e.serial_number = 'Serial number required'
-        else if ((l.quantity_after - l.quantity_before) !== 1 && l.quantity_after !== 1) {
-          // Serial = exactly 1 unit change (after must be before+1 or after must be 1 if adding)
-          if (Math.abs(l.quantity_after - l.quantity_before) !== 1) {
-            e.quantity_after = 'Serial-tracked items can only change by 1 unit at a time — add a separate row for each unit'
-          }
+        else if (Math.abs(l.quantity_after - l.quantity_before) !== 1) {
+          e.quantity_after = 'Serial-tracked items can only change by 1 unit at a time — add a separate row for each unit'
         }
       }
       if (l.needs_batch && !l.batch_number.trim()) e.batch_number = 'Batch number required'
@@ -359,7 +388,6 @@ export default function NewAdjustment({
     return Object.keys(errs).length === 0
   }
 
-  // Also validate serial qty live when qty changes
   function handleQtyChange(idx: number, val: number) {
     updateLine(idx, 'quantity_after', val)
     const l = lines[idx]
@@ -377,7 +405,6 @@ export default function NewAdjustment({
     }
   }
 
-  // Also validate serial when serial field filled
   function handleSerialChange(idx: number, val: string) {
     updateLine(idx, 'serial_number', val)
     const l = lines[idx]

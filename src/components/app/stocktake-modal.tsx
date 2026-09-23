@@ -62,11 +62,28 @@ export default function StocktakeModal({
 
   function parseRow(line: string): string[] {
     const result: string[] = []
-    let cur = '', inQ = false
-    for (const ch of line) {
-      if (ch === '"') { inQ = !inQ }
-      else if (ch === ',' && !inQ) { result.push(cur); cur = '' }
-      else { cur += ch }
+    let cur = '', i = 0
+    while (i < line.length) {
+      if (line[i] === '"') {
+        // Quoted field
+        i++ // skip opening quote
+        while (i < line.length) {
+          if (line[i] === '"' && line[i + 1] === '"') {
+            cur += '"'; i += 2 // escaped quote
+          } else if (line[i] === '"') {
+            i++ // closing quote
+            break
+          } else {
+            cur += line[i++]
+          }
+        }
+        // skip any chars between closing quote and next comma (handles whitespace)
+        while (i < line.length && line[i] !== ',') i++
+      } else if (line[i] === ',') {
+        result.push(cur); cur = ''; i++
+      } else {
+        cur += line[i++]
+      }
     }
     result.push(cur)
     return result
@@ -136,7 +153,12 @@ export default function StocktakeModal({
       if (!product && nameVal) product = productByName.get(nameVal.toLowerCase())
 
       if (!product) {
-        rowErrors.push(`Row ${rowNum}: Product "${nameVal || skuVal}" not found`)
+        const label = nameVal || skuVal
+        if (!label) {
+          rowErrors.push(`Row ${rowNum}: Could not read product name or SKU (columns found: name=${nameIdx}, sku=${skuIdx}, total cols=${cols.length})`)
+        } else {
+          rowErrors.push(`Row ${rowNum}: Product "${label}" not found`)
+        }
         continue
       }
 

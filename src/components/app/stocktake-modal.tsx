@@ -147,6 +147,9 @@ export default function StocktakeModal({
       const serialVal = get(serialIdx)
       const expiryVal = get(expiryIdx)
 
+      // Skip entirely blank rows (e.g. trailing empty rows in Excel exports)
+      if (!nameVal && !skuVal && !qtyVal) continue
+
       // Resolve product
       let product: Product | undefined
       if (skuVal) product = productBySku.get(skuVal.toLowerCase())

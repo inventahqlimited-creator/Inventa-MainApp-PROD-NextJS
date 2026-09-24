@@ -117,6 +117,17 @@ export async function GET(request: Request) {
     for (const l of locs ?? []) locationMap.set(l.id, l.name)
   }
 
+  // --- Fetch bin info ---
+  const binIds = [...new Set(movements.map((m: { bin_id?: string | null }) => m.bin_id).filter(Boolean))] as string[]
+  const binMap = new Map<string, string>()
+  if (binIds.length > 0) {
+    const { data: bins } = await adminClient
+      .from('bins')
+      .select('id, name')
+      .in('id', binIds)
+    for (const b of bins ?? []) binMap.set(b.id, b.name)
+  }
+
   // --- Fetch reference numbers (adj_number etc.) ---
   // Collect reference_ids by type so we can look up human-readable numbers
   const referenceMap = new Map<string, string>() // reference_id → human number
@@ -151,6 +162,7 @@ export async function GET(request: Request) {
     created_by: string | null
     location_id: string | null
     org_id: string
+    bin_id?: string | null
   }) => {
     const prod = productMap.get(m.product_id)
     // Find matching group info for this product (for serial/batch context)
@@ -161,11 +173,11 @@ export async function GET(request: Request) {
       product_name:      prod?.name ?? null,
       product_sku:       prod?.sku  ?? null,
       location_name:     m.location_id ? (locationMap.get(m.location_id) ?? null) : null,
+      bin_name:          m.bin_id ? (binMap.get(m.bin_id) ?? null) : null,
       serial_number:     firstGroup?.serial_number ?? null,
       batch_number:      firstGroup?.batch_number  ?? null,
       expiry_date:       firstGroup?.expiry_date   ?? null,
       reference_number:  m.reference_id ? (referenceMap.get(m.reference_id) ?? null) : null,
-      bin_id:            (m as { bin_id?: string | null }).bin_id ?? null,
     }
   })
 

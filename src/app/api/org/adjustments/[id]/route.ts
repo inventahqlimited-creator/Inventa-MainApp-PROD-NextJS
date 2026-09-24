@@ -80,7 +80,10 @@ async function applyStockChanges(adminClient: ReturnType<typeof createAdminClien
           qty:            delta,
           reference_id:   adjId,
           reference_type: 'adjustment_order',
-          bin_id:         line.bin_id ?? null,
+          bin_id:         line.bin_id         ?? null,
+          serial_number:  line.serial_number  ?? null,
+          batch_number:   line.batch_number   ?? null,
+          expiry_date:    line.expiry_date     ?? null,
         })
       if (mvtError) return { error: mvtError.message }
     }

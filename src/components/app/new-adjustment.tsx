@@ -4,7 +4,7 @@ import { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 
-type Location = { id: string; name: string }
+type Location = { id: string; name: string; bins: string[] | null }
 type Product = {
   id: string; name: string; sku: string | null; sell_uom: string | null
   track_stock: boolean | null; type: string
@@ -24,6 +24,7 @@ type StockGroup = {
   batch_number: string | null
   serial_number: string | null
   expiry_date: string | null
+  bin_id: string | null
   quantity: number
 }
 
@@ -42,6 +43,7 @@ type LineItem = {
   needs_serial: boolean
   needs_batch: boolean
   needs_expiry: boolean
+  bin_id: string
 }
 
 const REASONS = ['Stocktake', 'Damaged', 'Expired', 'Found', 'Lost', 'Theft', 'Sample', 'Write-off', 'Other']
@@ -228,7 +230,7 @@ export default function NewAdjustment({
         location_id: string | null
         location_name: string | null
         reason: string
-        lines: LineItem[]
+        lines: (LineItem & { bin_id?: string })[]
       }
 
       // Set location
@@ -246,7 +248,7 @@ export default function NewAdjustment({
         const before = locationId
           ? (stockLevels.find(s => s.product_id === l.product_id && s.location_id === locationId)?.quantity ?? 0)
           : 0
-        return { ...l, quantity_before: before }
+        return { ...l, quantity_before: before, bin_id: l.bin_id ?? '' }
       })
 
       setLines(enrichedLines)
@@ -254,6 +256,10 @@ export default function NewAdjustment({
       // ignore sessionStorage errors
     }
   }, [locations, stockLevels])
+
+  // Bins available for the selected location
+  const locationBins: string[] = selectedLocation?.bins?.filter(Boolean) ?? []
+  const showBins = locationBins.length > 0
 
   // Recompute whether tracking columns should show based on lines currently added
   const showSerial = trackingFlags.showSerial || lines.some(l => l.needs_serial)
@@ -292,6 +298,7 @@ export default function NewAdjustment({
     needs_serial: !!p.serial_tracking,
     needs_batch: !!p.batch_tracking,
     needs_expiry: !!p.expiry_tracking,
+    bin_id: '',
   })
 
   async function addLine(p: Product) {
@@ -323,6 +330,7 @@ export default function NewAdjustment({
             needs_serial: !!p.serial_tracking,
             needs_batch: !!p.batch_tracking,
             needs_expiry: !!p.expiry_tracking,
+            bin_id: g.bin_id ?? '',
           }))
           setLines(prev => [...prev, ...newLines])
         } else {
@@ -346,6 +354,7 @@ export default function NewAdjustment({
         needs_serial: false,
         needs_batch: false,
         needs_expiry: false,
+        bin_id: '',
       }])
     }
   }
@@ -437,6 +446,7 @@ export default function NewAdjustment({
         batch_number: l.batch_number || null,
         serial_number: l.serial_number || null,
         expiry_date: l.expiry_date || null,
+        bin_id: l.bin_id || null,
       })),
     }
 
@@ -458,7 +468,7 @@ export default function NewAdjustment({
     router.push(`/products/adjustments/${data.id}`)
   }
 
-  const extraCols = (showBatch ? 1 : 0) + (showSerial ? 1 : 0) + (showExpiry ? 1 : 0)
+  const extraCols = (showBatch ? 1 : 0) + (showSerial ? 1 : 0) + (showExpiry ? 1 : 0) + (showBins ? 1 : 0)
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
@@ -557,6 +567,7 @@ export default function NewAdjustment({
                   <th className="li-th" style={{ width: 110, textAlign: 'right' }}>New Qty</th>
                   <th className="li-th" style={{ width: 80, textAlign: 'right' }}>Change</th>
                   <th className="li-th" style={{ width: 150 }}>Reason</th>
+                  {showBins   && <th className="li-th" style={{ width: 120 }}>Bin</th>}
                   {showBatch  && <th className="li-th" style={{ width: 120 }}>Batch / Lot</th>}
                   {showSerial && <th className="li-th" style={{ width: 120 }}>Serial #</th>}
                   {showExpiry && <th className="li-th" style={{ width: 130 }}>Expiry Date</th>}
@@ -602,6 +613,18 @@ export default function NewAdjustment({
                           {REASONS.map(r => <option key={r} value={r}>{r}</option>)}
                         </select>
                       </td>
+                      {showBins && (
+                        <td className="li-td">
+                          <select
+                            value={l.bin_id}
+                            onChange={e => updateLine(idx, 'bin_id', e.target.value)}
+                            style={{ border: '1.5px solid var(--gray-200)', borderRadius: 7, padding: '4px 8px', fontSize: 12, fontFamily: 'var(--font-ui)', color: l.bin_id ? 'var(--gray-900)' : 'var(--gray-400)', background: 'var(--gray-50)', outline: 'none', cursor: 'pointer', width: '100%' }}
+                          >
+                            <option value="">— No bin —</option>
+                            {locationBins.map(b => <option key={b} value={b}>{b}</option>)}
+                          </select>
+                        </td>
+                      )}
                       {showBatch && (
                         <td className="li-td">
                           {l.needs_batch ? (

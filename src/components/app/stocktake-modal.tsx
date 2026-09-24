@@ -96,6 +96,7 @@ export default function StocktakeModal({
     const batchIdx    = rawHeaders.findIndex(h => h === 'batch number' || h.includes('batch'))
     const serialIdx   = rawHeaders.findIndex(h => h === 'serial number' || h.includes('serial'))
     const expiryIdx   = rawHeaders.findIndex(h => h === 'expiry date' || h.includes('expiry'))
+    const binIdx      = rawHeaders.findIndex(h => h === 'bin' || h === 'bin number' || h.includes('bin'))
 
     if (qtyIdx < 0) {
       setErrors(['Missing required column: Quantity'])
@@ -121,6 +122,7 @@ export default function StocktakeModal({
       batch_number: string
       serial_number: string
       expiry_date: string
+      bin_id: string
     }[] = []
 
     const locationsUsed = new Set<string>()
@@ -139,6 +141,7 @@ export default function StocktakeModal({
       const batchVal    = get(batchIdx)
       const serialVal   = get(serialIdx)
       const expiryVal   = get(expiryIdx)
+      const binVal      = get(binIdx)
 
       // Skip blank rows (e.g. trailing empty rows from Excel)
       if (!nameVal && !skuVal && !qtyVal) continue
@@ -179,6 +182,9 @@ export default function StocktakeModal({
       locationName = loc.name
       locationsUsed.add(loc.id)
 
+      // Bin: soft-match against the location's bins if we know them
+      // (we don't have location bins here at CSV parse time — we just pass the raw value
+      //  and let the adjustment screen handle display; unmatched bins are left as-is)
       parsedLines.push({
         product,
         location_id: locationId,
@@ -187,6 +193,7 @@ export default function StocktakeModal({
         batch_number: product.batch_tracking ? (batchVal || '') : '',
         serial_number: product.serial_tracking ? (serialVal || '') : '',
         expiry_date: product.expiry_tracking ? (expiryVal || '') : '',
+        bin_id: binVal || '',
       })
     }
 
@@ -226,6 +233,7 @@ export default function StocktakeModal({
       batch_number:    row.batch_number,
       serial_number:   row.serial_number,
       expiry_date:     row.expiry_date,
+      bin_id:          row.bin_id,
       needs_serial:    !!row.product.serial_tracking,
       needs_batch:     !!row.product.batch_tracking,
       needs_expiry:    !!row.product.expiry_tracking,

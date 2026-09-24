@@ -30,7 +30,7 @@ export default async function PurchasesPage() {
       .select('id, name')
       .eq('org_id', m.org_id)
       .eq('type', 'supplier')
-      .eq('active', true)
+      .eq('is_active', true)
       .order('name'),
     adminClient
       .from('locations')

@@ -18,6 +18,13 @@ type Supplier = {
 type Location = {
   id: string
   name: string
+  street: string | null
+  city: string | null
+  state: string | null
+  postcode: string | null
+  country: string | null
+  phone: string | null
+  email: string | null
 }
 
 type Product = {
@@ -59,13 +66,19 @@ export default function NewPurchaseOrder({
   suppliers,
   locations,
   products,
+  defaultTerms,
 }: {
   orgId: string
   suppliers: Supplier[]
   locations: Location[]
   products: Product[]
+  defaultTerms?: string | null
 }) {
   const router = useRouter()
+
+  // Payment terms priority: supplier → global org setting → 'Net 14'
+  const fallbackTerms = defaultTerms ?? 'Net 14'
+
   const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null)
   const [supplierSearch, setSupplierSearch] = useState('')
   const [supplierDropOpen, setSupplierDropOpen] = useState(false)
@@ -74,7 +87,7 @@ export default function NewPurchaseOrder({
   const [locationOpen, setLocationOpen] = useState(false)
   const [orderDate, setOrderDate] = useState(new Date().toISOString().split('T')[0])
   const [expectedDate, setExpectedDate] = useState('')
-  const [terms, setTerms] = useState('Net 30')
+  const [terms, setTerms] = useState(fallbackTerms)
   const [termsOpen, setTermsOpen] = useState(false)
   const [notes, setNotes] = useState('')
   const [lines, setLines] = useState<LineItem[]>([])
@@ -95,6 +108,13 @@ export default function NewPurchaseOrder({
     ).slice(0, 20),
     [products, itemSearch]
   )
+
+  function selectSupplier(s: Supplier) {
+    setSelectedSupplier(s)
+    // Priority: supplier's own terms → global org default → 'Net 14'
+    setTerms(s.terms ?? defaultTerms ?? 'Net 14')
+    setSupplierDropOpen(false)
+  }
 
   function addLine(p: Product) {
     setLines(prev => [...prev, {
@@ -159,16 +179,28 @@ export default function NewPurchaseOrder({
       lines: lines.map((l, i) => ({ ...l, sort_order: i })),
     }
 
-    const res = await fetch('/api/org/purchases', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    })
-    const data = await res.json()
-    setSaving(false)
+    try {
+      const res = await fetch('/api/org/purchases', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      })
+      const data = await res.json()
+      setSaving(false)
 
-    if (!res.ok) { setError(data.error ?? 'Something went wrong'); return }
-    router.push(`/purchases/${data.id}`)
+      if (!res.ok) { setError(data.error ?? 'Something went wrong'); return }
+      router.push(`/purchases/${data.id}`)
+    } catch (err) {
+      setSaving(false)
+      setError('Network error — please try again.')
+    }
+  }
+
+  const closeAll = () => {
+    setSupplierDropOpen(false)
+    setLocationOpen(false)
+    setTermsOpen(false)
+    setItemDropOpen(false)
   }
 
   return (
@@ -192,7 +224,7 @@ export default function NewPurchaseOrder({
       </div>
 
       {/* Scrollable content */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '24px 28px 100px' }} onClick={() => { setSupplierDropOpen(false); setLocationOpen(false); setTermsOpen(false); setItemDropOpen(false) }}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '24px 28px 100px' }} onClick={closeAll}>
 
         {error && (
           <div style={{ background: '#FEF2F2', border: '1.5px solid #FECACA', borderRadius: 10, padding: '12px 16px', fontSize: 13, color: '#B91C1C', marginBottom: 20 }}>{error}</div>
@@ -225,7 +257,7 @@ export default function NewPurchaseOrder({
                     {filteredSuppliers.length === 0 ? (
                       <div style={{ padding: '10px 12px', color: 'var(--gray-400)', fontSize: 13 }}>No suppliers found</div>
                     ) : filteredSuppliers.map(s => (
-                      <div key={s.id} className="fp-item" onClick={() => { setSelectedSupplier(s); setTerms(s.terms ?? 'Net 30'); setSupplierDropOpen(false) }}>
+                      <div key={s.id} className="fp-item" onClick={() => selectSupplier(s)}>
                         <div style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{s.name}</div>
                         {s.email && <div style={{ fontSize: 11, color: 'var(--gray-400)' }}>{s.email}</div>}
                       </div>
@@ -242,7 +274,7 @@ export default function NewPurchaseOrder({
                     {selectedSupplier.email && <div style={{ fontSize: 12.5, color: 'var(--teal)', marginTop: 2 }}>{selectedSupplier.email}</div>}
                     {selectedSupplier.bill_city && <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 4 }}>{[selectedSupplier.bill_city, selectedSupplier.bill_country].filter(Boolean).join(', ')}</div>}
                   </div>
-                  <button onClick={() => setSelectedSupplier(null)} style={{ width: 24, height: 24, borderRadius: 6, border: 'none', background: 'rgba(13,148,136,0.15)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--teal)', flexShrink: 0 }}>
+                  <button onClick={() => { setSelectedSupplier(null); setTerms(fallbackTerms) }} style={{ width: 24, height: 24, borderRadius: 6, border: 'none', background: 'rgba(13,148,136,0.15)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--teal)', flexShrink: 0 }}>
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                   </button>
                 </div>
@@ -261,23 +293,44 @@ export default function NewPurchaseOrder({
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
               Deliver To
             </div>
-            <div className="modal-field" onClick={e => e.stopPropagation()}>
-              <label className="modal-label">Location <span className="req">*</span></label>
-              <div style={{ position: 'relative' }}>
-                <button className="modal-dd-btn" onClick={() => setLocationOpen(o => !o)} type="button" style={{ background: 'var(--white)' }}>
-                  <span>{selectedLocation?.name ?? 'Select location…'}</span>
-                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg>
-                </button>
-                {locationOpen && (
-                  <div className="inv-dropdown filter-pick-dropdown" style={{ display: 'block', minWidth: 220 }}>
-                    <div className="col-dropdown-title">Deliver To</div>
-                    {locations.map(l => (
-                      <div key={l.id} className={`fp-item${selectedLocation?.id === l.id ? ' active' : ''}`} onClick={() => { setSelectedLocation(l); setLocationOpen(false) }}>{l.name}</div>
-                    ))}
-                  </div>
-                )}
+
+            {!selectedLocation ? (
+              <div className="modal-field" onClick={e => e.stopPropagation()}>
+                <label className="modal-label">Location <span className="req">*</span></label>
+                <div style={{ position: 'relative' }}>
+                  <button className="modal-dd-btn" onClick={() => setLocationOpen(o => !o)} type="button" style={{ background: 'var(--white)' }}>
+                    <span style={{ color: 'var(--gray-400)' }}>Select location…</span>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+                  </button>
+                  {locationOpen && (
+                    <div className="inv-dropdown filter-pick-dropdown" style={{ display: 'block', minWidth: 220 }}>
+                      <div className="col-dropdown-title">Deliver To</div>
+                      {locations.map(l => (
+                        <div key={l.id} className="fp-item" onClick={() => { setSelectedLocation(l); setLocationOpen(false) }}>{l.name}</div>
+                      ))}
+                    </div>
+                  )}
+                </div>
               </div>
-            </div>
+            ) : (
+              <div style={{ background: 'var(--teal-surface)', border: '1.5px solid var(--teal-pale)', borderRadius: 12, padding: '14px 16px' }}>
+                <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 8 }}>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 700, color: 'var(--slate)', letterSpacing: '-0.02em' }}>{selectedLocation.name}</div>
+                    {selectedLocation.phone && <div style={{ fontSize: 12.5, color: 'var(--gray-400)', marginTop: 2 }}>{selectedLocation.phone}</div>}
+                    {selectedLocation.email && <div style={{ fontSize: 12.5, color: 'var(--teal)', marginTop: 2 }}>{selectedLocation.email}</div>}
+                    {(selectedLocation.street || selectedLocation.city) && (
+                      <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 4 }}>
+                        {[selectedLocation.street, selectedLocation.city, selectedLocation.state, selectedLocation.postcode, selectedLocation.country].filter(Boolean).join(', ')}
+                      </div>
+                    )}
+                  </div>
+                  <button onClick={() => setSelectedLocation(null)} style={{ width: 24, height: 24, borderRadius: 6, border: 'none', background: 'rgba(13,148,136,0.15)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--teal)', flexShrink: 0 }}>
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                  </button>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -389,7 +442,7 @@ export default function NewPurchaseOrder({
               className="modal-input"
               placeholder="Search by item code or name…"
               value={itemSearch}
-              onChange={e => setItemSearch(e.target.value)}
+              onChange={e => { setItemSearch(e.target.value); if (!itemDropOpen) setItemDropOpen(true) }}
               onFocus={() => setItemDropOpen(true)}
               style={{ paddingLeft: 32, background: 'var(--gray-50)', width: 300 }}
               autoComplete="off"
@@ -403,7 +456,12 @@ export default function NewPurchaseOrder({
                 </div>
                 <div style={{ maxHeight: 260, overflowY: 'auto', padding: 6 }}>
                   {filteredProducts.map(p => (
-                    <div key={p.id} className="fp-item" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', alignItems: 'center', gap: 8 }} onClick={() => addLine(p)}>
+                    <div
+                      key={p.id}
+                      className="fp-item"
+                      style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', alignItems: 'center', gap: 8 }}
+                      onMouseDown={e => { e.preventDefault(); addLine(p) }}
+                    >
                       <span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{p.name}</span>
                       <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--gray-400)' }}>{p.sku ?? '—'}</span>
                       <span style={{ fontSize: 13, color: 'var(--teal)', fontWeight: 600 }}>{p.cost_price ? `$${p.cost_price.toFixed(2)}` : '—'}</span>

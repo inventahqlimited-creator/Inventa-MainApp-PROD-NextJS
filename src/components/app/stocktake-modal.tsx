@@ -161,19 +161,23 @@ export default function StocktakeModal({
         continue
       }
 
+      // Require location
+      if (!locationVal) {
+        rowErrors.push(`Row ${rowNum} (${product.name}): Missing location — every row must have a location so the adjustment knows which warehouse or storage area to update. Please add a location to this row and re-upload.`)
+        continue
+      }
+
       // Resolve location
       let locationId: string | null = null
       let locationName: string | null = null
-      if (locationVal) {
-        const loc = locationByName.get(locationVal.toLowerCase())
-        if (!loc) {
-          rowErrors.push(`Row ${rowNum} (${product.name}): Location "${locationVal}" not found`)
-          continue
-        }
-        locationId = loc.id
-        locationName = loc.name
-        locationsUsed.add(loc.id)
+      const loc = locationByName.get(locationVal.toLowerCase())
+      if (!loc) {
+        rowErrors.push(`Row ${rowNum} (${product.name}): Location "${locationVal}" not found — check the spelling matches exactly what's set up in your locations list.`)
+        continue
       }
+      locationId = loc.id
+      locationName = loc.name
+      locationsUsed.add(loc.id)
 
       parsedLines.push({
         product,
@@ -188,7 +192,7 @@ export default function StocktakeModal({
 
     // Validate single location
     if (locationsUsed.size > 1) {
-      rowErrors.push('This file contains multiple locations. A stocktake import can only adjust one location at a time. Please split into separate files per location.')
+      rowErrors.push('This file contains more than one location. A stocktake can only be imported for one location at a time — please split your file into separate files, one per location, and import each one individually.')
     }
 
     if (rowErrors.length > 0) {

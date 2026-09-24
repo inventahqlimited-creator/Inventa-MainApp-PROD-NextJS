@@ -64,7 +64,7 @@ export default async function ContactsPage() {
   ] = await Promise.all([
     adminClient.from('contacts').select('*').eq('org_id', m.org_id).order('name'),
     adminClient.from('organisations').select('base_currency').eq('id', m.org_id).single(),
-    adminClient.from('price_levels').select('id, name, is_default').eq('org_id', m.org_id).order('sort_order').order('name'),
+    adminClient.from('price_levels').select('id, name, is_default').eq('org_id', m.org_id).order('name'),
     adminClient.from('currencies').select('id, code, name, symbol').eq('org_id', m.org_id).order('code'),
     adminClient.from('tax_rates').select('id, name, rate').eq('org_id', m.org_id).order('name'),
     adminClient.from('locations').select('id, name, active').eq('org_id', m.org_id).eq('active', true).order('name'),

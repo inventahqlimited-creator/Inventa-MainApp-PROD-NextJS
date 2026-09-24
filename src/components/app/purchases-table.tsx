@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 
 type Order = {
@@ -59,6 +59,36 @@ const TABS = [
 
 type Tab = typeof TABS[number]['key']
 
+// Column definitions
+const COLS = [
+  { key: 'po_number',     label: 'Order #',       required: true  },
+  { key: 'order_date',    label: 'Created',        required: false },
+  { key: 'supplier',      label: 'Supplier',       required: false },
+  { key: 'location',      label: 'Location',       required: false },
+  { key: 'total_amount',  label: 'Total Cost',     required: false },
+  { key: 'status',        label: 'Status',         required: false },
+  { key: 'expected_date', label: 'Delivery Date',  required: false },
+  { key: 'terms',         label: 'Terms',          required: false },
+  { key: 'reference',     label: 'Reference',      required: false },
+] as const
+
+type ColKey = typeof COLS[number]['key']
+
+const DEFAULT_COLS: ColKey[] = ['po_number', 'order_date', 'supplier', 'location', 'total_amount', 'status', 'expected_date']
+
+const LS_KEY = 'purchases_visible_cols'
+
+function loadCols(): Set<ColKey> {
+  try {
+    const raw = typeof window !== 'undefined' ? localStorage.getItem(LS_KEY) : null
+    if (raw) {
+      const parsed = JSON.parse(raw) as ColKey[]
+      if (Array.isArray(parsed)) return new Set(parsed)
+    }
+  } catch {}
+  return new Set(DEFAULT_COLS)
+}
+
 export default function PurchasesTable({
   orders,
   contacts,
@@ -77,8 +107,33 @@ export default function PurchasesTable({
   const [locationFilter, setLocationFilter] = useState('')
   const [supplierOpen, setSupplierOpen] = useState(false)
   const [locationOpen, setLocationOpen] = useState(false)
+  const [colOpen, setColOpen] = useState(false)
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(25)
+  const [visibleCols, setVisibleCols] = useState<Set<ColKey>>(new Set(DEFAULT_COLS))
+
+  // Load persisted column visibility on mount
+  useEffect(() => {
+    setVisibleCols(loadCols())
+  }, [])
+
+  function toggleCol(key: ColKey) {
+    const col = COLS.find(c => c.key === key)
+    if (col?.required) return
+    setVisibleCols(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      try { localStorage.setItem(LS_KEY, JSON.stringify([...next])) } catch {}
+      return next
+    })
+  }
+
+  const closeAll = () => {
+    setSupplierOpen(false)
+    setLocationOpen(false)
+    setColOpen(false)
+  }
 
   const filtered = useMemo(() => {
     return orders.filter(o => {
@@ -115,11 +170,14 @@ export default function PurchasesTable({
   const supplierName = contacts.find(c => c.id === supplierFilter)?.name ?? 'All Suppliers'
   const locationName = locations.find(l => l.id === locationFilter)?.name ?? 'All Locations'
 
+  // Ordered visible columns for rendering
+  const activeCols = COLS.filter(c => visibleCols.has(c.key))
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }} onClick={closeAll}>
 
       {/* Page header */}
-      <div className="page-header-card">
+      <div className="page-header-card" onClick={e => e.stopPropagation()}>
         <div className="page-header-top">
           <div>
             <div className="page-title">Purchases</div>
@@ -147,7 +205,7 @@ export default function PurchasesTable({
       </div>
 
       {/* Filter bar */}
-      <div className="filter-bar-card">
+      <div className="filter-bar-card" onClick={e => e.stopPropagation()}>
         <div className="filter-search-wrap">
           <svg className="filter-search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
           <input
@@ -162,13 +220,13 @@ export default function PurchasesTable({
         <div style={{ position: 'relative' }}>
           <button
             className={`filter-dd-btn${supplierFilter ? ' active-filter' : ''}`}
-            onClick={() => { setSupplierOpen(o => !o); setLocationOpen(false) }}
+            onClick={e => { e.stopPropagation(); setSupplierOpen(o => !o); setLocationOpen(false); setColOpen(false) }}
           >
             <span>{supplierName}</span>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
           {supplierOpen && (
-            <div className="inv-dropdown" style={{ display: 'block', minWidth: 200 }}>
+            <div className="inv-dropdown" style={{ display: 'block', minWidth: 200 }} onClick={e => e.stopPropagation()}>
               <div className="col-dropdown-title">Supplier</div>
               <div
                 className={`fp-item${!supplierFilter ? ' active' : ''}`}
@@ -193,13 +251,13 @@ export default function PurchasesTable({
         <div style={{ position: 'relative' }}>
           <button
             className={`filter-dd-btn${locationFilter ? ' active-filter' : ''}`}
-            onClick={() => { setLocationOpen(o => !o); setSupplierOpen(false) }}
+            onClick={e => { e.stopPropagation(); setLocationOpen(o => !o); setSupplierOpen(false); setColOpen(false) }}
           >
             <span>{locationName}</span>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
           {locationOpen && (
-            <div className="inv-dropdown" style={{ display: 'block', minWidth: 200 }}>
+            <div className="inv-dropdown" style={{ display: 'block', minWidth: 200 }} onClick={e => e.stopPropagation()}>
               <div className="col-dropdown-title">Location</div>
               <div
                 className={`fp-item${!locationFilter ? ' active' : ''}`}
@@ -225,6 +283,44 @@ export default function PurchasesTable({
         <span style={{ fontSize: 13, color: 'var(--gray-400)' }}>
           <strong style={{ color: 'var(--slate)' }}>{filtered.length}</strong> orders
         </span>
+
+        {/* Column selector */}
+        <div style={{ position: 'relative' }}>
+          <button
+            className="filter-dd-btn"
+            onClick={e => { e.stopPropagation(); setColOpen(o => !o); setSupplierOpen(false); setLocationOpen(false) }}
+            title="Show/hide columns"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+            <span>Columns</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          {colOpen && (
+            <div className="inv-dropdown" style={{ display: 'block', minWidth: 180, right: 0, left: 'auto' }} onClick={e => e.stopPropagation()}>
+              <div className="col-dropdown-title">Columns</div>
+              {COLS.map(c => (
+                <div
+                  key={c.key}
+                  className="fp-item"
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, opacity: c.required ? 0.5 : 1, cursor: c.required ? 'default' : 'pointer' }}
+                  onClick={() => toggleCol(c.key)}
+                >
+                  <div style={{
+                    width: 16, height: 16, borderRadius: 4,
+                    border: `1.5px solid ${visibleCols.has(c.key) ? 'var(--teal)' : 'var(--gray-300)'}`,
+                    background: visibleCols.has(c.key) ? 'var(--teal)' : 'transparent',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                  }}>
+                    {visibleCols.has(c.key) && (
+                      <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.5"><polyline points="20 6 9 17 4 12"/></svg>
+                    )}
+                  </div>
+                  <span style={{ fontSize: 13, color: 'var(--slate)' }}>{c.label}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Table */}
@@ -233,20 +329,17 @@ export default function PurchasesTable({
           <table>
             <thead>
               <tr>
-                <th>Order #</th>
-                <th>Created</th>
-                <th>Supplier</th>
-                <th>Location</th>
-                <th style={{ textAlign: 'right' }}>Total Cost</th>
-                <th>Status</th>
-                <th>Delivery Date</th>
+                {activeCols.map(c => {
+                  if (c.key === 'total_amount') return <th key={c.key} style={{ textAlign: 'right' }}>{c.label}</th>
+                  return <th key={c.key}>{c.label}</th>
+                })}
                 <th style={{ width: 40 }}></th>
               </tr>
             </thead>
             <tbody>
               {paginated.length === 0 && (
                 <tr>
-                  <td colSpan={8} style={{ textAlign: 'center', padding: '48px 0', color: 'var(--gray-400)', fontSize: 13 }}>
+                  <td colSpan={activeCols.length + 1} style={{ textAlign: 'center', padding: '48px 0', color: 'var(--gray-400)', fontSize: 13 }}>
                     {search ? 'No orders match your search.' : 'No purchase orders yet.'}
                   </td>
                 </tr>
@@ -255,31 +348,52 @@ export default function PurchasesTable({
                 const overdue = isOverdue(o.expected_date, o.status)
                 return (
                   <tr key={o.id} onClick={() => router.push(`/purchases/${o.id}`)}>
-                    <td>
-                      <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, color: 'var(--slate)', fontSize: 13 }}>
-                        {o.po_number ?? '—'}
-                      </span>
-                      {o.reference && (
-                        <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 1 }}>{o.reference}</div>
-                      )}
-                    </td>
-                    <td className="td-muted">{fmtDate(o.order_date)}</td>
-                    <td>
-                      <span style={{ fontWeight: 500, color: 'var(--slate)', fontSize: 13 }}>
-                        {o.supplier_name ?? '—'}
-                      </span>
-                    </td>
-                    <td className="td-muted">{o.location_name ?? '—'}</td>
-                    <td style={{ textAlign: 'right', fontWeight: 600, color: 'var(--slate)' }}>
-                      {fmt(o.total_amount)}
-                    </td>
-                    <td>{statusBadge(o.status)}</td>
-                    <td>
-                      <span style={{ color: overdue ? 'var(--danger)' : 'var(--gray-400)', fontSize: 13, fontWeight: overdue ? 600 : 400 }}>
-                        {fmtDate(o.expected_date)}
-                        {overdue && ' ⚠'}
-                      </span>
-                    </td>
+                    {activeCols.map(c => {
+                      switch (c.key) {
+                        case 'po_number':
+                          return (
+                            <td key={c.key}>
+                              <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, color: 'var(--slate)', fontSize: 13 }}>
+                                {o.po_number ?? '—'}
+                              </span>
+                              {o.reference && (
+                                <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 1 }}>{o.reference}</div>
+                              )}
+                            </td>
+                          )
+                        case 'order_date':
+                          return <td key={c.key} className="td-muted">{fmtDate(o.order_date)}</td>
+                        case 'supplier':
+                          return (
+                            <td key={c.key}>
+                              <span style={{ fontWeight: 500, color: 'var(--slate)', fontSize: 13 }}>
+                                {o.supplier_name ?? '—'}
+                              </span>
+                            </td>
+                          )
+                        case 'location':
+                          return <td key={c.key} className="td-muted">{o.location_name ?? '—'}</td>
+                        case 'total_amount':
+                          return <td key={c.key} style={{ textAlign: 'right', fontWeight: 600, color: 'var(--slate)' }}>{fmt(o.total_amount)}</td>
+                        case 'status':
+                          return <td key={c.key}>{statusBadge(o.status)}</td>
+                        case 'expected_date':
+                          return (
+                            <td key={c.key}>
+                              <span style={{ color: overdue ? 'var(--danger)' : 'var(--gray-400)', fontSize: 13, fontWeight: overdue ? 600 : 400 }}>
+                                {fmtDate(o.expected_date)}
+                                {overdue && ' ⚠'}
+                              </span>
+                            </td>
+                          )
+                        case 'terms':
+                          return <td key={c.key} className="td-muted">{o.terms ?? '—'}</td>
+                        case 'reference':
+                          return <td key={c.key} className="td-muted">{o.reference ?? '—'}</td>
+                        default:
+                          return <td key={c.key}>—</td>
+                      }
+                    })}
                     <td>
                       <div className="row-actions">
                         <button className="row-action-btn" title="View">

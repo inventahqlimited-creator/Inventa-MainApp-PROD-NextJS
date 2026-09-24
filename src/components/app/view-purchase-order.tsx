@@ -20,6 +20,19 @@ type PO = {
   terms: string | null
   currency: string | null
   reference: string | null
+  order_discount: number | null
+  order_discount_type: string | null
+  order_discount_amount: number | null
+}
+
+type CostLine = {
+  id: string
+  product_id: string | null
+  product_name: string | null
+  product_sku: string | null
+  description: string | null
+  amount: number
+  tax_rate: number | null
 }
 
 type Line = {
@@ -88,12 +101,14 @@ function statusBadge(status: string) {
 export default function ViewPurchaseOrder({
   po: initialPo,
   lines: initialLines,
+  costLines: initialCostLines = [],
   contacts,
   locations,
   orgId,
 }: {
   po: PO
   lines: Line[]
+  costLines?: CostLine[]
   contacts: Supplier[]
   locations: Location[]
   orgId: string
@@ -101,6 +116,7 @@ export default function ViewPurchaseOrder({
   const router = useRouter()
   const [po, setPo] = useState(initialPo)
   const [lines, setLines] = useState(initialLines)
+  const [costLines] = useState<CostLine[]>(initialCostLines)
   const [mode, setMode] = useState<'view' | 'edit' | 'receive'>('view')
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -124,10 +140,20 @@ export default function ViewPurchaseOrder({
   const [receiveLines, setReceiveLines] = useState<ReceiveLine[]>([])
   const [receiveNotes, setReceiveNotes] = useState('')
 
-  const total = lines.reduce((sum, l) => {
+  const subtotal = lines.reduce((sum, l) => sum + l.quantity_ordered * l.unit_cost * (1 - (l.discount ?? 0) / 100), 0)
+  const additionalCostsTotal = costLines.reduce((sum, l) => sum + l.amount, 0)
+  const preDiscountTotal = subtotal + additionalCostsTotal
+  const orderDiscountAmount = po.order_discount_amount ?? 0
+  const discountedBase = preDiscountTotal - orderDiscountAmount
+  const gstTotal = lines.reduce((sum, l) => {
     const lt = l.quantity_ordered * l.unit_cost * (1 - (l.discount ?? 0) / 100)
-    return sum + lt
+    const factor = preDiscountTotal > 0 ? discountedBase / preDiscountTotal : 1
+    return sum + lt * factor * ((l.tax_rate ?? 0) / 100)
+  }, 0) + costLines.reduce((sum, l) => {
+    const factor = preDiscountTotal > 0 ? discountedBase / preDiscountTotal : 1
+    return sum + l.amount * factor * ((l.tax_rate ?? 0) / 100)
   }, 0)
+  const total = discountedBase + gstTotal
 
   const canReceive = ['open', 'partially received'].includes(po.status.toLowerCase())
   const canCancel = !['closed', 'cancelled'].includes(po.status.toLowerCase())
@@ -516,26 +542,28 @@ export default function ViewPurchaseOrder({
             {/* Line Items */}
             <div className="npo-card">
               <div className="npo-card-title">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>
                 Line Items
               </div>
               <div style={{ overflowX: 'auto', margin: '0 -20px' }}>
                 <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
                   <thead>
                     <tr style={{ background: 'var(--gray-50)' }}>
-                      <th className="li-th" style={{ width: 120 }}>Item Code</th>
-                      <th className="li-th">Product</th>
+                      <th className="li-th" style={{ width: 120 }}>SKU</th>
+                      <th className="li-th">Product Name</th>
                       <th className="li-th" style={{ width: 70, textAlign: 'center' }}>Unit</th>
                       <th className="li-th" style={{ width: 90, textAlign: 'right' }}>Ordered</th>
                       <th className="li-th" style={{ width: 90, textAlign: 'right' }}>Received</th>
                       <th className="li-th" style={{ width: 90, textAlign: 'right' }}>Remaining</th>
-                      <th className="li-th" style={{ width: 110, textAlign: 'right' }}>Cost Price</th>
+                      <th className="li-th" style={{ width: 90, textAlign: 'right' }}>Cost Price</th>
+                      <th className="li-th" style={{ width: 70, textAlign: 'right' }}>Disc %</th>
+                      <th className="li-th" style={{ width: 60, textAlign: 'right' }}>Tax</th>
                       <th className="li-th" style={{ width: 110, textAlign: 'right' }}>Line Total</th>
                     </tr>
                   </thead>
                   <tbody>
                     {lines.length === 0 && (
-                      <tr><td colSpan={8} style={{ textAlign: 'center', padding: '24px 0', color: 'var(--gray-400)', fontSize: 13 }}>No line items.</td></tr>
+                      <tr><td colSpan={10} style={{ textAlign: 'center', padding: '24px 0', color: 'var(--gray-400)', fontSize: 13 }}>No line items.</td></tr>
                     )}
                     {lines.map(l => {
                       const received = l.quantity_received ?? 0
@@ -553,6 +581,8 @@ export default function ViewPurchaseOrder({
                           <td className="li-td" style={{ textAlign: 'right', color: '#059669', fontWeight: 600 }}>{received}</td>
                           <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: remaining > 0 ? 'var(--danger)' : '#059669' }}>{remaining}</td>
                           <td className="li-td" style={{ textAlign: 'right', color: 'var(--gray-400)' }}>{`$${l.unit_cost.toFixed(2)}`}</td>
+                          <td className="li-td" style={{ textAlign: 'right', color: 'var(--gray-400)' }}>{l.discount ? `${l.discount}%` : '—'}</td>
+                          <td className="li-td" style={{ textAlign: 'right', color: 'var(--gray-400)' }}>{l.tax_rate ? `${l.tax_rate}%` : '—'}</td>
                           <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: 'var(--slate)', fontFamily: 'var(--font-display)' }}>{`$${lt.toFixed(2)}`}</td>
                         </tr>
                       )
@@ -560,8 +590,65 @@ export default function ViewPurchaseOrder({
                   </tbody>
                 </table>
               </div>
+              {/* Additional Costs */}
+              {costLines.length > 0 && (
+                <div style={{ marginTop: 16, paddingTop: 14, borderTop: '1px dashed var(--gray-200)' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--slate)', letterSpacing: '0.04em', textTransform: 'uppercase' as const }}>Additional Costs</span>
+                    <span style={{ fontSize: 11, color: 'var(--gray-400)' }}>Freight, packing and other service charges</span>
+                  </div>
+                  <div style={{ overflowX: 'auto', margin: '0 -20px' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 600 }}>
+                      <thead>
+                        <tr style={{ background: 'var(--gray-50)' }}>
+                          <th className="li-th" style={{ width: 120 }}>SKU</th>
+                          <th className="li-th">Name</th>
+                          <th className="li-th">Description</th>
+                          <th className="li-th" style={{ width: 110, textAlign: 'right' }}>Amount</th>
+                          <th className="li-th" style={{ width: 60, textAlign: 'right' }}>Tax</th>
+                          <th className="li-th" style={{ width: 110, textAlign: 'right' }}>Line Total</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {costLines.map(l => (
+                          <tr key={l.id} style={{ borderBottom: '1px solid var(--gray-100)' }}>
+                            <td className="li-td"><span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--gray-400)' }}>{l.product_sku ?? '—'}</span></td>
+                            <td className="li-td"><span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{l.product_name ?? '—'}</span></td>
+                            <td className="li-td" style={{ color: 'var(--gray-400)', fontSize: 13 }}>{l.description || '—'}</td>
+                            <td className="li-td" style={{ textAlign: 'right', color: 'var(--gray-400)' }}>{`$${l.amount.toFixed(2)}`}</td>
+                            <td className="li-td" style={{ textAlign: 'right', color: 'var(--gray-400)' }}>{l.tax_rate ? `${l.tax_rate}%` : '—'}</td>
+                            <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: 'var(--slate)', fontFamily: 'var(--font-display)' }}>{`$${(l.amount * (1 + (l.tax_rate ?? 0) / 100)).toFixed(2)}`}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )}
+
+              {/* Totals */}
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--gray-100)' }}>
-                <div style={{ minWidth: 240 }}>
+                <div style={{ minWidth: 280, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: 'var(--gray-400)' }}>
+                    <span>Subtotal</span>
+                    <span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--slate)' }}>{fmtMoney(subtotal)}</span>
+                  </div>
+                  {additionalCostsTotal > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: 'var(--gray-400)' }}>
+                      <span>Additional Costs</span>
+                      <span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--slate)' }}>{fmtMoney(additionalCostsTotal)}</span>
+                    </div>
+                  )}
+                  {orderDiscountAmount > 0 && (
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: 'var(--gray-400)' }}>
+                      <span>Order Discount {po.order_discount_type === '%' ? `(${po.order_discount}%)` : ''}</span>
+                      <span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--danger)' }}>−{fmtMoney(orderDiscountAmount)}</span>
+                    </div>
+                  )}
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: 'var(--gray-400)' }}>
+                    <span>Tax</span>
+                    <span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--slate)' }}>{fmtMoney(gstTotal)}</span>
+                  </div>
                   <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 15, fontWeight: 700, fontFamily: 'var(--font-display)', color: 'var(--slate)', letterSpacing: '-0.02em', paddingTop: 6, borderTop: '2px solid var(--slate)' }}>
                     <span>Total</span><span>{fmtMoney(total)}</span>
                   </div>

@@ -399,12 +399,25 @@ export default function EditAdjustment({
 
   function validate(): boolean {
     const errs: Record<number, Record<string, string>> = {}
+
+    // Track serials used in this adjustment to catch intra-adjustment duplicates
+    const seenSerials = new Map<string, number>() // serial → first idx
+
     lines.forEach((l, idx) => {
       const e: Record<string, string> = {}
       if (l.needs_serial) {
-        if (!l.serial_number.trim()) e.serial_number = 'Serial number required'
-        else if (Math.abs(l.quantity_after - l.quantity_before) !== 1) {
-          e.quantity_after = 'Serial-tracked items can only change by 1 unit at a time — add a separate row for each unit'
+        if (!l.serial_number.trim()) {
+          e.serial_number = 'Serial number required'
+        } else {
+          const s = l.serial_number.trim()
+          if (seenSerials.has(s)) {
+            e.serial_number = `Duplicate serial number — already used on row ${(seenSerials.get(s)! + 1)}`
+          } else {
+            seenSerials.set(s, idx)
+          }
+          if (Math.abs(l.quantity_after - l.quantity_before) !== 1) {
+            e.quantity_after = 'Serial-tracked items can only change by 1 unit at a time — add a separate row for each unit'
+          }
         }
       }
       if (l.needs_batch && !l.batch_number.trim()) e.batch_number = 'Batch number required'

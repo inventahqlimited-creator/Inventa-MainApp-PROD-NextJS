@@ -1,26 +1,17 @@
 import type { Metadata } from 'next'
-import localFont from 'next/font/local'
+import { Plus_Jakarta_Sans, Inter } from 'next/font/google'
 import './globals.css'
 
-const plusJakartaSans = localFont({
-  src: [
-    { path: '../../public/fonts/plus-jakarta-sans/PlusJakartaSans-Regular.ttf',   weight: '400', style: 'normal' },
-    { path: '../../public/fonts/plus-jakarta-sans/PlusJakartaSans-Medium.ttf',    weight: '500', style: 'normal' },
-    { path: '../../public/fonts/plus-jakarta-sans/PlusJakartaSans-SemiBold.ttf',  weight: '600', style: 'normal' },
-    { path: '../../public/fonts/plus-jakarta-sans/PlusJakartaSans-Bold.ttf',      weight: '700', style: 'normal' },
-    { path: '../../public/fonts/plus-jakarta-sans/PlusJakartaSans-ExtraBold.ttf', weight: '800', style: 'normal' },
-  ],
+const plusJakartaSans = Plus_Jakarta_Sans({
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700', '800'],
   variable: '--font-display',
   display: 'swap',
 })
 
-const inter = localFont({
-  src: [
-    { path: '../../public/fonts/inter/Inter_18pt-Regular.ttf',  weight: '400', style: 'normal' },
-    { path: '../../public/fonts/inter/Inter_18pt-Medium.ttf',   weight: '500', style: 'normal' },
-    { path: '../../public/fonts/inter/Inter_18pt-SemiBold.ttf', weight: '600', style: 'normal' },
-    { path: '../../public/fonts/inter/Inter_18pt-Bold.ttf',     weight: '700', style: 'normal' },
-  ],
+const inter = Inter({
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700'],
   variable: '--font-ui',
   display: 'swap',
 })

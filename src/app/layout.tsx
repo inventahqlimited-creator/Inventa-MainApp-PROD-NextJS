@@ -16,10 +16,10 @@ const plusJakartaSans = localFont({
 
 const inter = localFont({
   src: [
-    { path: '../../public/fonts/inter/Inter-Regular.ttf',   weight: '400', style: 'normal' },
-    { path: '../../public/fonts/inter/Inter-Medium.ttf',    weight: '500', style: 'normal' },
-    { path: '../../public/fonts/inter/Inter-SemiBold.ttf',  weight: '600', style: 'normal' },
-    { path: '../../public/fonts/inter/Inter-Bold.ttf',      weight: '700', style: 'normal' },
+    { path: '../../public/fonts/inter/Inter_18pt-Regular.ttf',  weight: '400', style: 'normal' },
+    { path: '../../public/fonts/inter/Inter_18pt-Medium.ttf',   weight: '500', style: 'normal' },
+    { path: '../../public/fonts/inter/Inter_18pt-SemiBold.ttf', weight: '600', style: 'normal' },
+    { path: '../../public/fonts/inter/Inter_18pt-Bold.ttf',     weight: '700', style: 'normal' },
   ],
   variable: '--font-ui',
   display: 'swap',

@@ -29,7 +29,7 @@ async function applyStockChanges(adminClient: ReturnType<typeof createAdminClien
 
   if (linesError) return { error: linesError.message }
 
-  for (const line of (lines ?? []) as {
+  const typedLines = (lines ?? []) as {
     product_id: string
     quantity_before: number
     quantity_after: number
@@ -37,7 +37,37 @@ async function applyStockChanges(adminClient: ReturnType<typeof createAdminClien
     serial_number: string | null
     expiry_date: string | null
     bin_id: string | null
-  }[]) {
+  }[]
+
+  // ── Validate serial uniqueness before applying any changes ──
+  const incomingSerials = typedLines
+    .map(l => l.serial_number)
+    .filter((s): s is string => !!s)
+
+  if (incomingSerials.length > 0) {
+    // Check for duplicates within this adjustment itself
+    const serialSet = new Set<string>()
+    for (const s of incomingSerials) {
+      if (serialSet.has(s)) {
+        return { error: `Duplicate serial number in this adjustment: ${s}` }
+      }
+      serialSet.add(s)
+    }
+
+    // Check for conflicts with existing stock groups in the org
+    const { data: conflicts } = await adminClient
+      .from('stock_groups')
+      .select('serial_number')
+      .eq('org_id', orgId)
+      .in('serial_number', incomingSerials)
+
+    if (conflicts && conflicts.length > 0) {
+      const conflicted = conflicts.map((c: { serial_number: string }) => c.serial_number).join(', ')
+      return { error: `Serial number already exists in stock: ${conflicted}` }
+    }
+  }
+
+  for (const line of typedLines) {
     if (!line.product_id) continue
     const delta = line.quantity_after - line.quantity_before
 

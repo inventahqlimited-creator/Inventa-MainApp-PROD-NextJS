@@ -45,7 +45,7 @@ export default async function EditPurchaseOrderPage({ params }: { params: Promis
 
   const [{ data: locations }, { data: contacts }, { data: products }, { data: org }] = await Promise.all([
     adminClient.from('locations').select('id, name, street, city, state, postcode, country, phone, email').eq('org_id', m.org_id).eq('active', true).order('name'),
-    adminClient.from('contacts').select('id, name, email, phone, bill_street, bill_city, bill_country, terms, currency, price_level_id').eq('org_id', m.org_id).eq('type', 'supplier').eq('active', true).order('name'),
+    adminClient.from('contacts').select('id, name, email, phone, bill_street, bill_city, bill_country, terms, currency, price_level_id').eq('org_id', m.org_id).eq('type', 'supplier').eq('is_active', true).order('name'),
     adminClient.from('products').select('id, name, sku, buy_uom, cost_price, tax_rate, description, track_stock, type').eq('org_id', m.org_id).eq('active', true).order('name'),
     adminClient.from('organisations').select('po_default_payment_terms').eq('id', m.org_id).single(),
   ])

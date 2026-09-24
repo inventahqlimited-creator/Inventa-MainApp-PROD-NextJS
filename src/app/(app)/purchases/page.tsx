@@ -1,5 +1,4 @@
-import { createAdminClient } from '@/lib/supabase/server'
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import PurchasesTable from '@/components/app/purchases-table'
 
@@ -30,20 +29,23 @@ export default async function PurchasesPage() {
       .from('contacts')
       .select('id, name')
       .eq('org_id', m.org_id)
-      .eq('type', 'supplier'),
+      .eq('type', 'supplier')
+      .eq('active', true)
+      .order('name'),
     adminClient
       .from('locations')
       .select('id, name')
       .eq('org_id', m.org_id)
-      .eq('active', true),
+      .eq('active', true)
+      .order('name'),
   ])
 
   return (
     <PurchasesTable
-      orders={orders ?? []}
-      contacts={contacts ?? []}
-      locations={locations ?? []}
       orgId={m.org_id}
+      orders={(orders ?? []) as any}
+      contacts={(contacts ?? []) as { id: string; name: string }[]}
+      locations={(locations ?? []) as { id: string; name: string }[]}
     />
   )
 }

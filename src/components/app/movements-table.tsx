@@ -35,6 +35,7 @@ type Movement = {
   serial_number?: string | null
   batch_number?: string | null
   expiry_date?: string | null
+  reference_number?: string | null
 }
 
 type SearchMode = 'product' | 'serial' | 'batch'
@@ -67,9 +68,11 @@ const TYPE_NAV: Record<string, string> = {
 }
 
 // Short human-readable reference label
-function fmtRef(referenceId: string | null, referenceType: string | null): string {
+function fmtRef(referenceId: string | null, referenceType: string | null, referenceNumber?: string | null): string {
   if (!referenceId) return '—'
-  // Use last 6 chars of UUID for a short code
+  // Prefer the stored human number (e.g. ADJ-0024) from the DB
+  if (referenceNumber) return referenceNumber
+  // Fallback: prefix + last 6 chars of UUID
   const short = referenceId.replace(/-/g, '').slice(-6).toUpperCase()
   const prefix =
     referenceType === 'purchase_order'   ? 'PO' :
@@ -339,7 +342,7 @@ export default function MovementsTable({
     const rows = movements.map(m => [
       fmtDate(m.created_at),
       TYPE_LABELS[m.movement_type] ?? m.movement_type,
-      fmtRef(m.reference_id, m.reference_type),
+      fmtRef(m.reference_id, m.reference_type, m.reference_number),
       m.product_name ?? '',
       m.product_sku  ?? '',
       m.location_name ?? '—',
@@ -683,7 +686,7 @@ export default function MovementsTable({
                     const typeLabel = TYPE_LABELS[m.movement_type] ?? m.movement_type
                     const typeColor = TYPE_COLORS[m.movement_type] ?? 'background:var(--gray-100);color:var(--gray-400)'
                     const navPath   = TYPE_NAV[m.movement_type] ?? '/products'
-                    const refLabel  = fmtRef(m.reference_id, m.reference_type)
+                    const refLabel  = fmtRef(m.reference_id, m.reference_type, m.reference_number)
                     return (
                       <tr key={m.id} className="li-row">
                         <td className="li-td td-muted" style={{ fontSize: 12, paddingLeft: 24 }}>{fmtDate(m.created_at)}</td>
@@ -692,12 +695,14 @@ export default function MovementsTable({
                         </td>
                         <td className="li-td">
                           {m.reference_id ? (
-                            <button
-                              onClick={() => router.push(`${navPath}/${m.reference_id}`)}
-                              style={{ color: 'var(--teal)', fontSize: 12.5, fontWeight: 700, fontFamily: 'var(--font-ui)', letterSpacing: '0.03em', textDecoration: 'none', cursor: 'pointer', background: 'none', border: 'none', padding: 0 }}
+                            <a
+                              href={`${navPath}/${m.reference_id}`}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              style={{ color: 'var(--teal)', fontSize: 12.5, fontWeight: 700, fontFamily: 'var(--font-ui)', letterSpacing: '0.03em', textDecoration: 'none', cursor: 'pointer' }}
                             >
                               {refLabel}
-                            </button>
+                            </a>
                           ) : <span className="td-muted">—</span>}
                         </td>
                         <td className="li-td" style={{ fontWeight: 500, color: 'var(--slate)', fontSize: 13 }}>{m.product_name ?? '—'}</td>

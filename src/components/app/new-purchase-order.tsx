@@ -37,6 +37,12 @@ type Product = {
   description: string | null
   track_stock: boolean | null
   type: string
+  price_levels?: { price_level_id: string; price: number }[]
+}
+
+type PriceLevel = {
+  id: string
+  name: string
 }
 
 type LineItem = {
@@ -49,6 +55,15 @@ type LineItem = {
   discount: number
   tax_rate: number
   line_notes: string
+}
+
+type CostLine = {
+  product_id: string
+  product_name: string
+  product_sku: string
+  description: string
+  amount: number
+  tax_rate: number
 }
 
 function fmtMoney(n: number) {
@@ -67,12 +82,14 @@ export default function NewPurchaseOrder({
   locations,
   products,
   defaultTerms,
+  priceLevels = [],
 }: {
   orgId: string
   suppliers: Supplier[]
   locations: Location[]
   products: Product[]
   defaultTerms?: string | null
+  priceLevels?: PriceLevel[]
 }) {
   const router = useRouter()
 
@@ -91,8 +108,14 @@ export default function NewPurchaseOrder({
   const [termsOpen, setTermsOpen] = useState(false)
   const [notes, setNotes] = useState('')
   const [lines, setLines] = useState<LineItem[]>([])
+  const [costLines, setCostLines] = useState<CostLine[]>([])
   const [itemSearch, setItemSearch] = useState('')
   const [itemDropOpen, setItemDropOpen] = useState(false)
+  const [costSearch, setCostSearch] = useState('')
+  const [costDropOpen, setCostDropOpen] = useState(false)
+  const [orderDiscountType, setOrderDiscountType] = useState<'%' | '$'>('%')
+  const [orderDiscount, setOrderDiscount] = useState<number>(0)
+  const [supplierPriceLevelId, setSupplierPriceLevelId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -101,19 +124,63 @@ export default function NewPurchaseOrder({
     [suppliers, supplierSearch]
   )
 
+  // Stock + NonStock items for main line items (Service excluded)
   const filteredProducts = useMemo(() =>
     products.filter(p =>
-      p.name.toLowerCase().includes(itemSearch.toLowerCase()) ||
-      (p.sku ?? '').toLowerCase().includes(itemSearch.toLowerCase())
+      (p.type === 'Stock' || p.type === 'NonStock') && (
+        p.name.toLowerCase().includes(itemSearch.toLowerCase()) ||
+        (p.sku ?? '').toLowerCase().includes(itemSearch.toLowerCase())
+      )
     ).slice(0, 20),
     [products, itemSearch]
   )
 
-  function selectSupplier(s: Supplier) {
+  // Service items only for additional costs
+  const filteredCostProducts = useMemo(() =>
+    products.filter(p =>
+      p.type === 'Service' && (
+        p.name.toLowerCase().includes(costSearch.toLowerCase()) ||
+        (p.sku ?? '').toLowerCase().includes(costSearch.toLowerCase())
+      )
+    ).slice(0, 20),
+    [products, costSearch]
+  )
+
+  function addCostLine(p: Product) {
+    setCostLines(prev => [...prev, {
+      product_id: p.id,
+      product_name: p.name,
+      product_sku: p.sku ?? '',
+      description: p.description ?? '',
+      amount: p.cost_price ?? 0,
+      tax_rate: parseTaxRate(p.tax_rate),
+    }])
+    setCostSearch('')
+    setCostDropOpen(false)
+  }
+
+  function updateCostLine(idx: number, field: keyof CostLine, value: string | number) {
+    setCostLines(prev => prev.map((l, i) => i === idx ? { ...l, [field]: value } : l))
+  }
+
+  function removeCostLine(idx: number) {
+    setCostLines(prev => prev.filter((_, i) => i !== idx))
+  }
+
+  function selectSupplier(s: Supplier & { price_level_id?: string | null }) {
     setSelectedSupplier(s)
     // Priority: supplier's own terms → global org default → 'Net 14'
     setTerms(s.terms ?? defaultTerms ?? 'Net 14')
+    setSupplierPriceLevelId(s.price_level_id ?? null)
     setSupplierDropOpen(false)
+  }
+
+  function resolvePrice(p: Product): number {
+    if (supplierPriceLevelId && p.price_levels) {
+      const match = p.price_levels.find(pl => pl.price_level_id === supplierPriceLevelId)
+      if (match != null) return match.price
+    }
+    return p.cost_price ?? 0
   }
 
   function addLine(p: Product) {
@@ -123,7 +190,7 @@ export default function NewPurchaseOrder({
       product_sku: p.sku ?? '',
       unit: p.buy_uom ?? 'Each',
       quantity_ordered: 1,
-      unit_cost: p.cost_price ?? 0,
+      unit_cost: resolvePrice(p),
       discount: 0,
       tax_rate: parseTaxRate(p.tax_rate),
       line_notes: '',
@@ -141,16 +208,30 @@ export default function NewPurchaseOrder({
   }
 
   const subtotal = lines.reduce((sum, l) => {
-    const lineTotal = l.quantity_ordered * l.unit_cost * (1 - l.discount / 100)
-    return sum + lineTotal
+    return sum + l.quantity_ordered * l.unit_cost * (1 - l.discount / 100)
   }, 0)
+
+  const additionalCostsTotal = costLines.reduce((sum, l) => sum + l.amount, 0)
+
+  const preDiscountTotal = subtotal + additionalCostsTotal
+
+  const orderDiscountAmount = orderDiscountType === '%'
+    ? preDiscountTotal * (orderDiscount / 100)
+    : Math.min(orderDiscount, preDiscountTotal)
+
+  const discountedBase = preDiscountTotal - orderDiscountAmount
 
   const gstTotal = lines.reduce((sum, l) => {
-    const lineTotal = l.quantity_ordered * l.unit_cost * (1 - l.discount / 100)
-    return sum + lineTotal * (l.tax_rate / 100)
+    const lt = l.quantity_ordered * l.unit_cost * (1 - l.discount / 100)
+    // apply order discount proportion to each line for tax calc
+    const discountFactor = preDiscountTotal > 0 ? discountedBase / preDiscountTotal : 1
+    return sum + lt * discountFactor * (l.tax_rate / 100)
+  }, 0) + costLines.reduce((sum, l) => {
+    const discountFactor = preDiscountTotal > 0 ? discountedBase / preDiscountTotal : 1
+    return sum + l.amount * discountFactor * (l.tax_rate / 100)
   }, 0)
 
-  const total = subtotal + gstTotal
+  const total = discountedBase + gstTotal
 
   function lineTotal(l: LineItem) {
     return l.quantity_ordered * l.unit_cost * (1 - l.discount / 100)
@@ -176,7 +257,11 @@ export default function NewPurchaseOrder({
       notes: notes || null,
       currency: selectedSupplier.currency ?? 'NZD',
       total_amount: total,
+      order_discount: orderDiscount || null,
+      order_discount_type: orderDiscount > 0 ? orderDiscountType : null,
+      order_discount_amount: orderDiscountAmount > 0 ? orderDiscountAmount : null,
       lines: lines.map((l, i) => ({ ...l, sort_order: i })),
+      cost_lines: costLines.map((l, i) => ({ ...l, sort_order: i })),
     }
 
     try {
@@ -201,6 +286,7 @@ export default function NewPurchaseOrder({
     setLocationOpen(false)
     setTermsOpen(false)
     setItemDropOpen(false)
+    setCostDropOpen(false)
   }
 
   return (
@@ -274,7 +360,7 @@ export default function NewPurchaseOrder({
                     {selectedSupplier.email && <div style={{ fontSize: 12.5, color: 'var(--teal)', marginTop: 2 }}>{selectedSupplier.email}</div>}
                     {selectedSupplier.bill_city && <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 4 }}>{[selectedSupplier.bill_city, selectedSupplier.bill_country].filter(Boolean).join(', ')}</div>}
                   </div>
-                  <button onClick={() => { setSelectedSupplier(null); setTerms(fallbackTerms) }} style={{ width: 24, height: 24, borderRadius: 6, border: 'none', background: 'rgba(13,148,136,0.15)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--teal)', flexShrink: 0 }}>
+                  <button onClick={() => { setSelectedSupplier(null); setTerms(fallbackTerms); setSupplierPriceLevelId(null) }} style={{ width: 24, height: 24, borderRadius: 6, border: 'none', background: 'rgba(13,148,136,0.15)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--teal)', flexShrink: 0 }}>
                     <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
                   </button>
                 </div>
@@ -383,13 +469,13 @@ export default function NewPurchaseOrder({
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
               <thead>
                 <tr style={{ background: 'var(--gray-50)' }}>
-                  <th className="li-th" style={{ width: 120 }}>Item Code</th>
-                  <th className="li-th">Product</th>
+                  <th className="li-th" style={{ width: 120 }}>SKU</th>
+                  <th className="li-th">Product Name</th>
                   <th className="li-th" style={{ width: 70, textAlign: 'center' }}>Unit</th>
                   <th className="li-th" style={{ width: 80, textAlign: 'right' }}>Qty</th>
                   <th className="li-th" style={{ width: 100, textAlign: 'right' }}>Cost Price</th>
                   <th className="li-th" style={{ width: 80, textAlign: 'right' }}>Disc %</th>
-                  <th className="li-th" style={{ width: 70, textAlign: 'right' }}>GST %</th>
+                  <th className="li-th" style={{ width: 70, textAlign: 'right' }}>Tax</th>
                   <th className="li-th" style={{ width: 110, textAlign: 'right' }}>Line Total</th>
                   <th className="li-th" style={{ width: 36 }} />
                 </tr>
@@ -472,15 +558,135 @@ export default function NewPurchaseOrder({
             )}
           </div>
 
+          {/* Additional Costs */}
+          <div style={{ marginTop: 20, paddingTop: 16, borderTop: '1px dashed var(--gray-200)' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" style={{ color: 'var(--gray-400)' }}><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><line x1="3" y1="6" x2="3.01" y2="6"/><line x1="3" y1="12" x2="3.01" y2="12"/><line x1="3" y1="18" x2="3.01" y2="18"/></svg>
+              <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--slate)', letterSpacing: '0.04em', textTransform: 'uppercase' }}>Additional Costs</span>
+              <span style={{ fontSize: 11, color: 'var(--gray-400)' }}>Freight, packing and other service charges</span>
+            </div>
+
+            {costLines.length > 0 && (
+              <div style={{ overflowX: 'auto', margin: '0 -20px', marginBottom: 8 }}>
+                <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 700 }}>
+                  <thead>
+                    <tr style={{ background: 'var(--gray-50)' }}>
+                      <th className="li-th" style={{ width: 120 }}>SKU</th>
+                      <th className="li-th">Name</th>
+                      <th className="li-th">Description</th>
+                      <th className="li-th" style={{ width: 110, textAlign: 'right' }}>Amount</th>
+                      <th className="li-th" style={{ width: 70, textAlign: 'right' }}>Tax</th>
+                      <th className="li-th" style={{ width: 110, textAlign: 'right' }}>Line Total</th>
+                      <th className="li-th" style={{ width: 36 }} />
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {costLines.map((l, idx) => (
+                      <tr key={idx} style={{ borderBottom: '1px solid var(--gray-100)' }}>
+                        <td className="li-td"><span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--gray-400)' }}>{l.product_sku}</span></td>
+                        <td className="li-td"><span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{l.product_name}</span></td>
+                        <td className="li-td">
+                          <input className="li-input" value={l.description} onChange={e => updateCostLine(idx, 'description', e.target.value)} placeholder="Optional description…" style={{ width: '100%', minWidth: 160 }} />
+                        </td>
+                        <td className="li-td" style={{ textAlign: 'right' }}>
+                          <input className="li-input right" type="number" min="0" step="0.01" value={l.amount} onChange={e => updateCostLine(idx, 'amount', parseFloat(e.target.value) || 0)} style={{ width: 90, textAlign: 'right' }} />
+                        </td>
+                        <td className="li-td" style={{ textAlign: 'right' }}>
+                          <input className="li-input right" type="number" min="0" max="100" step="1" value={l.tax_rate} onChange={e => updateCostLine(idx, 'tax_rate', parseFloat(e.target.value) || 0)} style={{ width: 60, textAlign: 'right' }} />
+                        </td>
+                        <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: 'var(--slate)', fontFamily: 'var(--font-display)' }}>
+                          {fmtMoney(l.amount * (1 + l.tax_rate / 100))}
+                        </td>
+                        <td className="li-td">
+                          <button onClick={() => removeCostLine(idx)} style={{ width: 26, height: 26, borderRadius: 7, border: 'none', background: 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--gray-400)' }}
+                            onMouseOver={e => (e.currentTarget.style.color = 'var(--danger)')}
+                            onMouseOut={e => (e.currentTarget.style.color = 'var(--gray-400)')}>
+                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+
+            {/* Cost item search */}
+            <div style={{ position: 'relative', display: 'inline-block' }} onClick={e => e.stopPropagation()}>
+              <svg style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--gray-400)', pointerEvents: 'none', zIndex: 1 }} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+              <input
+                className="modal-input"
+                placeholder="Search non-stock items…"
+                value={costSearch}
+                onChange={e => { setCostSearch(e.target.value); if (!costDropOpen) setCostDropOpen(true) }}
+                onFocus={() => setCostDropOpen(true)}
+                style={{ paddingLeft: 32, background: 'var(--gray-50)', width: 280 }}
+                autoComplete="off"
+              />
+              {costDropOpen && filteredCostProducts.length > 0 && (
+                <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, width: 440, background: 'var(--white)', border: '1px solid rgba(0,0,0,0.08)', borderRadius: 14, boxShadow: 'var(--shadow-lg)', zIndex: 200, overflow: 'hidden' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', padding: '8px 14px 6px', background: 'var(--gray-50)', borderBottom: '1px solid var(--gray-100)' }}>
+                    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)' }}>Service</span>
+                    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)' }}>SKU</span>
+                    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)' }}>Price</span>
+                  </div>
+                  <div style={{ maxHeight: 220, overflowY: 'auto', padding: 6 }}>
+                    {filteredCostProducts.map(p => (
+                      <div
+                        key={p.id}
+                        className="fp-item"
+                        style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', alignItems: 'center', gap: 8 }}
+                        onMouseDown={e => { e.preventDefault(); addCostLine(p) }}
+                      >
+                        <span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{p.name}</span>
+                        <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--gray-400)' }}>{p.sku ?? '—'}</span>
+                        <span style={{ fontSize: 13, color: 'var(--teal)', fontWeight: 600 }}>{p.cost_price ? `$${p.cost_price.toFixed(2)}` : '—'}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
           {/* Totals */}
           <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: 16, paddingTop: 14, borderTop: '1px solid var(--gray-100)' }}>
-            <div style={{ minWidth: 260, display: 'flex', flexDirection: 'column', gap: 6 }}>
+            <div style={{ minWidth: 300, display: 'flex', flexDirection: 'column', gap: 6 }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: 'var(--gray-400)' }}>
                 <span>Subtotal</span>
                 <span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--slate)' }}>{fmtMoney(subtotal)}</span>
               </div>
+              {additionalCostsTotal > 0 && (
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: 'var(--gray-400)' }}>
+                  <span>Additional Costs</span>
+                  <span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--slate)' }}>{fmtMoney(additionalCostsTotal)}</span>
+                </div>
+              )}
+              {/* Order-level discount */}
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13, color: 'var(--gray-400)' }} onClick={e => e.stopPropagation()}>
+                <span>Order Discount</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                  <input
+                    type="number"
+                    min="0"
+                    step="0.01"
+                    value={orderDiscount || ''}
+                    onChange={e => setOrderDiscount(parseFloat(e.target.value) || 0)}
+                    placeholder="0"
+                    style={{ width: 70, textAlign: 'right', border: '1px solid var(--gray-200)', borderRadius: 6, padding: '3px 7px', fontSize: 13, fontFamily: 'var(--font-display)', color: 'var(--slate)', background: 'var(--white)', outline: 'none' }}
+                  />
+                  <button
+                    onClick={() => setOrderDiscountType(t => t === '%' ? '$' : '%')}
+                    style={{ width: 30, height: 28, borderRadius: 6, border: '1px solid var(--gray-200)', background: 'var(--gray-50)', cursor: 'pointer', fontSize: 12, fontWeight: 700, color: 'var(--slate)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+                    title="Toggle discount type"
+                  >{orderDiscountType}</button>
+                  {orderDiscountAmount > 0 && (
+                    <span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--danger)', minWidth: 60, textAlign: 'right' }}>−{fmtMoney(orderDiscountAmount)}</span>
+                  )}
+                </div>
+              </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: 'var(--gray-400)' }}>
-                <span>GST</span>
+                <span>Tax</span>
                 <span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--slate)' }}>{fmtMoney(gstTotal)}</span>
               </div>
               <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 15, fontWeight: 700, fontFamily: 'var(--font-display)', color: 'var(--slate)', letterSpacing: '-0.02em', paddingTop: 6, borderTop: '2px solid var(--slate)' }}>

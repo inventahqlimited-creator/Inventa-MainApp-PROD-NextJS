@@ -36,6 +36,7 @@ type Movement = {
   batch_number?: string | null
   expiry_date?: string | null
   reference_number?: string | null
+  bin_id?: string | null
 }
 
 type SearchMode = 'product' | 'serial' | 'batch'
@@ -333,9 +334,11 @@ export default function MovementsTable({
   }
 
   function exportCsv() {
+    const showBinCsv    = movements.some(m => m.bin_id)
     const showSerial = movements.some(m => m.serial_number)
     const showBatch  = movements.some(m => m.batch_number)
     const headers = ['Date', 'Order Type', 'Order #', 'Product Name', 'SKU', 'Location',
+      ...(showBinCsv  ? ['Bin']           : []),
       ...(showSerial ? ['Serial Number'] : []),
       ...(showBatch  ? ['Batch Number']  : []),
       'Qty', 'Note']
@@ -346,6 +349,7 @@ export default function MovementsTable({
       m.product_name ?? '',
       m.product_sku  ?? '',
       m.location_name ?? '—',
+      ...(showBinCsv  ? [m.bin_id        ?? '—'] : []),
       ...(showSerial ? [m.serial_number ?? '—'] : []),
       ...(showBatch  ? [m.batch_number  ?? '—'] : []),
       m.qty > 0 ? `+${m.qty}` : String(m.qty),
@@ -373,6 +377,7 @@ export default function MovementsTable({
     ? new Date(dateTo).toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: 'numeric' })
     : 'To date'
 
+  const showBin      = movements.some(m => m.bin_id)
   const showSerial   = movements.some(m => m.serial_number)
   const showBatch    = movements.some(m => m.batch_number)
   const multiProduct = loaded && matchedProducts.length > 1
@@ -668,6 +673,7 @@ export default function MovementsTable({
                     <th className="li-th">Product</th>
                     <th className="li-th" style={{ width: 100 }}>SKU</th>
                     <th className="li-th" style={{ width: 150 }}>Location</th>
+                    {showBin    && <th className="li-th" style={{ width: 100 }}>Bin</th>}
                     {showSerial && <th className="li-th" style={{ width: 130 }}>Serial No.</th>}
                     {showBatch  && <th className="li-th" style={{ width: 130 }}>Batch No.</th>}
                     <th className="li-th" style={{ width: 110 }}>Note</th>
@@ -708,6 +714,7 @@ export default function MovementsTable({
                         <td className="li-td" style={{ fontWeight: 500, color: 'var(--slate)', fontSize: 13 }}>{m.product_name ?? '—'}</td>
                         <td className="li-td td-muted" style={{ fontSize: 12 }}>{m.product_sku || '—'}</td>
                         <td className="li-td td-muted" style={{ fontSize: 12.5 }}>{m.location_name ?? '—'}</td>
+                        {showBin    && <td className="li-td td-muted" style={{ fontSize: 12 }}>{m.bin_id       || '—'}</td>}
                         {showSerial && <td className="li-td td-muted" style={{ fontSize: 12 }}>{m.serial_number || '—'}</td>}
                         {showBatch  && <td className="li-td td-muted" style={{ fontSize: 12 }}>{m.batch_number  || '—'}</td>}
                         <td className="li-td td-muted" style={{ fontSize: 12, maxWidth: 140 }}>

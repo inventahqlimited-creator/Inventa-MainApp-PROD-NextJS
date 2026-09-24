@@ -67,6 +67,22 @@ async function applyStockChanges(adminClient: ReturnType<typeof createAdminClien
       if (insertError) return { error: insertError.message }
     }
 
+    // ── Write to stock_movements ──
+    if (delta !== 0) {
+      const { error: mvtError } = await adminClient
+        .from('stock_movements')
+        .insert({
+          org_id:         orgId,
+          product_id:     line.product_id,
+          location_id:    locationId,
+          movement_type:  'adjustment',
+          qty:            delta,
+          reference_id:   adjId,
+          reference_type: 'adjustment_order',
+        })
+      if (mvtError) return { error: mvtError.message }
+    }
+
     // ── Upsert stock_groups (per lot: batch + serial + expiry) ──
     // Find existing group matching this exact lot
     const groupQuery = adminClient

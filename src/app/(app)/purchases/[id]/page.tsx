@@ -1,9 +1,8 @@
-import { createAdminClient } from '@/lib/supabase/server'
-import { createClient } from '@/lib/supabase/server'
-import { redirect, notFound } from 'next/navigation'
-import ViewPurchaseOrder from '@/components/app/view-purchase-order'
+import { createAdminClient, createClient } from '@/lib/supabase/server'
+import { redirect } from 'next/navigation'
+import PurchaseDetail from '@/components/app/purchase-detail'
 
-export default async function ViewPurchaseOrderPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function PurchaseDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -21,43 +20,52 @@ export default async function ViewPurchaseOrderPage({ params }: { params: Promis
   if (!membership) redirect('/login')
   const m = membership as { org_id: string; role: string }
 
-  const [{ data: po }, { data: lines }, { data: contacts }, { data: locations }] = await Promise.all([
-    adminClient
-      .from('purchase_orders')
-      .select('*')
-      .eq('id', id)
-      .eq('org_id', m.org_id)
-      .single(),
-    adminClient
-      .from('purchase_order_lines')
-      .select('*')
-      .eq('po_id', id)
-      .eq('org_id', m.org_id)
-      .order('sort_order'),
-    adminClient
-      .from('contacts')
-      .select('id, name, email, phone, bill_street, bill_city, bill_country, terms, currency')
-      .eq('org_id', m.org_id)
-      .eq('type', 'supplier')
-      .eq('is_active', true)
-      .order('name'),
-    adminClient
-      .from('locations')
-      .select('id, name')
-      .eq('org_id', m.org_id)
-      .eq('active', true)
-      .order('name'),
+  // Fetch the PO with its lines and cost_lines
+  const { data: order } = await adminClient
+    .from('purchase_orders')
+    .select(`
+      id, po_number, status, supplier_id, supplier_name,
+      location_id, location_name, order_date, expected_date,
+      terms, notes, reference, currency, total_amount,
+      order_discount, order_discount_type, order_discount_amount,
+      purchase_order_lines (
+        id, product_id, product_name, product_sku, unit,
+        quantity_ordered, unit_cost, discount, tax_rate, line_notes, sort_order
+      ),
+      purchase_order_cost_lines (
+        id, product_id, product_name, product_sku,
+        description, amount, tax_rate, sort_order
+      )
+    `)
+    .eq('id', id)
+    .eq('org_id', m.org_id)
+    .single()
+
+  if (!order) redirect('/purchases')
+
+  const [{ data: locations }, { data: contacts }, { data: products }, { data: org }] = await Promise.all([
+    adminClient.from('locations').select('id, name, street, city, state, postcode, country, phone, email').eq('org_id', m.org_id).eq('active', true).order('name'),
+    adminClient.from('contacts').select('id, name, email, phone, bill_street, bill_city, bill_country, terms, currency, price_level_id').eq('org_id', m.org_id).eq('type', 'supplier').eq('active', true).order('name'),
+    adminClient.from('products').select('id, name, sku, buy_uom, cost_price, tax_rate, description, track_stock, type').eq('org_id', m.org_id).eq('active', true).order('name'),
+    adminClient.from('organisations').select('po_default_payment_terms').eq('id', m.org_id).single(),
   ])
 
-  if (!po) notFound()
+  // Shape the order
+  const o = order as any
+  const shaped = {
+    ...o,
+    lines: (o.purchase_order_lines ?? []).sort((a: any, b: any) => a.sort_order - b.sort_order),
+    cost_lines: (o.purchase_order_cost_lines ?? []).sort((a: any, b: any) => a.sort_order - b.sort_order),
+  }
 
   return (
-    <ViewPurchaseOrder
-      po={po}
-      lines={lines ?? []}
-      contacts={contacts ?? []}
-      locations={locations ?? []}
+    <PurchaseDetail
       orgId={m.org_id}
+      order={shaped}
+      suppliers={(contacts ?? []) as any}
+      locations={(locations ?? []) as any}
+      products={(products ?? []) as any}
+      defaultTerms={(org as any)?.po_default_payment_terms ?? null}
     />
   )
 }

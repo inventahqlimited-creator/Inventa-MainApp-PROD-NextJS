@@ -37,5 +37,23 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
 
-  return NextResponse.json(data ?? [])
+  const groups = data ?? []
+
+  // Resolve bin names
+  const binIds = [...new Set(groups.map((g: { bin_id: string | null }) => g.bin_id).filter(Boolean))] as string[]
+  const binMap = new Map<string, string>()
+  if (binIds.length > 0) {
+    const { data: bins } = await adminClient
+      .from('bins')
+      .select('id, name')
+      .in('id', binIds)
+    for (const b of bins ?? []) binMap.set(b.id, b.name)
+  }
+
+  const enriched = groups.map((g: { bin_id: string | null; [key: string]: unknown }) => ({
+    ...g,
+    bin_name: g.bin_id ? (binMap.get(g.bin_id) ?? null) : null,
+  }))
+
+  return NextResponse.json(enriched)
 }

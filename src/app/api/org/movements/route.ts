@@ -39,33 +39,23 @@ export async function GET(request: Request) {
 
   const adminClient = createAdminClient()
 
-  // --- Resolve serial / batch → product ids via stock_groups ---
+  // --- Resolve serial / batch → product ids via stock_movements columns directly ---
   let resolvedProductIds: string[] = [...productIds]
 
-  // For serial/batch we also want to know which groups matched
-  // so we can return the serial/batch metadata alongside movements
-  type GroupInfo = { product_id: string; serial_number: string | null; batch_number: string | null; expiry_date: string | null }
-  let groupInfoByProductId = new Map<string, GroupInfo[]>()
-
   if (serialNum || batchNum) {
-    let groupQuery = adminClient
-      .from('stock_groups')
-      .select('id, product_id, serial_number, batch_number, expiry_date')
+    // Search stock_movements directly — serial_number/batch_number are now stored per-row
+    let mvQuery = adminClient
+      .from('stock_movements')
+      .select('product_id')
       .eq('org_id', orgId)
 
-    if (serialNum) groupQuery = groupQuery.ilike('serial_number', `%${serialNum}%`)
-    if (batchNum)  groupQuery = groupQuery.ilike('batch_number', `%${batchNum}%`)
+    if (serialNum) mvQuery = mvQuery.ilike('serial_number', `%${serialNum}%`)
+    if (batchNum)  mvQuery = mvQuery.ilike('batch_number',  `%${batchNum}%`)
 
-    const { data: groups } = await groupQuery.limit(200)
-    if (groups && groups.length > 0) {
-      for (const g of groups) {
-        resolvedProductIds.push(g.product_id)
-        const existing = groupInfoByProductId.get(g.product_id) ?? []
-        existing.push(g)
-        groupInfoByProductId.set(g.product_id, existing)
-      }
+    const { data: matched } = await mvQuery.limit(200)
+    if (matched && matched.length > 0) {
+      for (const m of matched) resolvedProductIds.push(m.product_id)
     }
-    // De-dupe
     resolvedProductIds = [...new Set(resolvedProductIds)]
   }
 
@@ -86,6 +76,10 @@ export async function GET(request: Request) {
   if (dateTo)        query = query.lte('created_at', dateTo + 'T23:59:59')
   if (movementType)  query = query.eq('movement_type', movementType)
   if (locationId)    query = query.eq('location_id', locationId)
+
+  // When searching by serial/batch, filter the movements to only those matching
+  if (serialNum)     query = query.ilike('serial_number', `%${serialNum}%`)
+  if (batchNum)      query = query.ilike('batch_number',  `%${batchNum}%`)
 
   const { data: movements, error } = await query
 
@@ -129,7 +123,6 @@ export async function GET(request: Request) {
   }
 
   // --- Fetch reference numbers (adj_number etc.) ---
-  // Collect reference_ids by type so we can look up human-readable numbers
   const referenceMap = new Map<string, string>() // reference_id → human number
   const adjIds = [...new Set(
     movements
@@ -145,7 +138,6 @@ export async function GET(request: Request) {
       if (a.adj_number) referenceMap.set(a.id, a.adj_number)
     }
   }
-  // Add more reference types here as needed (purchase_orders, sale_orders, etc.)
 
   // --- Enrich movements ---
   const enriched = movements.map((m: {
@@ -163,20 +155,18 @@ export async function GET(request: Request) {
     location_id: string | null
     org_id: string
     bin_id?: string | null
+    serial_number?: string | null
+    batch_number?: string | null
+    expiry_date?: string | null
   }) => {
     const prod = productMap.get(m.product_id)
-    // Find matching group info for this product (for serial/batch context)
-    const groups = groupInfoByProductId.get(m.product_id) ?? []
-    const firstGroup = groups[0]
     return {
       ...m,
       product_name:      prod?.name ?? null,
       product_sku:       prod?.sku  ?? null,
       location_name:     m.location_id ? (locationMap.get(m.location_id) ?? null) : null,
       bin_name:          m.bin_id ? (binMap.get(m.bin_id) ?? null) : null,
-      serial_number:     firstGroup?.serial_number ?? null,
-      batch_number:      firstGroup?.batch_number  ?? null,
-      expiry_date:       firstGroup?.expiry_date   ?? null,
+      // serial_number, batch_number, expiry_date come directly from the movement row
       reference_number:  m.reference_id ? (referenceMap.get(m.reference_id) ?? null) : null,
     }
   })

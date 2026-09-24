@@ -308,7 +308,7 @@ function BinsModal({ location, orgId, onClose, onUpdate }: {
               No bins yet. Add one above or import a CSV.
             </div>
           ) : (
-            <div style={{ background: 'var(--white)', border: '1.5px solid var(--gray-200)', borderRadius: 12, overflow: 'hidden' }}>
+            <div style={{ background: 'var(--white)', border: '1.5px solid var(--gray-200)', borderRadius: 12, overflow: 'hidden', maxHeight: 280, overflowY: 'auto' }}>
               <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                 <thead>
                   <tr style={{ background: 'var(--gray-50)' }}>

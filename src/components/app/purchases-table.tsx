@@ -391,7 +391,7 @@ export default function PurchasesTable({
                         case 'reference':
                           return <td key={c.key} className="td-muted">{o.reference ?? '—'}</td>
                         default:
-                          return <td key={c.key}>—</td>
+                          return <td key={(c as any).key}>—</td>
                       }
                     })}
                     <td>

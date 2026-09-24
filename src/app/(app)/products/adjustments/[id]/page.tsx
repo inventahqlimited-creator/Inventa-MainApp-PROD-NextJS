@@ -48,7 +48,7 @@ export default async function ViewAdjustmentPage({ params }: { params: Promise<{
     bin_name: l.bin_id ? (binsMap[l.bin_id as string] ?? null) : null,
   }))
 
-  const showBins = linesWithBinName.some(l => l.bin_id)
+  const showBins = linesWithBinName.some((l: Record<string, unknown>) => l.bin_id)
 
   return <ViewAdjustment adjustment={adjustment} lines={linesWithBinName} orgId={m.org_id} trackingFlags={trackingFlags} showBins={showBins} />
 }

@@ -771,6 +771,8 @@ export default function ProductsTable({
     } catch {}
     return DEFAULT_VISIBLE
   })
+  const [locationFilter, setLocationFilter] = useState('')
+  const [locationOpen, setLocationOpen] = useState(false)
   const [typeOpen, setTypeOpen] = useState(false)
   const [colOpen, setColOpen] = useState(false)
   const [actionsOpen, setActionsOpen] = useState(false)
@@ -794,7 +796,7 @@ export default function ProductsTable({
   const [pricing, setPricing] = useState<PricingRow[]>([])
   const [productOrders, setProductOrders] = useState<Record<string, unknown>[]>([])
   const [ordersLoading, setOrdersLoading] = useState(false)
-  const [stockGroups, setStockGroups] = useState<{ id: string; location_id: string; batch_number: string | null; serial_number: string | null; expiry_date: string | null; bin_id: string | null; quantity: number }[]>([])
+  const [stockGroups, setStockGroups] = useState<{ id: string; location_id: string; batch_number: string | null; serial_number: string | null; expiry_date: string | null; bin_id: string | null; bin_name: string | null; quantity: number }[]>([])
   const [stockGroupsLoading, setStockGroupsLoading] = useState(false)
 
   // Initialize pricing rows from priceLevels prop
@@ -964,7 +966,8 @@ export default function ProductsTable({
 
   const stockMap = useMemo(() => {
     const map: Record<string, { onHand: number; onOrder: number; committed: number; available: number }> = {}
-    for (const s of stockLevels) {
+    const levels = locationFilter ? stockLevels.filter(s => s.location_id === locationFilter) : stockLevels
+    for (const s of levels) {
       if (!map[s.product_id]) map[s.product_id] = { onHand: 0, onOrder: 0, committed: 0, available: 0 }
       map[s.product_id].onHand += s.quantity
       map[s.product_id].onOrder += s.on_order
@@ -974,7 +977,7 @@ export default function ProductsTable({
       map[id].available = map[id].onHand - map[id].committed
     }
     return map
-  }, [stockLevels])
+  }, [stockLevels, locationFilter])
 
   const filtered = useMemo(() => {
     return products.filter(p => {
@@ -1038,7 +1041,7 @@ export default function ProductsTable({
   const supplierName = (id: string) => suppliers?.find(s => s.id === id)?.name ?? 'Select supplier…'
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }} onClick={() => { setTypeOpen(false); setColOpen(false); setActionsOpen(false); setTaxOpen(false); setSupplierOpen(false) }}>
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }} onClick={() => { setTypeOpen(false); setLocationOpen(false); setColOpen(false); setActionsOpen(false); setTaxOpen(false); setSupplierOpen(false) }}>
 
       <div className="page-header-card">
         <div className="page-header-top">
@@ -1120,6 +1123,23 @@ export default function ProductsTable({
             </div>
           )}
         </div>
+        {locations && locations.length > 0 && (
+          <div style={{ position: 'relative' }}>
+            <button className={`filter-dd-btn${locationFilter ? ' active-filter' : ''}`} onClick={() => setLocationOpen(o => !o)}>
+              <span>{locationFilter ? (locations.find(l => l.id === locationFilter)?.name ?? 'Location') : 'All Locations'}</span>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+            </button>
+            {locationOpen && (
+              <div className="inv-dropdown" style={{ display: 'block', minWidth: 180 }}>
+                <div className="col-dropdown-title">Location</div>
+                <div className={`fp-item${!locationFilter ? ' active' : ''}`} onClick={() => { setLocationFilter(''); setPage(1); setLocationOpen(false) }}>All Locations</div>
+                {locations.map(l => (
+                  <div key={l.id} className={`fp-item${locationFilter === l.id ? ' active' : ''}`} onClick={() => { setLocationFilter(l.id); setPage(1); setLocationOpen(false) }}>{l.name}</div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
         <button className={`filter-btn${advOpen ? ' active' : ''}`} onClick={() => setAdvOpen(o => !o)}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/></svg>
           Advanced{(advTracking.size > 0 || advUom || advSupplier || advStock) ? ' •' : ''}
@@ -1379,9 +1399,25 @@ export default function ProductsTable({
                       <Field label="Product Type">
                         {isView ? typeBadge(curProduct?.type ?? 'Stock') : (
                           <div className="modal-seg">
-                            {['Stock', 'NonStock', 'Service'].map(t => (
-                              <button key={t} type="button" className={`seg-btn${form.type === t ? ' active' : ''}`} onClick={() => setF('type', t)}>{t === 'NonStock' ? 'Non Stock' : t}</button>
-                            ))}
+                            {['Stock', 'NonStock', 'Service'].map(t => {
+                              const isStockLocked = modal === 'edit' && activeProduct?.type === 'Stock'
+                              // When product was created as Stock, can't switch to NonStock/Service; also can't switch other types back to Stock
+                              const disabled = isStockLocked
+                                ? t !== 'Stock' // locked on Stock — other buttons disabled
+                                : t === 'Stock' && activeProduct?.type !== 'Stock' // non-Stock product — Stock button disabled
+                              return (
+                                <button
+                                  key={t}
+                                  type="button"
+                                  className={`seg-btn${form.type === t ? ' active' : ''}${disabled ? ' disabled' : ''}`}
+                                  onClick={() => !disabled && setF('type', t)}
+                                  style={disabled ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
+                                  title={isStockLocked && t !== 'Stock' ? 'Stock products cannot be changed to a different type' : t === 'Stock' && activeProduct?.type !== 'Stock' ? 'Cannot change to Stock type once created' : undefined}
+                                >
+                                  {t === 'NonStock' ? 'Non Stock' : t}
+                                </button>
+                              )
+                            })}
                           </div>
                         )}
                       </Field>
@@ -1673,7 +1709,7 @@ export default function ProductsTable({
                                       <tr key={g.id} style={{ borderBottom: '1px solid var(--gray-100)' }}>
                                         <td className="li-td" style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{loc?.name ?? '—'}</td>
                                         <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: 'var(--slate)' }}>{g.quantity}</td>
-                                        {showBin    && <td className="li-td" style={{ color: g.bin_id        ? 'var(--slate)' : 'var(--gray-300)', fontSize: 12 }}>{g.bin_id        ?? '—'}</td>}
+                                        {showBin    && <td className="li-td" style={{ color: g.bin_name      ? 'var(--slate)' : 'var(--gray-300)', fontSize: 12 }}>{g.bin_name      ?? '—'}</td>}
                                         {showBatch  && <td className="li-td" style={{ color: g.batch_number  ? 'var(--slate)' : 'var(--gray-300)', fontSize: 12 }}>{g.batch_number  ?? '—'}</td>}
                                         {showSerial && <td className="li-td" style={{ color: g.serial_number ? 'var(--slate)' : 'var(--gray-300)', fontSize: 12 }}>{g.serial_number ?? '—'}</td>}
                                         {showExpiry && <td className="li-td" style={{ color: g.expiry_date   ? 'var(--slate)' : 'var(--gray-300)', fontSize: 12 }}>{expiryDisplay}</td>}

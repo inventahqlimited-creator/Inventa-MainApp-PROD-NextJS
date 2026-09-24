@@ -20,7 +20,7 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 
   const body = await req.json()
   // Allow any subset of fields
-  const allowed = ['name', 'type', 'address', 'phone', 'email', 'active']
+  const allowed = ['name', 'type', 'address', 'phone', 'email', 'active', 'bins']
   const updates: Record<string, unknown> = {}
   for (const key of allowed) {
     if (key in body) updates[key] = body[key]

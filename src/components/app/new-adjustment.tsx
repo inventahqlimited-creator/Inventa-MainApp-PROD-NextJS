@@ -4,7 +4,8 @@ import { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 
-type Location = { id: string; name: string; bins: string[] | null }
+type Bin = { id: string; name: string }
+type Location = { id: string; name: string; bins: Bin[] | null }
 type Product = {
   id: string; name: string; sku: string | null; sell_uom: string | null
   track_stock: boolean | null; type: string
@@ -258,7 +259,7 @@ export default function NewAdjustment({
   }, [locations, stockLevels])
 
   // Bins available for the selected location
-  const locationBins: string[] = selectedLocation?.bins?.filter(Boolean) ?? []
+  const locationBins: Bin[] = selectedLocation?.bins?.filter(Boolean) ?? []
   const showBins = locationBins.length > 0
 
   // Recompute whether tracking columns should show based on lines currently added
@@ -621,7 +622,7 @@ export default function NewAdjustment({
                             style={{ border: '1.5px solid var(--gray-200)', borderRadius: 7, padding: '4px 8px', fontSize: 12, fontFamily: 'var(--font-ui)', color: l.bin_id ? 'var(--gray-900)' : 'var(--gray-400)', background: 'var(--gray-50)', outline: 'none', cursor: 'pointer', width: '100%' }}
                           >
                             <option value="">— No bin —</option>
-                            {locationBins.map(b => <option key={b} value={b}>{b}</option>)}
+                            {locationBins.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
                           </select>
                         </td>
                       )}

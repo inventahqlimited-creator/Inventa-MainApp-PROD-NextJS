@@ -165,6 +165,7 @@ export async function GET(request: Request) {
       batch_number:      firstGroup?.batch_number  ?? null,
       expiry_date:       firstGroup?.expiry_date   ?? null,
       reference_number:  m.reference_id ? (referenceMap.get(m.reference_id) ?? null) : null,
+      bin_id:            (m as { bin_id?: string | null }).bin_id ?? null,
     }
   })
 

@@ -23,7 +23,7 @@ export async function GET(_request: Request, { params }: { params: Promise<{ id:
 
   let query = adminClient
     .from('stock_groups')
-    .select('id, location_id, batch_number, serial_number, expiry_date, quantity')
+    .select('id, location_id, batch_number, serial_number, expiry_date, bin_id, quantity')
     .eq('org_id', orgId)
     .eq('product_id', productId)
     .gt('quantity', 0)

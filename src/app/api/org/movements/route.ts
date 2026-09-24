@@ -21,31 +21,71 @@ export async function GET(request: Request) {
   if (!orgId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
   const { searchParams } = new URL(request.url)
-  const productId = searchParams.get('product_id')
-  const dateFrom = searchParams.get('date_from')
-  const dateTo = searchParams.get('date_to')
-  const movementType = searchParams.get('type')
-  const locationId = searchParams.get('location_id')
 
-  if (!productId) {
-    return NextResponse.json({ error: 'product_id is required' }, { status: 400 })
+  // Search modes
+  const productIds  = searchParams.getAll('product_id')   // one or more
+  const serialNum   = searchParams.get('serial_number')
+  const batchNum    = searchParams.get('batch_number')
+
+  // Filters
+  const dateFrom      = searchParams.get('date_from')
+  const dateTo        = searchParams.get('date_to')
+  const movementType  = searchParams.get('type')
+  const locationId    = searchParams.get('location_id')
+
+  if (productIds.length === 0 && !serialNum && !batchNum) {
+    return NextResponse.json({ error: 'Provide at least one product_id, serial_number, or batch_number' }, { status: 400 })
   }
 
   const adminClient = createAdminClient()
 
-  // Fetch movements
+  // --- Resolve serial / batch → product ids via stock_groups ---
+  let resolvedProductIds: string[] = [...productIds]
+
+  // For serial/batch we also want to know which groups matched
+  // so we can return the serial/batch metadata alongside movements
+  type GroupInfo = { product_id: string; serial_number: string | null; batch_number: string | null; expiry_date: string | null }
+  let groupInfoByProductId = new Map<string, GroupInfo[]>()
+
+  if (serialNum || batchNum) {
+    let groupQuery = adminClient
+      .from('stock_groups')
+      .select('id, product_id, serial_number, batch_number, expiry_date')
+      .eq('org_id', orgId)
+
+    if (serialNum) groupQuery = groupQuery.ilike('serial_number', `%${serialNum}%`)
+    if (batchNum)  groupQuery = groupQuery.ilike('batch_number', `%${batchNum}%`)
+
+    const { data: groups } = await groupQuery.limit(200)
+    if (groups && groups.length > 0) {
+      for (const g of groups) {
+        resolvedProductIds.push(g.product_id)
+        const existing = groupInfoByProductId.get(g.product_id) ?? []
+        existing.push(g)
+        groupInfoByProductId.set(g.product_id, existing)
+      }
+    }
+    // De-dupe
+    resolvedProductIds = [...new Set(resolvedProductIds)]
+  }
+
+  if (resolvedProductIds.length === 0) {
+    return NextResponse.json({ movements: [], products: [] })
+  }
+
+  // --- Fetch movements ---
   let query = adminClient
     .from('stock_movements')
     .select('*')
     .eq('org_id', orgId)
-    .eq('product_id', productId)
+    .in('product_id', resolvedProductIds)
     .order('created_at', { ascending: false })
-    .limit(500)
+    .limit(1000)
 
-  if (dateFrom) query = query.gte('created_at', dateFrom)
-  if (dateTo) query = query.lte('created_at', dateTo + 'T23:59:59')
-  if (movementType) query = query.eq('movement_type', movementType)
-  if (locationId) query = query.eq('location_id', locationId)
+  if (dateFrom)      query = query.gte('created_at', dateFrom)
+  if (dateTo)        query = query.lte('created_at', dateTo + 'T23:59:59')
+  if (movementType)  query = query.eq('movement_type', movementType)
+  if (locationId)    query = query.eq('location_id', locationId)
 
   const { data: movements, error } = await query
 
@@ -54,32 +94,34 @@ export async function GET(request: Request) {
   }
 
   if (!movements || movements.length === 0) {
-    return NextResponse.json({ movements: [] })
+    return NextResponse.json({ movements: [], products: [] })
   }
 
-  // Fetch product info
-  const { data: product } = await adminClient
+  // --- Fetch product info ---
+  const { data: products } = await adminClient
     .from('products')
     .select('id, name, sku')
-    .eq('id', productId)
-    .single()
+    .in('id', resolvedProductIds)
 
-  // Fetch all relevant locations
+  const productMap = new Map<string, { name: string; sku: string | null }>()
+  for (const p of products ?? []) productMap.set(p.id, { name: p.name, sku: p.sku })
+
+  // --- Fetch location info ---
   const locationIds = [...new Set(movements.map((m: { location_id: string | null }) => m.location_id).filter(Boolean))] as string[]
-  let locationMap = new Map<string, string>()
+  const locationMap = new Map<string, string>()
   if (locationIds.length > 0) {
-    const { data: locations } = await adminClient
+    const { data: locs } = await adminClient
       .from('locations')
       .select('id, name')
       .in('id', locationIds)
-    for (const l of locations ?? []) {
-      locationMap.set(l.id, l.name)
-    }
+    for (const l of locs ?? []) locationMap.set(l.id, l.name)
   }
 
+  // --- Enrich movements ---
   const enriched = movements.map((m: {
     id: string
     created_at: string
+    product_id: string
     movement_type: string
     qty: number
     unit_cost: number | null
@@ -90,13 +132,26 @@ export async function GET(request: Request) {
     created_by: string | null
     location_id: string | null
     org_id: string
-    product_id: string
-  }) => ({
-    ...m,
-    product_name: product?.name ?? null,
-    product_sku: product?.sku ?? null,
-    location_name: m.location_id ? (locationMap.get(m.location_id) ?? null) : null,
-  }))
+  }) => {
+    const prod = productMap.get(m.product_id)
+    // Find matching group info for this product (for serial/batch context)
+    const groups = groupInfoByProductId.get(m.product_id) ?? []
+    const firstGroup = groups[0]
+    return {
+      ...m,
+      product_name:   prod?.name ?? null,
+      product_sku:    prod?.sku  ?? null,
+      location_name:  m.location_id ? (locationMap.get(m.location_id) ?? null) : null,
+      serial_number:  firstGroup?.serial_number ?? null,
+      batch_number:   firstGroup?.batch_number  ?? null,
+      expiry_date:    firstGroup?.expiry_date   ?? null,
+    }
+  })
 
-  return NextResponse.json({ movements: enriched })
+  // Return matched product list too (for display in header)
+  const matchedProducts = resolvedProductIds
+    .map(id => ({ id, ...(productMap.get(id) ?? { name: id, sku: null }) }))
+    .filter(p => p.name !== p.id)
+
+  return NextResponse.json({ movements: enriched, products: matchedProducts })
 }

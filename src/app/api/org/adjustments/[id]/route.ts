@@ -24,7 +24,7 @@ async function applyStockChanges(adminClient: ReturnType<typeof createAdminClien
 
   const { data: lines, error: linesError } = await adminClient
     .from('adjustment_order_lines')
-    .select('product_id, quantity_before, quantity_after, batch_number, serial_number, expiry_date')
+    .select('product_id, quantity_before, quantity_after, batch_number, serial_number, expiry_date, bin_id')
     .eq('adj_id', adjId)
 
   if (linesError) return { error: linesError.message }
@@ -36,6 +36,7 @@ async function applyStockChanges(adminClient: ReturnType<typeof createAdminClien
     batch_number: string | null
     serial_number: string | null
     expiry_date: string | null
+    bin_id: string | null
   }[]) {
     if (!line.product_id) continue
     const delta = line.quantity_after - line.quantity_before
@@ -79,12 +80,13 @@ async function applyStockChanges(adminClient: ReturnType<typeof createAdminClien
           qty:            delta,
           reference_id:   adjId,
           reference_type: 'adjustment_order',
+          bin_id:         line.bin_id ?? null,
         })
       if (mvtError) return { error: mvtError.message }
     }
 
-    // ── Upsert stock_groups (per lot: batch + serial + expiry) ──
-    // Find existing group matching this exact lot
+    // ── Upsert stock_groups (per lot: batch + serial + expiry + bin) ──
+    // Find existing group matching this exact lot + bin combination
     const groupQuery = adminClient
       .from('stock_groups')
       .select('id, quantity')
@@ -92,16 +94,18 @@ async function applyStockChanges(adminClient: ReturnType<typeof createAdminClien
       .eq('product_id', line.product_id)
       .eq('location_id', locationId)
 
-    // Match nulls explicitly
+    // Match nulls explicitly for each dimension
     const batchMatch  = line.batch_number  ?? null
     const serialMatch = line.serial_number ?? null
     const expiryMatch = line.expiry_date   ?? null
+    const binMatch    = line.bin_id        ?? null
 
-    const q = batchMatch  ? groupQuery.eq('batch_number',  batchMatch)  : groupQuery.is('batch_number',  null)
-    const q2 = serialMatch ? q.eq('serial_number', serialMatch) : q.is('serial_number', null)
-    const q3 = expiryMatch ? q2.eq('expiry_date',  expiryMatch) : q2.is('expiry_date',  null)
+    const q  = batchMatch  ? groupQuery.eq('batch_number',  batchMatch)  : groupQuery.is('batch_number',  null)
+    const q2 = serialMatch ? q.eq('serial_number', serialMatch)          : q.is('serial_number', null)
+    const q3 = expiryMatch ? q2.eq('expiry_date',  expiryMatch)          : q2.is('expiry_date',  null)
+    const q4 = binMatch    ? q3.eq('bin_id', binMatch)                   : q3.is('bin_id', null)
 
-    const { data: existingGroup } = await q3.maybeSingle()
+    const { data: existingGroup } = await q4.maybeSingle()
 
     if (existingGroup) {
       const g = existingGroup as { id: string; quantity: number }
@@ -117,12 +121,13 @@ async function applyStockChanges(adminClient: ReturnType<typeof createAdminClien
       }
     } else if (line.quantity_after > 0) {
       await adminClient.from('stock_groups').insert({
-        org_id: orgId,
-        product_id: line.product_id,
-        location_id: locationId,
+        org_id:        orgId,
+        product_id:    line.product_id,
+        location_id:   locationId,
         batch_number:  line.batch_number  || null,
         serial_number: line.serial_number || null,
         expiry_date:   line.expiry_date   || null,
+        bin_id:        line.bin_id        || null,
         quantity:      line.quantity_after,
       })
     }

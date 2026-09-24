@@ -794,7 +794,7 @@ export default function ProductsTable({
   const [pricing, setPricing] = useState<PricingRow[]>([])
   const [productOrders, setProductOrders] = useState<Record<string, unknown>[]>([])
   const [ordersLoading, setOrdersLoading] = useState(false)
-  const [stockGroups, setStockGroups] = useState<{ id: string; location_id: string; batch_number: string | null; serial_number: string | null; expiry_date: string | null; quantity: number }[]>([])
+  const [stockGroups, setStockGroups] = useState<{ id: string; location_id: string; batch_number: string | null; serial_number: string | null; expiry_date: string | null; bin_id: string | null; quantity: number }[]>([])
   const [stockGroupsLoading, setStockGroupsLoading] = useState(false)
 
   // Initialize pricing rows from priceLevels prop
@@ -1602,6 +1602,7 @@ export default function ProductsTable({
                 // Groups for this product
                 const groups = stockGroups.filter(g => g.quantity > 0)
                 const hasGroups = groups.length > 0
+                const showBin = groups.some(g => g.bin_id)
 
                 return (
                 <div>
@@ -1644,7 +1645,7 @@ export default function ProductsTable({
                       </div>
 
                       {/* ── Stock group breakdown ── */}
-                      {hasTracking && (stockGroupsLoading || hasGroups) && (
+                      {(hasTracking || showBin) && (stockGroupsLoading || hasGroups) && (
                         <div>
                           <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase' as const, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)', marginBottom: 8 }}>Stock Groups</div>
                           {stockGroupsLoading ? (
@@ -1656,6 +1657,7 @@ export default function ProductsTable({
                                   <tr style={{ background: 'var(--gray-50)' }}>
                                     <th className="li-th">Location</th>
                                     <th className="li-th" style={{ textAlign: 'right' }}>Qty</th>
+                                    {showBin    && <th className="li-th">Bin</th>}
                                     {showBatch  && <th className="li-th">Batch / Lot</th>}
                                     {showSerial && <th className="li-th">Serial #</th>}
                                     {showExpiry && <th className="li-th">Expiry Date</th>}
@@ -1671,6 +1673,7 @@ export default function ProductsTable({
                                       <tr key={g.id} style={{ borderBottom: '1px solid var(--gray-100)' }}>
                                         <td className="li-td" style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{loc?.name ?? '—'}</td>
                                         <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: 'var(--slate)' }}>{g.quantity}</td>
+                                        {showBin    && <td className="li-td" style={{ color: g.bin_id        ? 'var(--slate)' : 'var(--gray-300)', fontSize: 12 }}>{g.bin_id        ?? '—'}</td>}
                                         {showBatch  && <td className="li-td" style={{ color: g.batch_number  ? 'var(--slate)' : 'var(--gray-300)', fontSize: 12 }}>{g.batch_number  ?? '—'}</td>}
                                         {showSerial && <td className="li-td" style={{ color: g.serial_number ? 'var(--slate)' : 'var(--gray-300)', fontSize: 12 }}>{g.serial_number ?? '—'}</td>}
                                         {showExpiry && <td className="li-td" style={{ color: g.expiry_date   ? 'var(--slate)' : 'var(--gray-300)', fontSize: 12 }}>{expiryDisplay}</td>}

@@ -2,7 +2,7 @@
 // src/components/app/movements-table.tsx
 
 import React, { useState, useRef, useCallback, useEffect } from 'react'
-import { useRouter } from 'next/navigation'
+import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 
 type Product = {
   id: string
@@ -66,6 +66,20 @@ const TYPE_NAV: Record<string, string> = {
   return:       '/sales',
 }
 
+// Short human-readable reference label
+function fmtRef(referenceId: string | null, referenceType: string | null): string {
+  if (!referenceId) return '—'
+  // Use last 6 chars of UUID for a short code
+  const short = referenceId.replace(/-/g, '').slice(-6).toUpperCase()
+  const prefix =
+    referenceType === 'purchase_order'   ? 'PO' :
+    referenceType === 'sale_order'       ? 'SO' :
+    referenceType === 'transfer_order'   ? 'TR' :
+    referenceType === 'adjustment_order' ? 'ADJ' :
+    referenceType === 'return'           ? 'RET' : '#'
+  return `${prefix}-${short}`
+}
+
 function typeColorToStyle(s: string): React.CSSProperties {
   const obj: Record<string, string> = {}
   s.split(';').filter(Boolean).forEach(part => {
@@ -91,49 +105,161 @@ export default function MovementsTable({
   locations: Location[]
 }) {
   const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
 
-  // ─── Search mode ────────────────────────────────────────────
-  const [searchMode, setSearchMode] = useState<SearchMode>('product')
+  // ── Read initial state from URL ─────────────────────────────
+  const initMode      = (searchParams.get('mode') as SearchMode) || 'product'
+  const initProductIds = searchParams.getAll('pid')
+  const initSerial    = searchParams.get('serial') || ''
+  const initBatch     = searchParams.get('batch')  || ''
+  const initDateFrom  = searchParams.get('from')   || ''
+  const initDateTo    = searchParams.get('to')     || ''
+  const initType      = searchParams.get('type')   || ''
+  const initLoc       = searchParams.get('loc')    || ''
 
-  // ─── Product tag search ──────────────────────────────────────
-  const [productInput, setProductInput] = useState('')
-  const [productSugg, setProductSugg] = useState<Product[]>([])
+  const initSelectedProducts = initProductIds
+    .map(id => products.find(p => p.id === id))
+    .filter(Boolean) as Product[]
+
+  // ── State ────────────────────────────────────────────────────
+  const [searchMode, setSearchMode] = useState<SearchMode>(initMode)
+
+  const [productInput, setProductInput]   = useState('')
+  const [productSugg, setProductSugg]     = useState<Product[]>([])
   const [showProductSugg, setShowProductSugg] = useState(false)
-  const [selectedProducts, setSelectedProducts] = useState<Product[]>([])
+  const [selectedProducts, setSelectedProducts] = useState<Product[]>(initSelectedProducts)
   const productInputRef = useRef<HTMLInputElement>(null)
 
-  // ─── Serial / batch search ───────────────────────────────────
-  const [serialInput, setSerialInput] = useState('')
-  const [batchInput, setBatchInput] = useState('')
+  const [serialInput, setSerialInput] = useState(initSerial)
+  const [batchInput, setBatchInput]   = useState(initBatch)
 
-  // ─── Filters ─────────────────────────────────────────────────
-  const [dateFrom, setDateFrom] = useState('')
-  const [dateTo, setDateTo] = useState('')
-  const [typeFilter, setTypeFilter] = useState('')
-  const [locFilter, setLocFilter] = useState('')
-  const [typeOpen, setTypeOpen] = useState(false)
-  const [locOpen, setLocOpen] = useState(false)
+  const [dateFrom, setDateFrom]   = useState(initDateFrom)
+  const [dateTo, setDateTo]       = useState(initDateTo)
+  const [typeFilter, setTypeFilter] = useState(initType)
+  const [locFilter, setLocFilter]   = useState(initLoc)
+
+  const [typeOpen, setTypeOpen]         = useState(false)
+  const [locOpen, setLocOpen]           = useState(false)
   const [dateFromOpen, setDateFromOpen] = useState(false)
-  const [dateToOpen, setDateToOpen] = useState(false)
+  const [dateToOpen, setDateToOpen]     = useState(false)
 
-  // ─── Results ─────────────────────────────────────────────────
-  const [movements, setMovements] = useState<Movement[]>([])
+  const [movements, setMovements]           = useState<Movement[]>([])
   const [matchedProducts, setMatchedProducts] = useState<Product[]>([])
-  const [loading, setLoading] = useState(false)
-  const [loaded, setLoaded] = useState(false)
+  const [loading, setLoading]   = useState(false)
+  const [loaded, setLoaded]     = useState(false)
   const [searchedLabel, setSearchedLabel] = useState('')
 
-  // ─── Pagination ───────────────────────────────────────────────
-  const [page, setPage] = useState(1)
+  const [page, setPage]     = useState(1)
   const [perPage, setPerPage] = useState(50)
 
-  // Close dropdowns on outside click
-  function closeAll() {
-    setTypeOpen(false); setLocOpen(false); setDateFromOpen(false); setDateToOpen(false)
-    setShowProductSugg(false)
-  }
+  // ── Sync state → URL (replace, not push, so back goes to previous page) ──
+  const pushUrl = useCallback((
+    mode: SearchMode,
+    pids: string[],
+    serial: string,
+    batch: string,
+    from: string,
+    to: string,
+    type: string,
+    loc: string,
+  ) => {
+    const p = new URLSearchParams()
+    p.set('mode', mode)
+    pids.forEach(id => p.append('pid', id))
+    if (serial) p.set('serial', serial)
+    if (batch)  p.set('batch', batch)
+    if (from)   p.set('from', from)
+    if (to)     p.set('to', to)
+    if (type)   p.set('type', type)
+    if (loc)    p.set('loc', loc)
+    router.replace(`${pathname}?${p.toString()}`)
+  }, [router, pathname])
 
-  // ─── Product tag logic ───────────────────────────────────────
+  // ── Core search ──────────────────────────────────────────────
+  const doSearch = useCallback(async (opts?: {
+    mode?: SearchMode
+    products?: Product[]
+    serial?: string
+    batch?: string
+    from?: string
+    to?: string
+    type?: string
+    loc?: string
+  }) => {
+    const mode    = opts?.mode     ?? searchMode
+    const prods   = opts?.products ?? selectedProducts
+    const serial  = opts?.serial   ?? serialInput
+    const batch   = opts?.batch    ?? batchInput
+    const from    = opts?.from     ?? dateFrom
+    const to      = opts?.to       ?? dateTo
+    const type    = opts?.type     ?? typeFilter
+    const loc     = opts?.loc      ?? locFilter
+
+    const params = new URLSearchParams()
+
+    if (mode === 'product') {
+      if (prods.length === 0) return
+      prods.forEach(p => params.append('product_id', p.id))
+      setSearchedLabel(prods.length === 1 ? prods[0].name : `${prods.length} products`)
+    } else if (mode === 'serial') {
+      const s = serial.trim()
+      if (!s) return
+      params.set('serial_number', s)
+      setSearchedLabel(`Serial: ${s}`)
+    } else {
+      const b = batch.trim()
+      if (!b) return
+      params.set('batch_number', b)
+      setSearchedLabel(`Batch: ${b}`)
+    }
+
+    if (from) params.set('date_from', from)
+    if (to)   params.set('date_to', to)
+    if (type) params.set('type', type)
+    if (loc)  params.set('location_id', loc)
+
+    // Sync to URL
+    pushUrl(mode, prods.map(p => p.id), serial, batch, from, to, type, loc)
+
+    setLoading(true)
+    setLoaded(false)
+    setMovements([])
+    setMatchedProducts([])
+    setPage(1)
+
+    const res = await fetch(`/api/org/movements?${params}`)
+    if (res.ok) {
+      const data = await res.json()
+      setMovements(data.movements ?? [])
+      setMatchedProducts(data.products ?? [])
+    }
+    setLoading(false)
+    setLoaded(true)
+  }, [searchMode, selectedProducts, serialInput, batchInput, dateFrom, dateTo, typeFilter, locFilter, pushUrl])
+
+  // ── Auto-run search on mount if URL has params ───────────────
+  useEffect(() => {
+    const hasSearch =
+      (initMode === 'product' && initSelectedProducts.length > 0) ||
+      (initMode === 'serial'  && initSerial) ||
+      (initMode === 'batch'   && initBatch)
+    if (hasSearch) {
+      doSearch({
+        mode:     initMode,
+        products: initSelectedProducts,
+        serial:   initSerial,
+        batch:    initBatch,
+        from:     initDateFrom,
+        to:       initDateTo,
+        type:     initType,
+        loc:      initLoc,
+      })
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // ── Product tag logic ────────────────────────────────────────
   function handleProductInput(val: string) {
     setProductInput(val)
     if (!val.trim()) { setProductSugg([]); setShowProductSugg(false); return }
@@ -150,81 +276,48 @@ export default function MovementsTable({
   }
 
   function addProduct(p: Product) {
-    setSelectedProducts(prev => prev.find(x => x.id === p.id) ? prev : [...prev, p])
+    const next = selectedProducts.find(x => x.id === p.id)
+      ? selectedProducts
+      : [...selectedProducts, p]
+    setSelectedProducts(next)
     setProductInput('')
     setProductSugg([])
     setShowProductSugg(false)
     productInputRef.current?.focus()
+    doSearch({ products: next })
   }
 
   function removeProduct(id: string) {
-    setSelectedProducts(prev => {
-      const next = prev.filter(p => p.id !== id)
-      if (next.length === 0) { setMovements([]); setLoaded(false); setSearchedLabel('') }
-      return next
-    })
+    const next = selectedProducts.filter(p => p.id !== id)
+    setSelectedProducts(next)
+    if (next.length === 0) {
+      setMovements([])
+      setLoaded(false)
+      setSearchedLabel('')
+      pushUrl('product', [], '', '', dateFrom, dateTo, typeFilter, locFilter)
+    } else {
+      doSearch({ products: next })
+    }
   }
 
-  // Auto-search when products list changes (after add/remove)
-  useEffect(() => {
-    if (searchMode === 'product' && selectedProducts.length > 0) {
-      doSearch()
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedProducts, searchMode])
+  function closeAll() {
+    setTypeOpen(false); setLocOpen(false)
+    setDateFromOpen(false); setDateToOpen(false)
+    setShowProductSugg(false)
+  }
 
-  // ─── Core search ─────────────────────────────────────────────
-  const doSearch = useCallback(async (overrides?: { serial?: string; batch?: string }) => {
-    const params = new URLSearchParams()
-
-    if (searchMode === 'product') {
-      if (selectedProducts.length === 0) return
-      selectedProducts.forEach(p => params.append('product_id', p.id))
-      setSearchedLabel(selectedProducts.length === 1 ? selectedProducts[0].name : `${selectedProducts.length} products`)
-    } else if (searchMode === 'serial') {
-      const s = overrides?.serial ?? serialInput.trim()
-      if (!s) return
-      params.set('serial_number', s)
-      setSearchedLabel(`Serial: ${s}`)
-    } else {
-      const b = overrides?.batch ?? batchInput.trim()
-      if (!b) return
-      params.set('batch_number', b)
-      setSearchedLabel(`Batch: ${b}`)
-    }
-
-    if (dateFrom)     params.set('date_from', dateFrom)
-    if (dateTo)       params.set('date_to', dateTo)
-    if (typeFilter)   params.set('type', typeFilter)
-    if (locFilter)    params.set('location_id', locFilter)
-
-    setLoading(true)
-    setLoaded(false)
-    setMovements([])
-    setMatchedProducts([])
-    setPage(1)
-
-    const res = await fetch(`/api/org/movements?${params}`)
-    if (res.ok) {
-      const data = await res.json()
-      setMovements(data.movements ?? [])
-      setMatchedProducts(data.products ?? [])
-    }
-    setLoading(false)
-    setLoaded(true)
-  }, [searchMode, selectedProducts, serialInput, batchInput, dateFrom, dateTo, typeFilter, locFilter])
-
-  function applyFilters() {
+  function applyFilters(overrides?: { from?: string; to?: string; type?: string; loc?: string }) {
     closeAll()
-    if (loaded || loading) doSearch()
+    doSearch(overrides)
   }
 
   function clearFilters() {
     setDateFrom(''); setDateTo(''); setTypeFilter(''); setLocFilter('')
-    setTypeOpen(false); setLocOpen(false)
+    doSearch({ from: '', to: '', type: '', loc: '' })
   }
 
-  function resetAll() {
+  function switchMode(mode: SearchMode) {
+    setSearchMode(mode)
     setSelectedProducts([])
     setSerialInput('')
     setBatchInput('')
@@ -232,7 +325,8 @@ export default function MovementsTable({
     setMatchedProducts([])
     setLoaded(false)
     setSearchedLabel('')
-    clearFilters()
+    setDateFrom(''); setDateTo(''); setTypeFilter(''); setLocFilter('')
+    pushUrl(mode, [], '', '', '', '', '', '')
   }
 
   function exportCsv() {
@@ -245,9 +339,9 @@ export default function MovementsTable({
     const rows = movements.map(m => [
       fmtDate(m.created_at),
       TYPE_LABELS[m.movement_type] ?? m.movement_type,
-      m.reference_id ?? '—',
+      fmtRef(m.reference_id, m.reference_type),
       m.product_name ?? '',
-      m.product_sku ?? '',
+      m.product_sku  ?? '',
       m.location_name ?? '—',
       ...(showSerial ? [m.serial_number ?? '—'] : []),
       ...(showBatch  ? [m.batch_number  ?? '—'] : []),
@@ -265,9 +359,9 @@ export default function MovementsTable({
   const totalPages = Math.max(1, Math.ceil(movements.length / perPage))
   const paginated  = movements.slice((page - 1) * perPage, page * perPage)
 
-  const locName      = locations.find(l => l.id === locFilter)?.name ?? 'All Locations'
-  const typeName     = typeFilter ? (TYPE_LABELS[typeFilter] ?? typeFilter) : 'All Types'
-  const hasFilters   = !!(dateFrom || dateTo || typeFilter || locFilter)
+  const locName  = locations.find(l => l.id === locFilter)?.name ?? 'All Locations'
+  const typeName = typeFilter ? (TYPE_LABELS[typeFilter] ?? typeFilter) : 'All Types'
+  const hasFilters = !!(dateFrom || dateTo || typeFilter || locFilter)
 
   const dateFromLabel = dateFrom
     ? new Date(dateFrom).toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: 'numeric' })
@@ -276,12 +370,11 @@ export default function MovementsTable({
     ? new Date(dateTo).toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: 'numeric' })
     : 'To date'
 
-  // Column visibility
-  const showSerial = movements.some(m => m.serial_number)
-  const showBatch  = movements.some(m => m.batch_number)
+  const showSerial   = movements.some(m => m.serial_number)
+  const showBatch    = movements.some(m => m.batch_number)
   const multiProduct = loaded && matchedProducts.length > 1
+  const colSpan      = 8 + (showSerial ? 1 : 0) + (showBatch ? 1 : 0) + (multiProduct ? 0 : -1) // product col always shown
 
-  // Subtitle text
   const subtitle = loaded
     ? `${searchedLabel} · ${movements.length} movement${movements.length !== 1 ? 's' : ''}`
     : 'Search by product, serial number, or batch number'
@@ -322,7 +415,7 @@ export default function MovementsTable({
           {(['product', 'serial', 'batch'] as SearchMode[]).map(mode => (
             <button
               key={mode}
-              onClick={() => { setSearchMode(mode); resetAll() }}
+              onClick={() => switchMode(mode)}
               style={{
                 height: 30, padding: '0 12px', borderRadius: 8, border: 'none', cursor: 'pointer',
                 fontSize: 12.5, fontWeight: 600, fontFamily: 'var(--font-ui)',
@@ -337,10 +430,9 @@ export default function MovementsTable({
           ))}
         </div>
 
-        {/* Search input area */}
+        {/* Search input */}
         {searchMode === 'product' ? (
           <div style={{ position: 'relative', flex: 1, minWidth: 260 }}>
-            {/* Tag container + input */}
             <div
               style={{
                 display: 'flex', flexWrap: 'wrap', alignItems: 'center', gap: 4,
@@ -382,12 +474,8 @@ export default function MovementsTable({
             {showProductSugg && productSugg.length > 0 && (
               <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, background: 'var(--white)', border: '1px solid rgba(0,0,0,0.08)', borderRadius: 12, boxShadow: '0 8px 28px rgba(0,0,0,0.12)', zIndex: 20, maxHeight: 240, overflowY: 'auto', padding: 6, minWidth: 320 }}>
                 {productSugg.map(p => (
-                  <div
-                    key={p.id}
-                    onMouseDown={() => addProduct(p)}
-                    className="gs-item"
-                    style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', borderRadius: 8, cursor: 'pointer' }}
-                  >
+                  <div key={p.id} onMouseDown={() => addProduct(p)} className="gs-item"
+                    style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '9px 10px', borderRadius: 8, cursor: 'pointer' }}>
                     <div style={{ width: 32, height: 32, borderRadius: 8, background: '#EDE9FE', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5B21B6" strokeWidth="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
                     </div>
@@ -409,9 +497,7 @@ export default function MovementsTable({
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 260 }}>
             <div style={{ position: 'relative', flex: 1 }}>
               <svg style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: 'var(--gray-400)', pointerEvents: 'none' }} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-              <input
-                className="filter-search"
-                style={{ paddingLeft: 32, width: '100%' }}
+              <input className="filter-search" style={{ paddingLeft: 32, width: '100%' }}
                 placeholder="Enter serial number…"
                 value={serialInput}
                 onChange={e => setSerialInput(e.target.value)}
@@ -419,12 +505,8 @@ export default function MovementsTable({
                 autoComplete="off"
               />
             </div>
-            <button
-              className="btn btn-primary"
-              style={{ height: 36, paddingLeft: 16, paddingRight: 16, flexShrink: 0 }}
-              onClick={() => doSearch()}
-              disabled={!serialInput.trim()}
-            >
+            <button className="btn btn-primary" style={{ height: 36, paddingLeft: 16, paddingRight: 16, flexShrink: 0 }}
+              onClick={() => doSearch()} disabled={!serialInput.trim()}>
               Search
             </button>
           </div>
@@ -432,9 +514,7 @@ export default function MovementsTable({
           <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 260 }}>
             <div style={{ position: 'relative', flex: 1 }}>
               <svg style={{ position: 'absolute', left: 11, top: '50%', transform: 'translateY(-50%)', color: 'var(--gray-400)', pointerEvents: 'none' }} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-              <input
-                className="filter-search"
-                style={{ paddingLeft: 32, width: '100%' }}
+              <input className="filter-search" style={{ paddingLeft: 32, width: '100%' }}
                 placeholder="Enter batch number…"
                 value={batchInput}
                 onChange={e => setBatchInput(e.target.value)}
@@ -442,12 +522,8 @@ export default function MovementsTable({
                 autoComplete="off"
               />
             </div>
-            <button
-              className="btn btn-primary"
-              style={{ height: 36, paddingLeft: 16, paddingRight: 16, flexShrink: 0 }}
-              onClick={() => doSearch()}
-              disabled={!batchInput.trim()}
-            >
+            <button className="btn btn-primary" style={{ height: 36, paddingLeft: 16, paddingRight: 16, flexShrink: 0 }}
+              onClick={() => doSearch()} disabled={!batchInput.trim()}>
               Search
             </button>
           </div>
@@ -455,11 +531,8 @@ export default function MovementsTable({
 
         {/* Date From */}
         <div style={{ position: 'relative' }}>
-          <button
-            className={`filter-dd-btn${dateFrom ? ' active-filter' : ''}`}
-            style={{ minWidth: 130 }}
-            onClick={e => { e.stopPropagation(); setDateFromOpen(o => !o); setDateToOpen(false); setTypeOpen(false); setLocOpen(false) }}
-          >
+          <button className={`filter-dd-btn${dateFrom ? ' active-filter' : ''}`} style={{ minWidth: 130 }}
+            onClick={e => { e.stopPropagation(); setDateFromOpen(o => !o); setDateToOpen(false); setTypeOpen(false); setLocOpen(false) }}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
             <span>{dateFromLabel}</span>
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg>
@@ -468,11 +541,10 @@ export default function MovementsTable({
             <div className="inv-dropdown" style={{ display: 'block', padding: 12, minWidth: 200 }} onClick={e => e.stopPropagation()}>
               <div className="col-dropdown-title" style={{ marginBottom: 8 }}>From Date</div>
               <input type="date" value={dateFrom} onChange={e => setDateFrom(e.target.value)}
-                style={{ height: 34, width: '100%', padding: '0 10px', border: '1.5px solid var(--gray-200)', borderRadius: 9, fontSize: 13, fontFamily: 'var(--font-ui)', color: 'var(--slate)', outline: 'none', boxSizing: 'border-box', cursor: 'pointer' }}
-              />
+                style={{ height: 34, width: '100%', padding: '0 10px', border: '1.5px solid var(--gray-200)', borderRadius: 9, fontSize: 13, fontFamily: 'var(--font-ui)', color: 'var(--slate)', outline: 'none', boxSizing: 'border-box', cursor: 'pointer' }} />
               <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-                <button className="btn btn-outline" style={{ flex: 1, height: 30, fontSize: 12 }} onClick={() => { setDateFrom(''); setDateFromOpen(false) }}>Clear</button>
-                <button className="btn btn-primary" style={{ flex: 1, height: 30, fontSize: 12 }} onClick={() => { setDateFromOpen(false); applyFilters() }}>Apply</button>
+                <button className="btn btn-outline" style={{ flex: 1, height: 30, fontSize: 12 }} onClick={() => { setDateFrom(''); setDateFromOpen(false); applyFilters({ from: '' }) }}>Clear</button>
+                <button className="btn btn-primary" style={{ flex: 1, height: 30, fontSize: 12 }} onClick={() => applyFilters({ from: dateFrom })}>Apply</button>
               </div>
             </div>
           )}
@@ -482,11 +554,8 @@ export default function MovementsTable({
 
         {/* Date To */}
         <div style={{ position: 'relative' }}>
-          <button
-            className={`filter-dd-btn${dateTo ? ' active-filter' : ''}`}
-            style={{ minWidth: 130 }}
-            onClick={e => { e.stopPropagation(); setDateToOpen(o => !o); setDateFromOpen(false); setTypeOpen(false); setLocOpen(false) }}
-          >
+          <button className={`filter-dd-btn${dateTo ? ' active-filter' : ''}`} style={{ minWidth: 130 }}
+            onClick={e => { e.stopPropagation(); setDateToOpen(o => !o); setDateFromOpen(false); setTypeOpen(false); setLocOpen(false) }}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
             <span>{dateToLabel}</span>
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg>
@@ -495,11 +564,10 @@ export default function MovementsTable({
             <div className="inv-dropdown" style={{ display: 'block', padding: 12, minWidth: 200 }} onClick={e => e.stopPropagation()}>
               <div className="col-dropdown-title" style={{ marginBottom: 8 }}>To Date</div>
               <input type="date" value={dateTo} onChange={e => setDateTo(e.target.value)}
-                style={{ height: 34, width: '100%', padding: '0 10px', border: '1.5px solid var(--gray-200)', borderRadius: 9, fontSize: 13, fontFamily: 'var(--font-ui)', color: 'var(--slate)', outline: 'none', boxSizing: 'border-box', cursor: 'pointer' }}
-              />
+                style={{ height: 34, width: '100%', padding: '0 10px', border: '1.5px solid var(--gray-200)', borderRadius: 9, fontSize: 13, fontFamily: 'var(--font-ui)', color: 'var(--slate)', outline: 'none', boxSizing: 'border-box', cursor: 'pointer' }} />
               <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-                <button className="btn btn-outline" style={{ flex: 1, height: 30, fontSize: 12 }} onClick={() => { setDateTo(''); setDateToOpen(false) }}>Clear</button>
-                <button className="btn btn-primary" style={{ flex: 1, height: 30, fontSize: 12 }} onClick={() => { setDateToOpen(false); applyFilters() }}>Apply</button>
+                <button className="btn btn-outline" style={{ flex: 1, height: 30, fontSize: 12 }} onClick={() => { setDateTo(''); setDateToOpen(false); applyFilters({ to: '' }) }}>Clear</button>
+                <button className="btn btn-primary" style={{ flex: 1, height: 30, fontSize: 12 }} onClick={() => applyFilters({ to: dateTo })}>Apply</button>
               </div>
             </div>
           )}
@@ -507,10 +575,8 @@ export default function MovementsTable({
 
         {/* Order Type */}
         <div style={{ position: 'relative' }}>
-          <button
-            className={`filter-dd-btn${typeFilter ? ' active-filter' : ''}`}
-            onClick={e => { e.stopPropagation(); setTypeOpen(o => !o); setLocOpen(false); setDateFromOpen(false); setDateToOpen(false) }}
-          >
+          <button className={`filter-dd-btn${typeFilter ? ' active-filter' : ''}`}
+            onClick={e => { e.stopPropagation(); setTypeOpen(o => !o); setLocOpen(false); setDateFromOpen(false); setDateToOpen(false) }}>
             <span>{typeName}</span>
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
@@ -519,7 +585,7 @@ export default function MovementsTable({
               <div className="col-dropdown-title">Order Type</div>
               {[['', 'All Types'], ['purchase', 'Purchase'], ['sale', 'Sale'], ['transfer_in', 'Transfer In'], ['transfer_out', 'Transfer Out'], ['adjustment', 'Adjustment'], ['return', 'Return']].map(([val, label]) => (
                 <div key={val} className={`fp-item${typeFilter === val ? ' active' : ''}`}
-                  onClick={() => { setTypeFilter(val); setTypeOpen(false); setTimeout(applyFilters, 0) }}>{label}</div>
+                  onClick={() => { setTypeFilter(val); setTypeOpen(false); applyFilters({ type: val }) }}>{label}</div>
               ))}
             </div>
           )}
@@ -527,28 +593,26 @@ export default function MovementsTable({
 
         {/* Location */}
         <div style={{ position: 'relative' }}>
-          <button
-            className={`filter-dd-btn${locFilter ? ' active-filter' : ''}`}
-            onClick={e => { e.stopPropagation(); setLocOpen(o => !o); setTypeOpen(false); setDateFromOpen(false); setDateToOpen(false) }}
-          >
+          <button className={`filter-dd-btn${locFilter ? ' active-filter' : ''}`}
+            onClick={e => { e.stopPropagation(); setLocOpen(o => !o); setTypeOpen(false); setDateFromOpen(false); setDateToOpen(false) }}>
             <span>{locName}</span>
             <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
           {locOpen && (
             <div className="inv-dropdown" style={{ display: 'block', minWidth: 190 }} onClick={e => e.stopPropagation()}>
               <div className="col-dropdown-title">Location</div>
-              <div className={`fp-item${!locFilter ? ' active' : ''}`} onClick={() => { setLocFilter(''); setLocOpen(false); setTimeout(applyFilters, 0) }}>All Locations</div>
+              <div className={`fp-item${!locFilter ? ' active' : ''}`}
+                onClick={() => { setLocFilter(''); setLocOpen(false); applyFilters({ loc: '' }) }}>All Locations</div>
               {locations.map(l => (
                 <div key={l.id} className={`fp-item${locFilter === l.id ? ' active' : ''}`}
-                  onClick={() => { setLocFilter(l.id); setLocOpen(false); setTimeout(applyFilters, 0) }}>{l.name}</div>
+                  onClick={() => { setLocFilter(l.id); setLocOpen(false); applyFilters({ loc: l.id }) }}>{l.name}</div>
               ))}
             </div>
           )}
         </div>
 
-        {/* Clear filters */}
         {hasFilters && (
-          <button className="filter-btn" onClick={() => { clearFilters(); setTimeout(() => doSearch(), 0) }}>
+          <button className="filter-btn" onClick={clearFilters}>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
             Clear filters
           </button>
@@ -567,7 +631,6 @@ export default function MovementsTable({
         <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
           <div style={{ flex: 1, overflowY: 'auto', overflowX: 'auto' }}>
 
-            {/* Blank state */}
             {!loading && !loaded && (
               <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', height: '100%', gap: 14, padding: 48 }}>
                 <div style={{ width: 56, height: 56, borderRadius: 16, background: 'var(--gray-100)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--gray-400)' }}>
@@ -581,28 +644,25 @@ export default function MovementsTable({
                     ? 'Add one or more products above to see their full movement history — purchases, sales, transfers and adjustments all in one view.'
                     : searchMode === 'serial'
                     ? 'Enter a serial number to find which product it belongs to and see every transaction it has appeared in.'
-                    : 'Enter a batch number to see all products that share that batch and every transaction they\'ve been part of.'}
+                    : "Enter a batch number to see all products that share that batch and every transaction they've been part of."}
                 </div>
               </div>
             )}
 
-            {/* Loading */}
             {loading && (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 48 }}>
                 <div style={{ fontSize: 13, color: 'var(--gray-400)' }}>Loading…</div>
               </div>
             )}
 
-            {/* Results */}
             {!loading && loaded && (
-              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 + (showSerial ? 120 : 0) + (showBatch ? 120 : 0) + (multiProduct ? 0 : 0) }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
                 <thead>
                   <tr style={{ background: 'var(--gray-50)', position: 'sticky', top: 0, zIndex: 1 }}>
                     <th className="li-th" style={{ width: 110, paddingLeft: 24 }}>Date</th>
                     <th className="li-th" style={{ width: 130 }}>Order Type</th>
-                    <th className="li-th" style={{ width: 130 }}>Order #</th>
-                    {multiProduct && <th className="li-th">Product</th>}
-                    {!multiProduct && <th className="li-th">Product</th>}
+                    <th className="li-th" style={{ width: 110 }}>Order #</th>
+                    <th className="li-th">Product</th>
                     <th className="li-th" style={{ width: 100 }}>SKU</th>
                     <th className="li-th" style={{ width: 150 }}>Location</th>
                     {showSerial && <th className="li-th" style={{ width: 130 }}>Serial No.</th>}
@@ -614,7 +674,7 @@ export default function MovementsTable({
                 <tbody>
                   {paginated.length === 0 && (
                     <tr>
-                      <td colSpan={8 + (showSerial ? 1 : 0) + (showBatch ? 1 : 0)} style={{ textAlign: 'center', padding: '48px 0', color: 'var(--gray-400)', fontSize: 13 }}>
+                      <td colSpan={colSpan} style={{ textAlign: 'center', padding: '48px 0', color: 'var(--gray-400)', fontSize: 13 }}>
                         No movements found.
                       </td>
                     </tr>
@@ -622,7 +682,8 @@ export default function MovementsTable({
                   {paginated.map(m => {
                     const typeLabel = TYPE_LABELS[m.movement_type] ?? m.movement_type
                     const typeColor = TYPE_COLORS[m.movement_type] ?? 'background:var(--gray-100);color:var(--gray-400)'
-                    const navPath  = TYPE_NAV[m.movement_type] ?? '/products'
+                    const navPath   = TYPE_NAV[m.movement_type] ?? '/products'
+                    const refLabel  = fmtRef(m.reference_id, m.reference_type)
                     return (
                       <tr key={m.id} className="li-row">
                         <td className="li-td td-muted" style={{ fontSize: 12, paddingLeft: 24 }}>{fmtDate(m.created_at)}</td>
@@ -633,9 +694,9 @@ export default function MovementsTable({
                           {m.reference_id ? (
                             <button
                               onClick={() => router.push(`${navPath}/${m.reference_id}`)}
-                              style={{ color: 'var(--teal)', fontSize: 13, fontWeight: 600, fontFamily: 'var(--font-display)', textDecoration: 'underline', textUnderlineOffset: 2, cursor: 'pointer', background: 'none', border: 'none', padding: 0 }}
+                              style={{ color: 'var(--teal)', fontSize: 12.5, fontWeight: 700, fontFamily: 'var(--font-ui)', letterSpacing: '0.03em', textDecoration: 'none', cursor: 'pointer', background: 'none', border: 'none', padding: 0 }}
                             >
-                              {m.reference_id.slice(0, 8)}…
+                              {refLabel}
                             </button>
                           ) : <span className="td-muted">—</span>}
                         </td>
@@ -658,7 +719,6 @@ export default function MovementsTable({
             )}
           </div>
 
-          {/* Footer */}
           {!loading && loaded && movements.length > 0 && (
             <div className="table-footer">
               <div className="footer-left">

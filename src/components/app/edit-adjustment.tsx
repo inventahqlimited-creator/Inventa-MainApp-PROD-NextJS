@@ -4,7 +4,7 @@ import { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 
-type Location = { id: string; name: string }
+type Location = { id: string; name: string; bins?: { id: string; name: string }[] }
 type Product = {
   id: string; name: string; sku: string | null; sell_uom: string | null
   track_stock: boolean | null; type: string
@@ -36,6 +36,7 @@ type LineItem = {
   quantity_before: number
   quantity_after: number
   reason: string
+  bin_id: string
   batch_number: string
   serial_number: string
   expiry_date: string
@@ -217,6 +218,7 @@ export default function EditAdjustment({
     quantity_before: number
     quantity_after: number
     reason: string | null
+    bin_id?: string | null
     batch_number?: string | null
     serial_number?: string | null
     expiry_date?: string | null
@@ -257,6 +259,7 @@ export default function EditAdjustment({
         quantity_before: l.quantity_before,
         quantity_after: l.quantity_after,
         reason: l.reason ?? '',
+        bin_id: l.bin_id ?? '',
         batch_number: l.batch_number ?? '',
         serial_number: l.serial_number ?? '',
         expiry_date: l.expiry_date ?? '',
@@ -277,6 +280,7 @@ export default function EditAdjustment({
   const showSerial = trackingFlags.showSerial || lines.some(l => l.needs_serial)
   const showBatch  = trackingFlags.showBatch  || lines.some(l => l.needs_batch)
   const showExpiry = trackingFlags.showExpiry || lines.some(l => l.needs_expiry)
+  const showBins   = locations.some(l => (l.bins?.length ?? 0) > 0)
 
   const filteredProducts = useMemo(() =>
     products.filter(p =>
@@ -302,6 +306,7 @@ export default function EditAdjustment({
     quantity_before: 0,
     quantity_after: 0,
     reason,
+    bin_id: '',
     batch_number: '',
     serial_number: '',
     expiry_date: '',
@@ -335,6 +340,7 @@ export default function EditAdjustment({
             quantity_before: g.quantity,
             quantity_after: g.quantity,
             reason,
+            bin_id: (g as { bin_id?: string | null }).bin_id ?? '',
             batch_number: g.batch_number ?? '',
             serial_number: g.serial_number ?? '',
             expiry_date: g.expiry_date ?? '',
@@ -359,6 +365,7 @@ export default function EditAdjustment({
         quantity_before: qty,
         quantity_after: qty,
         reason,
+        bin_id: '',
         batch_number: '',
         serial_number: '',
         expiry_date: '',
@@ -461,6 +468,7 @@ export default function EditAdjustment({
           quantity_after: l.quantity_after,
           reason: l.reason || null,
           sort_order: i,
+          bin_id: l.bin_id || null,
           batch_number: l.batch_number || null,
           serial_number: l.serial_number || null,
           expiry_date: l.expiry_date || null,
@@ -484,7 +492,10 @@ export default function EditAdjustment({
     router.push(`/products/adjustments/${adjId}`)
   }
 
-  const extraCols = (showBatch ? 1 : 0) + (showSerial ? 1 : 0) + (showExpiry ? 1 : 0)
+  const extraCols = (showBins ? 1 : 0) + (showBatch ? 1 : 0) + (showSerial ? 1 : 0) + (showExpiry ? 1 : 0)
+
+  // Bins for the currently selected location
+  const selectedLocationBins = locations.find(l => l.id === selectedLocation?.id)?.bins ?? []
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
@@ -583,6 +594,7 @@ export default function EditAdjustment({
                   <th className="li-th" style={{ width: 110, textAlign: 'right' }}>New Qty</th>
                   <th className="li-th" style={{ width: 80, textAlign: 'right' }}>Change</th>
                   <th className="li-th" style={{ width: 150 }}>Reason</th>
+                  {showBins   && <th className="li-th" style={{ width: 120 }}>Bin</th>}
                   {showBatch  && <th className="li-th" style={{ width: 120 }}>Batch / Lot</th>}
                   {showSerial && <th className="li-th" style={{ width: 120 }}>Serial #</th>}
                   {showExpiry && <th className="li-th" style={{ width: 130 }}>Expiry Date</th>}
@@ -628,6 +640,17 @@ export default function EditAdjustment({
                           {REASONS.map(r => <option key={r} value={r}>{r}</option>)}
                         </select>
                       </td>
+                      {showBins && (
+                        <td className="li-td">
+                          {selectedLocationBins.length > 0 ? (
+                            <select value={l.bin_id} onChange={e => updateLine(idx, 'bin_id', e.target.value)}
+                              style={{ border: '1.5px solid var(--gray-200)', borderRadius: 7, padding: '4px 8px', fontSize: 12, fontFamily: 'var(--font-ui)', color: 'var(--gray-900)', background: 'var(--gray-50)', outline: 'none', cursor: 'pointer', width: '100%' }}>
+                              <option value="">No bin</option>
+                              {selectedLocationBins.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
+                            </select>
+                          ) : <span style={{ color: 'var(--gray-300)', fontSize: 12 }}>—</span>}
+                        </td>
+                      )}
                       {showBatch && (
                         <td className="li-td">
                           {l.needs_batch ? (
@@ -694,7 +717,6 @@ export default function EditAdjustment({
                   </div>
                   <div style={{ maxHeight: 260, overflowY: 'auto', padding: 6 }}>
                     {filteredProducts.map(p => {
-
                       const qty = getStockQty(p.id)
                       return (
                         <div key={p.id} className="fp-item" style={{ display: 'grid', gridTemplateColumns: '100px 1fr 80px', alignItems: 'center', gap: 8 }} onClick={() => addLine(p)}>

@@ -1,8 +1,8 @@
 import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import PurchaseDetail from '@/components/app/purchase-detail'
+import EditPurchaseOrder from '@/components/app/edit-purchase-order'
 
-export default async function PurchaseDetailPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function EditPurchaseOrderPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -59,7 +59,7 @@ export default async function PurchaseDetailPage({ params }: { params: Promise<{
   }
 
   return (
-    <PurchaseDetail
+    <EditPurchaseOrder
       orgId={m.org_id}
       order={shaped}
       suppliers={(contacts ?? []) as any}

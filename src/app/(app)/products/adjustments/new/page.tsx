@@ -21,7 +21,7 @@ export default async function NewAdjustmentPage() {
   const m = membership as { org_id: string; role: string }
 
   const [{ data: locations }, { data: products }, { data: stockLevels }, { data: org }] = await Promise.all([
-    adminClient.from('locations').select('id, name').eq('org_id', m.org_id).eq('active', true).order('name'),
+    adminClient.from('locations').select('id, name, bins').eq('org_id', m.org_id).eq('active', true).order('name'),
     adminClient.from('products').select('id, name, sku, sell_uom, track_stock, type, serial_tracking, batch_tracking, expiry_tracking').eq('org_id', m.org_id).order('name'),
     adminClient.from('stock_levels').select('product_id, location_id, quantity').eq('org_id', m.org_id),
     adminClient.from('organisations').select('serial_tracking, batch_tracking, expiry_tracking').eq('id', m.org_id).single(),
@@ -38,7 +38,7 @@ export default async function NewAdjustmentPage() {
   return (
     <NewAdjustment
       orgId={m.org_id}
-      locations={(locations ?? []) as { id: string; name: string }[]}
+      locations={(locations ?? []) as { id: string; name: string; bins: string[] | null }[]}
       products={(products ?? []) as { id: string; name: string; sku: string | null; sell_uom: string | null; track_stock: boolean | null; type: string; serial_tracking: boolean | null; batch_tracking: boolean | null; expiry_tracking: boolean | null }[]}
       stockLevels={(stockLevels ?? []) as { product_id: string; location_id: string; quantity: number }[]}
       trackingFlags={trackingFlags}

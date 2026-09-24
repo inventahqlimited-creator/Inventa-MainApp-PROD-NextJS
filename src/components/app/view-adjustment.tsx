@@ -26,6 +26,8 @@ type Line = {
   batch_number: string | null
   serial_number: string | null
   expiry_date: string | null
+  bin_id: string | null
+  bin_name: string | null
 }
 
 type TrackingFlags = {
@@ -75,11 +77,13 @@ export default function ViewAdjustment({
   lines,
   orgId,
   trackingFlags = { showSerial: false, showBatch: false, showExpiry: false },
+  showBins = false,
 }: {
   adjustment: Adjustment
   lines: Line[]
   orgId: string
   trackingFlags?: TrackingFlags
+  showBins?: boolean
 }) {
   const router = useRouter()
   const [adj, setAdj] = useState(initialAdj)
@@ -189,6 +193,7 @@ export default function ViewAdjustment({
                 <th className="li-th" style={{ width: 110, textAlign: 'right' }}>After</th>
                 <th className="li-th" style={{ width: 90, textAlign: 'right' }}>Change</th>
                 <th className="li-th" style={{ width: 130 }}>Reason</th>
+                {showBins                  && <th className="li-th" style={{ width: 120 }}>Bin</th>}
                 {trackingFlags.showBatch  && <th className="li-th" style={{ width: 120 }}>Batch / Lot</th>}
                 {trackingFlags.showSerial && <th className="li-th" style={{ width: 120 }}>Serial #</th>}
                 {trackingFlags.showExpiry && <th className="li-th" style={{ width: 110 }}>Expiry Date</th>}
@@ -196,7 +201,7 @@ export default function ViewAdjustment({
             </thead>
             <tbody>
               {lines.length === 0 && (
-                <tr><td colSpan={7 + (trackingFlags.showBatch ? 1 : 0) + (trackingFlags.showSerial ? 1 : 0) + (trackingFlags.showExpiry ? 1 : 0)} style={{ textAlign: 'center', padding: '24px 0', color: 'var(--gray-400)', fontSize: 13 }}>No products.</td></tr>
+                <tr><td colSpan={7 + (showBins ? 1 : 0) + (trackingFlags.showBatch ? 1 : 0) + (trackingFlags.showSerial ? 1 : 0) + (trackingFlags.showExpiry ? 1 : 0)} style={{ textAlign: 'center', padding: '24px 0', color: 'var(--gray-400)', fontSize: 13 }}>No products.</td></tr>
               )}
               {lines.map(l => {
                 const change = l.quantity_after - l.quantity_before
@@ -213,6 +218,7 @@ export default function ViewAdjustment({
                       {change > 0 ? `+${change}` : change}
                     </td>
                     <td className="li-td" style={{ color: 'var(--gray-400)', fontSize: 12.5 }}>{l.reason ?? '—'}</td>
+                    {showBins                  && <td className="li-td" style={{ color: 'var(--gray-400)', fontSize: 12 }}>{l.bin_name ?? '—'}</td>}
                     {trackingFlags.showBatch  && <td className="li-td" style={{ color: 'var(--gray-400)', fontSize: 12 }}>{l.batch_number ?? '—'}</td>}
                     {trackingFlags.showSerial && <td className="li-td" style={{ color: 'var(--gray-400)', fontSize: 12 }}>{l.serial_number ?? '—'}</td>}
                     {trackingFlags.showExpiry && <td className="li-td" style={{ color: 'var(--gray-400)', fontSize: 12 }}>{l.expiry_date ? new Date(l.expiry_date).toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: 'numeric' }) : '—'}</td>}

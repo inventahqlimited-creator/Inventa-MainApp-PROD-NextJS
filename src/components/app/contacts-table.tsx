@@ -20,6 +20,7 @@ type Contact = {
   ship_country: string | null
   currency: string | null
   tier: string | null
+  price_level_id: string | null
   terms: string | null
   tax_rate: string | null
   balance_owing: number | null
@@ -54,6 +55,7 @@ type ModalForm = {
   tax_number: string
   currency: string
   tier: string
+  price_level_id: string
   terms: string
   tax_rate: string
   credit_limit: string
@@ -74,7 +76,7 @@ type ModalForm = {
 
 const EMPTY_FORM: ModalForm = {
   name: '', type: 'supplier', email: '', phone: '', website: '', tax_number: '',
-  currency: 'NZD', tier: 'Retail', terms: 'Net 30', tax_rate: '',
+  currency: 'NZD', tier: '', price_level_id: '', terms: 'Net 30', tax_rate: '',
   credit_limit: '0', disc_type: 'percent', disc_value: '0',
   bill_street: '', bill_city: '', bill_postcode: '', bill_country: 'New Zealand',
   ship_name: '', ship_street: '', ship_city: '', ship_postcode: '', ship_country: 'New Zealand',
@@ -228,9 +230,7 @@ export default function ContactsTable({
   }, [baseCurrency, currencies])
 
   const tierOptions = useMemo(() =>
-    priceLevels.length > 0
-      ? priceLevels.map(p => ({ value: p.name, label: p.name }))
-      : [{ value: 'Retail', label: 'Retail' }]
+    priceLevels.map(p => ({ value: p.id, label: p.name }))
   , [priceLevels])
 
   const taxRateOptions = useMemo(() => [
@@ -240,7 +240,7 @@ export default function ContactsTable({
 
   // Default values derived from settings
   const defaultCurrency = baseCurrency
-  const defaultTier = priceLevels.find(p => p.is_default)?.name ?? priceLevels[0]?.name ?? 'Retail'
+  const defaultTier = priceLevels.find(p => p.is_default)?.id ?? priceLevels[0]?.id ?? ''
 
   // Auto-open modal when ?new=1 param is present (runs on mount AND when already on page)
   useEffect(() => {
@@ -258,7 +258,7 @@ export default function ContactsTable({
   }
 
   function openAdd() {
-    setForm({ ...EMPTY_FORM, currency: defaultCurrency, tier: defaultTier, tax_rate: taxRateOptions.length > 1 ? taxRateOptions[1].value : '' })
+    setForm({ ...EMPTY_FORM, currency: defaultCurrency, tier: '', price_level_id: defaultTier, tax_rate: taxRateOptions.length > 1 ? taxRateOptions[1].value : '' })
     setActiveContact(null)
     setModal('add')
     setModalTab('details')
@@ -273,7 +273,7 @@ export default function ContactsTable({
       name: c.name, type: c.type,
       email: c.email ?? '', phone: c.phone ?? '', website: c.website ?? '',
       tax_number: c.tax_number ?? '', currency: c.currency ?? 'NZD',
-      tier: c.tier ?? 'Retail', terms: c.terms ?? 'Net 30', tax_rate: c.tax_rate ?? '',
+      tier: '', price_level_id: c.price_level_id ?? '', terms: c.terms ?? 'Net 30', tax_rate: c.tax_rate ?? '',
       credit_limit: String(c.credit_limit ?? 0), disc_type: c.disc_type ?? 'percent',
       disc_value: String(c.disc_value ?? 0),
       bill_street: c.bill_street ?? '', bill_city: c.bill_city ?? '',
@@ -361,11 +361,15 @@ export default function ContactsTable({
     setSaving(true)
     setError(null)
 
+    const selectedPriceLevel = priceLevels.find(p => p.id === form.price_level_id)
     const payload = {
       name: form.name.trim(), type: form.type,
       email: form.email || null, phone: form.phone || null,
       website: form.website || null, tax_number: form.tax_number || null,
-      currency: form.currency, tier: form.tier, terms: form.terms,
+      currency: form.currency,
+      price_level_id: form.price_level_id || null,
+      tier: selectedPriceLevel?.name ?? null,
+      terms: form.terms,
       tax_rate: form.tax_rate || null,
       credit_limit: parseFloat(form.credit_limit) || 0,
       disc_type: form.disc_type, disc_value: parseFloat(form.disc_value) || 0,
@@ -396,8 +400,8 @@ export default function ContactsTable({
     const contactId: string = isEdit ? activeContact.id : data.id
 
     const updatedContact = isEdit
-      ? { ...activeContact, ...payload } as Contact
-      : { ...payload, id: contactId, balance_owing: 0 } as Contact
+      ? { ...activeContact, ...payload, price_level_id: form.price_level_id || null } as Contact
+      : { ...payload, id: contactId, balance_owing: 0, price_level_id: form.price_level_id || null } as Contact
 
     if (isEdit) {
       setContacts(prev => prev.map(c => c.id === activeContact.id ? updatedContact : c))
@@ -717,7 +721,7 @@ export default function ContactsTable({
                 {v.has('type') && <th>Type</th>}
                 {v.has('status') && <th>Status</th>}
                 {v.has('currency') && <th>Currency</th>}
-                {v.has('tier') && <th>Price Tier</th>}
+                {v.has('tier') && <th>Price Level</th>}
                 {v.has('terms') && <th>Payment Terms</th>}
                 {v.has('taxrate') && <th>Tax Rate</th>}
                 {v.has('taxnum') && <th>NZBN / ABN</th>}
@@ -755,7 +759,7 @@ export default function ContactsTable({
                   {v.has('type') && <td>{typeBadge(c.type)}</td>}
                   {v.has('status') && <td>{c.is_active ? <span className="badge" style={{ background: '#D1FAE5', color: '#065F46' }}>Active</span> : <span className="badge" style={{ background: '#F3F4F6', color: '#6B7280' }}>Inactive</span>}</td>}
                   {v.has('currency') && <td className="td-muted">{c.currency ?? '—'}</td>}
-                  {v.has('tier') && <td className="td-muted">{c.tier ?? '—'}</td>}
+                  {v.has('tier') && <td className="td-muted">{priceLevels.find(p => p.id === c.price_level_id)?.name ?? c.tier ?? '—'}</td>}
                   {v.has('terms') && <td className="td-muted">{c.terms ?? '—'}</td>}
                   {v.has('taxrate') && <td className="td-muted">{c.tax_rate ?? '—'}</td>}
                   {v.has('taxnum') && <td className="td-mono">{c.tax_number ?? '—'}</td>}
@@ -917,8 +921,12 @@ export default function ContactsTable({
                     <Field label="Currency">
                       <MSelect value={modal === 'view' ? (activeContact?.currency ?? defaultCurrency) : form.currency} onChange={v => set('currency', v)} options={currencyOptions} disabled={modal === 'view'} />
                     </Field>
-                    <Field label="Price Tier">
-                      <MSelect value={modal === 'view' ? (activeContact?.tier ?? defaultTier) : form.tier} onChange={v => set('tier', v)} options={tierOptions} disabled={modal === 'view'} />
+                    <Field label="Price Level">
+                      {modal === 'view' ? (
+                        <MInput value={priceLevels.find(p => p.id === activeContact?.price_level_id)?.name ?? activeContact?.tier ?? '—'} disabled />
+                      ) : (
+                        <MSelect value={form.price_level_id} onChange={v => set('price_level_id', v)} options={[{ value: '', label: '— None —' }, ...tierOptions]} />
+                      )}
                     </Field>
                     <Field label="Payment Terms">
                       <MSelect value={modal === 'view' ? (activeContact?.terms ?? 'Net 30') : form.terms} onChange={v => set('terms', v)} options={['Net 7','Net 14','Net 30','Net 60','COD','Prepaid'].map(t=>({value:t,label:t}))} disabled={modal === 'view'} />

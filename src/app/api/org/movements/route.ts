@@ -117,6 +117,25 @@ export async function GET(request: Request) {
     for (const l of locs ?? []) locationMap.set(l.id, l.name)
   }
 
+  // --- Fetch reference numbers (adj_number etc.) ---
+  // Collect reference_ids by type so we can look up human-readable numbers
+  const referenceMap = new Map<string, string>() // reference_id → human number
+  const adjIds = [...new Set(
+    movements
+      .filter((m: { reference_type: string | null; reference_id: string | null }) => m.reference_type === 'adjustment_order' && m.reference_id)
+      .map((m: { reference_id: string | null }) => m.reference_id as string)
+  )]
+  if (adjIds.length > 0) {
+    const { data: adjs } = await adminClient
+      .from('adjustment_orders')
+      .select('id, adj_number')
+      .in('id', adjIds)
+    for (const a of adjs ?? []) {
+      if (a.adj_number) referenceMap.set(a.id, a.adj_number)
+    }
+  }
+  // Add more reference types here as needed (purchase_orders, sale_orders, etc.)
+
   // --- Enrich movements ---
   const enriched = movements.map((m: {
     id: string
@@ -139,12 +158,13 @@ export async function GET(request: Request) {
     const firstGroup = groups[0]
     return {
       ...m,
-      product_name:   prod?.name ?? null,
-      product_sku:    prod?.sku  ?? null,
-      location_name:  m.location_id ? (locationMap.get(m.location_id) ?? null) : null,
-      serial_number:  firstGroup?.serial_number ?? null,
-      batch_number:   firstGroup?.batch_number  ?? null,
-      expiry_date:    firstGroup?.expiry_date   ?? null,
+      product_name:      prod?.name ?? null,
+      product_sku:       prod?.sku  ?? null,
+      location_name:     m.location_id ? (locationMap.get(m.location_id) ?? null) : null,
+      serial_number:     firstGroup?.serial_number ?? null,
+      batch_number:      firstGroup?.batch_number  ?? null,
+      expiry_date:       firstGroup?.expiry_date   ?? null,
+      reference_number:  m.reference_id ? (referenceMap.get(m.reference_id) ?? null) : null,
     }
   })
 

@@ -22,7 +22,7 @@ export default async function NewPurchaseOrderPage() {
   const [{ data: locations }, { data: contacts }, { data: products }, { data: org }] = await Promise.all([
     adminClient
       .from('locations')
-      .select('id, name, street, city, state, postcode, country, phone, email')
+      .select('id, name, address, city, country, phone, email')
       .eq('org_id', m.org_id)
       .eq('active', true)
       .order('name'),
@@ -65,10 +65,8 @@ export default async function NewPurchaseOrderPage() {
       locations={(locations ?? []) as {
         id: string
         name: string
-        street: string | null
+        address: string | null
         city: string | null
-        state: string | null
-        postcode: string | null
         country: string | null
         phone: string | null
         email: string | null

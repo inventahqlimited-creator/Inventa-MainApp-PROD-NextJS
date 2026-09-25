@@ -18,10 +18,8 @@ type Supplier = {
 type Location = {
   id: string
   name: string
-  street: string | null
+  address: string | null
   city: string | null
-  state: string | null
-  postcode: string | null
   country: string | null
   phone: string | null
   email: string | null
@@ -405,9 +403,9 @@ export default function NewPurchaseOrder({
                     <div style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 700, color: 'var(--slate)', letterSpacing: '-0.02em' }}>{selectedLocation.name}</div>
                     {selectedLocation.phone && <div style={{ fontSize: 12.5, color: 'var(--gray-400)', marginTop: 2 }}>{selectedLocation.phone}</div>}
                     {selectedLocation.email && <div style={{ fontSize: 12.5, color: 'var(--teal)', marginTop: 2 }}>{selectedLocation.email}</div>}
-                    {(selectedLocation.street || selectedLocation.city) && (
+                    {(selectedLocation.address || selectedLocation.city) && (
                       <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 4 }}>
-                        {[selectedLocation.street, selectedLocation.city, selectedLocation.state, selectedLocation.postcode, selectedLocation.country].filter(Boolean).join(', ')}
+                        {[selectedLocation.address, selectedLocation.city, selectedLocation.country].filter(Boolean).join(', ')}
                       </div>
                     )}
                   </div>

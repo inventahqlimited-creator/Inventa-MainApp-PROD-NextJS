@@ -189,23 +189,27 @@ export default function EditPurchaseOrder({
     [suppliers, supplierSearch]
   )
 
-  const filteredProducts = useMemo(() =>
-    products.filter(p =>
-      (p.type === 'Stock' || p.type === 'NonStock') && (
-        p.name.toLowerCase().includes(itemSearch.toLowerCase()) ||
-        (p.sku ?? '').toLowerCase().includes(itemSearch.toLowerCase())
+  const filteredProducts = useMemo(() => {
+    const q = itemSearch.toLowerCase()
+    return products.filter(p =>
+      p.type?.toLowerCase() !== 'service' && (
+        !q ||
+        p.name.toLowerCase().includes(q) ||
+        (p.sku ?? '').toLowerCase().includes(q)
       )
-    ).slice(0, 20),
-    [products, itemSearch]
-  )
+    ).slice(0, 20)
+  }, [products, itemSearch])
 
-  const filteredCostProducts = useMemo(() =>
-    products.filter(p =>
-      p.type === 'Service' && (
-        p.name.toLowerCase().includes(costSearch.toLowerCase()) ||
-        (p.sku ?? '').toLowerCase().includes(costSearch.toLowerCase())
+  const filteredCostProducts = useMemo(() => {
+    const q = costSearch.toLowerCase()
+    return products.filter(p =>
+      p.type?.toLowerCase() === 'service' && (
+        !q ||
+        p.name.toLowerCase().includes(q) ||
+        (p.sku ?? '').toLowerCase().includes(q)
       )
-    ).slice(0, 20),
+    ).slice(0, 20)
+  },
     [products, costSearch]
   )
 

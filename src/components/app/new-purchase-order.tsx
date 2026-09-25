@@ -524,10 +524,12 @@ export default function NewPurchaseOrder({
             <svg style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--gray-400)', pointerEvents: 'none', zIndex: 1 }} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
             <input
               className="modal-input"
-              placeholder="Search by item code or name…"
+              placeholder="Search by SKU or name…"
               value={itemSearch}
-              onChange={e => { setItemSearch(e.target.value); if (!itemDropOpen) setItemDropOpen(true) }}
+              onChange={e => { setItemSearch(e.target.value); setItemDropOpen(true) }}
               onFocus={() => setItemDropOpen(true)}
+              onClick={e => e.stopPropagation()}
+              onBlur={() => setTimeout(() => setItemDropOpen(false), 150)}
               style={{ paddingLeft: 32, background: 'var(--gray-50)', width: 300 }}
               autoComplete="off"
             />
@@ -614,10 +616,12 @@ export default function NewPurchaseOrder({
               <svg style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--gray-400)', pointerEvents: 'none', zIndex: 1 }} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
               <input
                 className="modal-input"
-                placeholder="Search non-stock items…"
+                placeholder="Search by SKU or name…"
                 value={costSearch}
-                onChange={e => { setCostSearch(e.target.value); if (!costDropOpen) setCostDropOpen(true) }}
+                onChange={e => { setCostSearch(e.target.value); setCostDropOpen(true) }}
                 onFocus={() => setCostDropOpen(true)}
+                onClick={e => e.stopPropagation()}
+                onBlur={() => setTimeout(() => setCostDropOpen(false), 150)}
                 style={{ paddingLeft: 32, background: 'var(--gray-50)', width: 280 }}
                 autoComplete="off"
               />

@@ -122,27 +122,29 @@ export default function NewPurchaseOrder({
     [suppliers, supplierSearch]
   )
 
-  // Stock + NonStock items for main line items (Service excluded)
-  const filteredProducts = useMemo(() =>
-    products.filter(p =>
-      (p.type === 'Stock' || p.type === 'NonStock') && (
-        p.name.toLowerCase().includes(itemSearch.toLowerCase()) ||
-        (p.sku ?? '').toLowerCase().includes(itemSearch.toLowerCase())
+  // All non-service items for main line items
+  const filteredProducts = useMemo(() => {
+    const q = itemSearch.toLowerCase()
+    return products.filter(p =>
+      p.type?.toLowerCase() !== 'service' && (
+        !q ||
+        p.name.toLowerCase().includes(q) ||
+        (p.sku ?? '').toLowerCase().includes(q)
       )
-    ).slice(0, 20),
-    [products, itemSearch]
-  )
+    ).slice(0, 20)
+  }, [products, itemSearch])
 
   // Service items only for additional costs
-  const filteredCostProducts = useMemo(() =>
-    products.filter(p =>
-      p.type === 'Service' && (
-        p.name.toLowerCase().includes(costSearch.toLowerCase()) ||
-        (p.sku ?? '').toLowerCase().includes(costSearch.toLowerCase())
+  const filteredCostProducts = useMemo(() => {
+    const q = costSearch.toLowerCase()
+    return products.filter(p =>
+      p.type?.toLowerCase() === 'service' && (
+        !q ||
+        p.name.toLowerCase().includes(q) ||
+        (p.sku ?? '').toLowerCase().includes(q)
       )
-    ).slice(0, 20),
-    [products, costSearch]
-  )
+    ).slice(0, 20)
+  }, [products, costSearch])
 
   function addCostLine(p: Product) {
     setCostLines(prev => [...prev, {

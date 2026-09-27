@@ -282,13 +282,16 @@ export default function EditAdjustment({
   const showExpiry = trackingFlags.showExpiry || lines.some(l => l.needs_expiry)
   const showBins   = locations.some(l => (l.bins?.length ?? 0) > 0)
 
-  const filteredProducts = useMemo(() =>
-    products.filter(p =>
-      p.name.toLowerCase().includes(itemSearch.toLowerCase()) ||
-      (p.sku ?? '').toLowerCase().includes(itemSearch.toLowerCase())
-    ).slice(0, 20),
-    [products, itemSearch]
-  )
+  const filteredProducts = useMemo(() => {
+    const q = itemSearch.toLowerCase()
+    return products.filter(p =>
+      p.type?.toLowerCase() === 'stock' && (
+        !q ||
+        p.name.toLowerCase().includes(q) ||
+        (p.sku ?? '').toLowerCase().includes(q)
+      )
+    ).slice(0, 20)
+  }, [products, itemSearch])
 
   function getStockQty(productId: string): number {
     if (!selectedLocation) return 0

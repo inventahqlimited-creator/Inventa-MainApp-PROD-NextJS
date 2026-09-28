@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useEffect } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 
 type Supplier = {
@@ -30,12 +30,20 @@ type Product = {
   name: string
   sku: string | null
   buy_uom: string | null
+  buy_tax_rate_id?: string | null
   cost_price: number | null
   tax_rate: string | number | null
   description: string | null
   track_stock: boolean | null
   type: string
   price_levels?: { price_level_id: string; price: number }[]
+}
+
+type TaxRate = {
+  id: string
+  name: string
+  rate: number
+  is_default?: boolean | null
 }
 
 type PriceLevel = {
@@ -52,6 +60,8 @@ type LineItem = {
   unit_cost: number
   discount: number
   tax_rate: number
+  tax_rate_id?: string | null
+  tax_name?: string | null
   line_notes: string
 }
 
@@ -62,6 +72,8 @@ type CostLine = {
   description: string
   amount: number
   tax_rate: number
+  tax_rate_id?: string | null
+  tax_name?: string | null
 }
 
 function fmtMoney(n: number) {
@@ -85,6 +97,7 @@ export default function NewPurchaseOrder({
   products,
   defaultTerms,
   priceLevels = [],
+  taxRates = [],
 }: {
   orgId: string
   suppliers: Supplier[]
@@ -92,8 +105,35 @@ export default function NewPurchaseOrder({
   products: Product[]
   defaultTerms?: string | null
   priceLevels?: PriceLevel[]
+  taxRates?: TaxRate[]
 }) {
   const router = useRouter()
+
+  // ── Tax helpers: lines store the chosen tax (id + name) plus its numeric rate ──
+  const taxById = (id: string | null | undefined) => (id ? taxRates.find(t => t.id === id) : undefined)
+  const taxByRate = (rate: number) =>
+    taxRates.find(t => Number(t.rate) === rate && t.is_default) ?? taxRates.find(t => Number(t.rate) === rate)
+  function taxFields(id: string | null | undefined) {
+    const t = taxById(id)
+    return t
+      ? { tax_rate_id: t.id, tax_name: t.name, tax_rate: Number(t.rate) || 0 }
+      : { tax_rate_id: null, tax_name: 'No Tax', tax_rate: 0 }
+  }
+  // Purchase orders use the product's BUY tax rate
+  function buyTaxFor(p: Product) {
+    const t = taxById(p.buy_tax_rate_id) ?? (p.tax_rate != null && p.tax_rate !== '' ? taxByRate(parseTaxRate(p.tax_rate)) : undefined)
+    if (t) return taxFields(t.id)
+    const rate = parseTaxRate(p.tax_rate)
+    return { tax_rate_id: null, tax_name: rate ? `${rate}%` : 'No Tax', tax_rate: rate }
+  }
+  // Older lines saved before tax ids existed: resolve a name from the rate
+  function withTaxName<T extends { tax_rate: number; tax_rate_id?: string | null; tax_name?: string | null }>(l: T): T {
+    if (l.tax_rate_id && l.tax_name) return l
+    const t = taxById(l.tax_rate_id) ?? taxByRate(Number(l.tax_rate) || 0)
+    return t ? { ...l, tax_rate_id: t.id, tax_name: t.name } : { ...l, tax_name: l.tax_name ?? (Number(l.tax_rate) ? `${l.tax_rate}%` : 'No Tax') }
+  }
+  const taxOptions = taxRates.map(t => ({ id: t.id, label: t.name }))
+  const scrollRef = useRef<HTMLDivElement>(null)
 
   // Payment terms priority: supplier → global org setting → 'Net 14'
   const fallbackTerms = defaultTerms ?? 'Net 14'
@@ -175,7 +215,7 @@ export default function NewPurchaseOrder({
       quantity_ordered: 1,
       unit_cost: resolvePrice(p),
       discount: 0,
-      tax_rate: parseTaxRate(p.tax_rate),
+      ...buyTaxFor(p),
       line_notes: '',
     }])
     setItemSearch('')
@@ -184,6 +224,10 @@ export default function NewPurchaseOrder({
 
   function updateLine(idx: number, field: keyof LineItem, value: string | number) {
     setLines(prev => prev.map((l, i) => i === idx ? { ...l, [field]: value } : l))
+  }
+
+  function setLineTax(idx: number, id: string) {
+    setLines(prev => prev.map((l, i) => i === idx ? { ...l, ...taxFields(id) } : l))
   }
 
   function removeLine(idx: number) {
@@ -197,7 +241,7 @@ export default function NewPurchaseOrder({
       product_sku: p.sku ?? '',
       description: p.description ?? '',
       amount: Number(p.cost_price) || 0,
-      tax_rate: parseTaxRate(p.tax_rate),
+      ...buyTaxFor(p),
     }])
     setCostSearch('')
     setCostDropOpen(false)
@@ -205,6 +249,10 @@ export default function NewPurchaseOrder({
 
   function updateCostLine(idx: number, field: keyof CostLine, value: string | number) {
     setCostLines(prev => prev.map((l, i) => i === idx ? { ...l, [field]: value } : l))
+  }
+
+  function setCostLineTax(idx: number, id: string) {
+    setCostLines(prev => prev.map((l, i) => i === idx ? { ...l, ...taxFields(id) } : l))
   }
 
   function removeCostLine(idx: number) {
@@ -284,6 +332,11 @@ export default function NewPurchaseOrder({
     }
   }
 
+  // Make sure save errors are always visible (they render at the top of the scroll area)
+  useEffect(() => {
+    if (error) scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
+  }, [error])
+
   const closeAll = () => {
     setSupplierDropOpen(false)
     setLocationOpen(false)
@@ -323,7 +376,7 @@ export default function NewPurchaseOrder({
       </div>
 
       {/* Scrollable content */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '24px 28px 100px' }}>
+      <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: '24px 28px 100px' }}>
 
         {error && (
           <div style={{ background: '#FEF2F2', border: '1.5px solid #FECACA', borderRadius: 10, padding: '12px 16px', fontSize: 13, color: '#B91C1C', marginBottom: 20 }}>{error}</div>
@@ -488,7 +541,7 @@ export default function NewPurchaseOrder({
                   <th className="li-th" style={{ width: 80, textAlign: 'right' }}>Qty</th>
                   <th className="li-th" style={{ width: 100, textAlign: 'right' }}>Cost Price</th>
                   <th className="li-th" style={{ width: 80, textAlign: 'right' }}>Disc %</th>
-                  <th className="li-th" style={{ width: 70, textAlign: 'right' }}>Tax</th>
+                  <th className="li-th" style={{ width: 140 }}>Tax</th>
                   <th className="li-th" style={{ width: 110, textAlign: 'right' }}>Line Total</th>
                   <th className="li-th" style={{ width: 36 }} />
                 </tr>
@@ -515,8 +568,11 @@ export default function NewPurchaseOrder({
                     <td className="li-td" style={{ textAlign: 'right' }}>
                       <input className="li-input right" type="number" min="0" max="100" step="0.1" value={l.discount} onChange={e => updateLine(idx, 'discount', parseFloat(e.target.value) || 0)} style={{ width: 70, textAlign: 'right' }} />
                     </td>
-                    <td className="li-td" style={{ textAlign: 'right' }}>
-                      <input className="li-input right" type="number" min="0" max="100" step="1" value={l.tax_rate} onChange={e => updateLine(idx, 'tax_rate', parseFloat(e.target.value) || 0)} style={{ width: 60, textAlign: 'right' }} />
+                    <td className="li-td">
+                      <select className="li-input" value={l.tax_rate_id ?? ''} onChange={e => setLineTax(idx, e.target.value)} style={{ width: 130 }}>
+                          <option value="">{!l.tax_rate_id && l.tax_name ? l.tax_name : 'No Tax'}</option>
+                          {taxOptions.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
+                        </select>
                     </td>
                     <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: 'var(--slate)', fontFamily: 'var(--font-display)' }}>
                       {fmtMoney(lineTotal(l))}
@@ -593,7 +649,7 @@ export default function NewPurchaseOrder({
                       <th className="li-th">Name</th>
                       <th className="li-th">Description</th>
                       <th className="li-th" style={{ width: 110, textAlign: 'right' }}>Amount</th>
-                      <th className="li-th" style={{ width: 70, textAlign: 'right' }}>Tax %</th>
+                      <th className="li-th" style={{ width: 140 }}>Tax</th>
                       <th className="li-th" style={{ width: 110, textAlign: 'right' }}>Line Total</th>
                       <th className="li-th" style={{ width: 36 }} />
                     </tr>
@@ -609,8 +665,11 @@ export default function NewPurchaseOrder({
                         <td className="li-td" style={{ textAlign: 'right' }}>
                           <input className="li-input right" type="number" min="0" step="0.01" value={l.amount} onChange={e => updateCostLine(idx, 'amount', parseFloat(e.target.value) || 0)} style={{ width: 90, textAlign: 'right' }} />
                         </td>
-                        <td className="li-td" style={{ textAlign: 'right' }}>
-                          <input className="li-input right" type="number" min="0" max="100" step="1" value={l.tax_rate} onChange={e => updateCostLine(idx, 'tax_rate', parseFloat(e.target.value) || 0)} style={{ width: 60, textAlign: 'right' }} />
+                        <td className="li-td">
+                          <select className="li-input" value={l.tax_rate_id ?? ''} onChange={e => setCostLineTax(idx, e.target.value)} style={{ width: 130 }}>
+                          <option value="">{!l.tax_rate_id && l.tax_name ? l.tax_name : 'No Tax'}</option>
+                          {taxOptions.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
+                        </select>
                         </td>
                         <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: 'var(--slate)', fontFamily: 'var(--font-display)' }}>
                           {fmtMoney(l.amount * (1 + l.tax_rate / 100))}
@@ -727,6 +786,7 @@ export default function NewPurchaseOrder({
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           Cancel
         </button>
+        {error && <div style={{ flex: 1, margin: '0 16px', fontSize: 12.5, color: '#B91C1C', textAlign: 'right' }}>{error}</div>}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
           <button className="btn btn-outline" style={{ height: 38 }} onClick={() => save('Draft')} disabled={saving}>Save Draft</button>
           <button className="btn btn-primary" style={{ height: 38, padding: '0 20px', fontSize: 14 }} onClick={() => save('Open')} disabled={saving}>

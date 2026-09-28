@@ -31,7 +31,7 @@ type Product = {
   sku: string | null
   buy_uom: string | null
   cost_price: number | null
-  tax_rate: string | null
+  tax_rate: string | number | null
   description: string | null
   track_stock: boolean | null
   type: string
@@ -68,10 +68,14 @@ function fmtMoney(n: number) {
   return `$${n.toFixed(2)}`
 }
 
-function parseTaxRate(str: string | null): number {
-  if (!str) return 0
-  const m = str.match(/(\d+)%/)
-  return m ? parseInt(m[1]) : 0
+function parseTaxRate(v: string | number | null | undefined): number {
+  // products.tax_rate is numeric in the DB (e.g. 15), but may also arrive as "15" or "GST 15%"
+  if (v == null || v === '') return 0
+  if (typeof v === 'number') return Number.isFinite(v) ? v : 0
+  const n = Number(v)
+  if (Number.isFinite(n)) return n
+  const m = String(v).match(/(\d+(?:\.\d+)?)\s*%/)
+  return m ? parseFloat(m[1]) : 0
 }
 
 export default function NewPurchaseOrder({
@@ -157,9 +161,9 @@ export default function NewPurchaseOrder({
   function resolvePrice(p: Product): number {
     if (supplierPriceLevelId && p.price_levels) {
       const match = p.price_levels.find(pl => pl.price_level_id === supplierPriceLevelId)
-      if (match != null) return match.price
+      if (match != null) return Number(match.price) || 0
     }
-    return p.cost_price ?? 0
+    return Number(p.cost_price) || 0
   }
 
   function addLine(p: Product) {
@@ -192,7 +196,7 @@ export default function NewPurchaseOrder({
       product_name: p.name,
       product_sku: p.sku ?? '',
       description: p.description ?? '',
-      amount: p.cost_price ?? 0,
+      amount: Number(p.cost_price) || 0,
       tax_rate: parseTaxRate(p.tax_rate),
     }])
     setCostSearch('')
@@ -558,7 +562,7 @@ export default function NewPurchaseOrder({
                         <div key={p.id} className="fp-item" style={{ display: 'grid', gridTemplateColumns: '100px 1fr auto', alignItems: 'center', gap: 8 }} onClick={() => addLine(p)}>
                           <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--gray-400)' }}>{p.sku ?? '—'}</span>
                           <span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{p.name}</span>
-                          <span style={{ fontSize: 13, color: 'var(--teal)', fontWeight: 600, textAlign: 'right' }}>{p.cost_price ? `$${p.cost_price.toFixed(2)}` : '—'}</span>
+                          <span style={{ fontSize: 13, color: 'var(--teal)', fontWeight: 600, textAlign: 'right' }}>{p.cost_price ? `$${Number(p.cost_price).toFixed(2)}` : '—'}</span>
                         </div>
                       ))}
                     </div>
@@ -653,7 +657,7 @@ export default function NewPurchaseOrder({
                           <div key={p.id} className="fp-item" style={{ display: 'grid', gridTemplateColumns: '100px 1fr auto', alignItems: 'center', gap: 8 }} onClick={() => addCostLine(p)}>
                             <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--gray-400)' }}>{p.sku ?? '—'}</span>
                             <span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{p.name}</span>
-                            <span style={{ fontSize: 13, color: 'var(--teal)', fontWeight: 600, textAlign: 'right' }}>{p.cost_price ? `$${p.cost_price.toFixed(2)}` : '—'}</span>
+                            <span style={{ fontSize: 13, color: 'var(--teal)', fontWeight: 600, textAlign: 'right' }}>{p.cost_price ? `$${Number(p.cost_price).toFixed(2)}` : '—'}</span>
                           </div>
                         ))}
                       </div>

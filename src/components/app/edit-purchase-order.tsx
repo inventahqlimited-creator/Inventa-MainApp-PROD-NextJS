@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 
 type Supplier = {
@@ -351,6 +351,20 @@ export default function EditPurchaseOrder({
     setCostDropOpen(false)
   }
 
+  useEffect(() => {
+    const handler = (e: MouseEvent) => {
+      const target = e.target as Node
+      // Close all dropdowns when clicking outside any dropdown wrapper
+      // Each dropdown wrapper has onClick={e => e.stopPropagation()} — but we use
+      // mousedown on document so timing never conflicts with onFocus
+      const insideDropdown = (target as Element)?.closest?.('[data-dropdown]')
+      if (!insideDropdown) closeAll()
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const statusLower = order.status.toLowerCase()
   const isDraft = statusLower === 'draft'
   const isOpen = statusLower === 'open'
@@ -388,7 +402,7 @@ export default function EditPurchaseOrder({
       </div>
 
       {/* Scrollable content */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '24px 28px 100px' }} onClick={closeAll}>
+      <div style={{ flex: 1, overflowY: 'auto', padding: '24px 28px 100px' }}>
 
         {error && (
           <div style={{ background: '#FEF2F2', border: '1.5px solid #FECACA', borderRadius: 10, padding: '12px 16px', fontSize: 13, color: '#B91C1C', marginBottom: 20 }}>{error}</div>
@@ -413,7 +427,7 @@ export default function EditPurchaseOrder({
 
             {!selectedSupplier ? (
               editable ? (
-                <div style={{ position: 'relative' }} onClick={e => e.stopPropagation()}>
+                <div style={{ position: 'relative' }} data-dropdown onClick={e => e.stopPropagation()}>
                   <svg style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--gray-400)', pointerEvents: 'none' }} width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                   <input
                     className="modal-input"
@@ -483,7 +497,7 @@ export default function EditPurchaseOrder({
 
             {!selectedLocation ? (
               editable ? (
-                <div className="modal-field" onClick={e => e.stopPropagation()}>
+                <div className="modal-field" data-dropdown onClick={e => e.stopPropagation()}>
                   <label className="modal-label">Location <span className="req">*</span></label>
                   <div style={{ position: 'relative' }}>
                     <button className="modal-dd-btn" onClick={() => setLocationOpen(o => !o)} type="button" style={{ background: 'var(--white)' }}>
@@ -559,7 +573,7 @@ export default function EditPurchaseOrder({
                 readOnly={isReadOnly}
               />
             </div>
-            <div className="modal-field" onClick={e => e.stopPropagation()}>
+            <div className="modal-field" data-dropdown onClick={e => e.stopPropagation()}>
               <label className="modal-label">Payment Terms</label>
               {editable ? (
                 <div style={{ position: 'relative' }}>
@@ -681,37 +695,32 @@ export default function EditPurchaseOrder({
 
           {/* Add item search — only when editable */}
           {editable && (
-            <div style={{ padding: '10px 0 2px', position: 'relative', display: 'inline-block' }} onClick={e => e.stopPropagation()}>
-              <svg style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--gray-400)', pointerEvents: 'none', zIndex: 1 }} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-              <input
-                className="modal-input"
-                placeholder="Search by SKU or name…"
-                value={itemSearch}
-                onChange={e => { setItemSearch(e.target.value); setItemDropOpen(true) }}
-                onFocus={() => setItemDropOpen(true)}
-                onClick={e => e.stopPropagation()}
-                onBlur={() => setTimeout(() => setItemDropOpen(false), 150)}
-                style={{ paddingLeft: 32, background: 'var(--gray-50)', width: 300 }}
-                autoComplete="off"
-              />
+            <div style={{ padding: '10px 0 2px', position: 'relative' }} data-dropdown onClick={e => e.stopPropagation()}>
+              <div style={{ position: 'relative' }}>
+                <svg style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--gray-400)', pointerEvents: 'none', zIndex: 1 }} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                <input
+                  className="modal-input"
+                  placeholder="Search by SKU or name to add products…"
+                  value={itemSearch}
+                  onChange={e => { setItemSearch(e.target.value); setItemDropOpen(true) }}
+                  onFocus={() => setItemDropOpen(true)}
+                  style={{ paddingLeft: 32, background: 'var(--gray-50)', width: '100%' }}
+                  autoComplete="off"
+                />
+              </div>
               {itemDropOpen && filteredProducts.length > 0 && (
-                <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, width: 500, background: 'var(--white)', border: '1px solid rgba(0,0,0,0.08)', borderRadius: 14, boxShadow: 'var(--shadow-lg)', zIndex: 200, overflow: 'hidden' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', padding: '8px 14px 6px', background: 'var(--gray-50)', borderBottom: '1px solid var(--gray-100)' }}>
-                    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)' }}>Product</span>
+                <div style={{ position: 'absolute', top: 'calc(100% - 4px)', left: 0, right: 0, background: 'var(--white)', border: '1px solid rgba(0,0,0,0.08)', borderRadius: 14, boxShadow: 'var(--shadow-lg)', zIndex: 200, overflow: 'hidden' }}>
+                  <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr auto', padding: '8px 14px 6px', background: 'var(--gray-50)', borderBottom: '1px solid var(--gray-100)' }}>
                     <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)' }}>SKU</span>
-                    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)' }}>Price</span>
+                    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)' }}>Product</span>
+                    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)', textAlign: 'right' }}>Price</span>
                   </div>
                   <div style={{ maxHeight: 260, overflowY: 'auto', padding: 6 }}>
                     {filteredProducts.map(p => (
-                      <div
-                        key={p.id}
-                        className="fp-item"
-                        style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', alignItems: 'center', gap: 8 }}
-                        onMouseDown={e => { e.preventDefault(); addLine(p) }}
-                      >
-                        <span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{p.name}</span>
+                      <div key={p.id} className="fp-item" style={{ display: 'grid', gridTemplateColumns: '100px 1fr auto', alignItems: 'center', gap: 8 }} onClick={() => addLine(p)}>
                         <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--gray-400)' }}>{p.sku ?? '—'}</span>
-                        <span style={{ fontSize: 13, color: 'var(--teal)', fontWeight: 600 }}>{p.cost_price ? `$${p.cost_price.toFixed(2)}` : '—'}</span>
+                        <span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{p.name}</span>
+                        <span style={{ fontSize: 13, color: 'var(--teal)', fontWeight: 600, textAlign: 'right' }}>{p.cost_price ? `$${p.cost_price.toFixed(2)}` : '—'}</span>
                       </div>
                     ))}
                   </div>
@@ -789,37 +798,32 @@ export default function EditPurchaseOrder({
 
             {/* Cost item search — only when editable */}
             {editable && (
-              <div style={{ position: 'relative', display: 'inline-block' }} onClick={e => e.stopPropagation()}>
-                <svg style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--gray-400)', pointerEvents: 'none', zIndex: 1 }} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
-                <input
-                  className="modal-input"
-                  placeholder="Search by SKU or name…"
-                  value={costSearch}
-                  onChange={e => { setCostSearch(e.target.value); setCostDropOpen(true) }}
-                  onFocus={() => setCostDropOpen(true)}
-                  onClick={e => e.stopPropagation()}
-                  onBlur={() => setTimeout(() => setCostDropOpen(false), 150)}
-                  style={{ paddingLeft: 32, background: 'var(--gray-50)', width: 280 }}
-                  autoComplete="off"
-                />
+              <div style={{ position: 'relative' }} data-dropdown onClick={e => e.stopPropagation()}>
+                <div style={{ position: 'relative' }}>
+                  <svg style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--gray-400)', pointerEvents: 'none', zIndex: 1 }} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+                  <input
+                    className="modal-input"
+                    placeholder="Search by SKU or name to add costs…"
+                    value={costSearch}
+                    onChange={e => { setCostSearch(e.target.value); setCostDropOpen(true) }}
+                    onFocus={() => setCostDropOpen(true)}
+                    style={{ paddingLeft: 32, background: 'var(--gray-50)', width: '100%' }}
+                    autoComplete="off"
+                  />
+                </div>
                 {costDropOpen && filteredCostProducts.length > 0 && (
-                  <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, width: 440, background: 'var(--white)', border: '1px solid rgba(0,0,0,0.08)', borderRadius: 14, boxShadow: 'var(--shadow-lg)', zIndex: 200, overflow: 'hidden' }}>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', padding: '8px 14px 6px', background: 'var(--gray-50)', borderBottom: '1px solid var(--gray-100)' }}>
-                      <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)' }}>Service</span>
+                  <div style={{ position: 'absolute', top: 'calc(100% - 4px)', left: 0, right: 0, background: 'var(--white)', border: '1px solid rgba(0,0,0,0.08)', borderRadius: 14, boxShadow: 'var(--shadow-lg)', zIndex: 200, overflow: 'hidden' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr auto', padding: '8px 14px 6px', background: 'var(--gray-50)', borderBottom: '1px solid var(--gray-100)' }}>
                       <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)' }}>SKU</span>
-                      <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)' }}>Price</span>
+                      <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)' }}>Service</span>
+                      <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)', textAlign: 'right' }}>Price</span>
                     </div>
                     <div style={{ maxHeight: 220, overflowY: 'auto', padding: 6 }}>
                       {filteredCostProducts.map(p => (
-                        <div
-                          key={p.id}
-                          className="fp-item"
-                          style={{ display: 'grid', gridTemplateColumns: '1fr 1fr auto', alignItems: 'center', gap: 8 }}
-                          onMouseDown={e => { e.preventDefault(); addCostLine(p) }}
-                        >
-                          <span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{p.name}</span>
+                        <div key={p.id} className="fp-item" style={{ display: 'grid', gridTemplateColumns: '100px 1fr auto', alignItems: 'center', gap: 8 }} onClick={() => addCostLine(p)}>
                           <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--gray-400)' }}>{p.sku ?? '—'}</span>
-                          <span style={{ fontSize: 13, color: 'var(--teal)', fontWeight: 600 }}>{p.cost_price ? `$${p.cost_price.toFixed(2)}` : '—'}</span>
+                          <span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{p.name}</span>
+                          <span style={{ fontSize: 13, color: 'var(--teal)', fontWeight: 600, textAlign: 'right' }}>{p.cost_price ? `$${p.cost_price.toFixed(2)}` : '—'}</span>
                         </div>
                       ))}
                     </div>

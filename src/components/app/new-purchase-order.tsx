@@ -3,6 +3,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import NumInput from '@/components/app/num-input'
+import TaxSelect from '@/components/app/tax-select'
 
 type Supplier = {
   id: string
@@ -38,6 +39,13 @@ type Product = {
   track_stock: boolean | null
   type: string
   price_levels?: { price_level_id: string; price: number }[]
+}
+
+type StockLevel = {
+  product_id: string
+  location_id: string
+  quantity: number | string | null
+  committed: number | string | null
 }
 
 type TaxRate = {
@@ -77,6 +85,9 @@ type CostLine = {
   tax_name?: string | null
 }
 
+// Item picker columns: SKU | Product | Unit | Available | Committed | Price
+const PICK_COLS = '110px minmax(160px, 1fr) 70px 80px 85px 90px'
+
 function fmtMoney(n: number) {
   return `$${n.toFixed(2)}`
 }
@@ -100,6 +111,7 @@ export default function NewPurchaseOrder({
   priceLevels = [],
   taxRates = [],
   decimalPlaces = 2,
+  stockLevels = [],
 }: {
   orgId: string
   suppliers: Supplier[]
@@ -109,6 +121,7 @@ export default function NewPurchaseOrder({
   priceLevels?: PriceLevel[]
   taxRates?: TaxRate[]
   decimalPlaces?: number
+  stockLevels?: StockLevel[]
 }) {
   const router = useRouter()
 
@@ -180,6 +193,19 @@ export default function NewPurchaseOrder({
       )
     ).slice(0, 20)
   }, [products, itemSearch])
+
+  // Stock per product for the item picker — selected delivery location, or all locations if none chosen yet
+  const stockByProduct = useMemo(() => {
+    const map: Record<string, { onHand: number; committed: number; available: number }> = {}
+    for (const sl of stockLevels) {
+      if (selectedLocation && sl.location_id !== selectedLocation.id) continue
+      const m = (map[sl.product_id] ??= { onHand: 0, committed: 0, available: 0 })
+      m.onHand += Number(sl.quantity) || 0
+      m.committed += Number(sl.committed) || 0
+      m.available = m.onHand - m.committed
+    }
+    return map
+  }, [stockLevels, selectedLocation])
 
   // Service items only for additional costs
   const filteredCostProducts = useMemo(() => {
@@ -572,10 +598,7 @@ export default function NewPurchaseOrder({
                       <NumInput className="li-input right" value={l.discount} onChange={n => updateLine(idx, 'discount', n)} min={0} max={100} style={{ width: 70, textAlign: 'right' }} />
                     </td>
                     <td className="li-td">
-                      <select className="li-input" value={l.tax_rate_id ?? ''} onChange={e => setLineTax(idx, e.target.value)} style={{ width: 130 }}>
-                          <option value="">{!l.tax_rate_id && l.tax_name ? l.tax_name : 'No Tax'}</option>
-                          {taxOptions.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
-                        </select>
+                      <TaxSelect value={l.tax_rate_id} label={l.tax_name} options={taxOptions} onChange={id => setLineTax(idx, id)} />
                     </td>
                     <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: 'var(--slate)', fontFamily: 'var(--font-display)' }}>
                       {fmtMoney(lineTotal(l))}
@@ -611,17 +634,31 @@ export default function NewPurchaseOrder({
               <div style={{ position: 'absolute', top: 'calc(100% - 4px)', left: 0, right: 0, background: 'var(--white)', border: '1px solid rgba(0,0,0,0.08)', borderRadius: 14, boxShadow: 'var(--shadow-lg)', zIndex: 200, overflow: 'hidden' }}>
                 {filteredProducts.length > 0 ? (
                   <>
-                    <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr auto', padding: '8px 14px 6px', background: 'var(--gray-50)', borderBottom: '1px solid var(--gray-100)' }}>
+                    <div style={{ display: 'grid', gridTemplateColumns: PICK_COLS, gap: 8, padding: '8px 20px 6px', background: 'var(--gray-50)', borderBottom: '1px solid var(--gray-100)' }}>
                       <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)' }}>SKU</span>
                       <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)' }}>Product</span>
+                      <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)', textAlign: 'center' }}>Unit</span>
+                      <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)', textAlign: 'right' }} title={selectedLocation ? `At ${selectedLocation.name}` : 'All locations'}>Available</span>
+                      <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)', textAlign: 'right' }}>Committed</span>
                       <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)', textAlign: 'right' }}>Price</span>
                     </div>
                     <div style={{ maxHeight: 260, overflowY: 'auto', padding: 6 }}>
                       {filteredProducts.map(p => (
-                        <div key={p.id} className="fp-item" style={{ display: 'grid', gridTemplateColumns: '100px 1fr auto', alignItems: 'center', gap: 8 }} onClick={() => addLine(p)}>
+                        <div key={p.id} className="fp-item" style={{ display: 'grid', gridTemplateColumns: PICK_COLS, alignItems: 'center', gap: 8 }} onClick={() => addLine(p)}>
                           <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--gray-400)' }}>{p.sku ?? '—'}</span>
                           <span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{p.name}</span>
-                          <span style={{ fontSize: 13, color: 'var(--teal)', fontWeight: 600, textAlign: 'right' }}>{p.cost_price ? `$${Number(p.cost_price).toFixed(2)}` : '—'}</span>
+                          <span style={{ fontSize: 12, color: 'var(--gray-400)', textAlign: 'center' }}>{p.buy_uom ?? 'Each'}</span>
+                          {(() => {
+                            const st = stockByProduct[p.id] ?? { onHand: 0, committed: 0, available: 0 }
+                            const tracked = p.track_stock !== false && p.type === 'Stock'
+                            return (
+                              <>
+                                <span style={{ fontSize: 13, fontWeight: 600, textAlign: 'right', color: !tracked ? 'var(--gray-400)' : st.available <= 0 ? 'var(--danger)' : '#059669' }}>{tracked ? st.available : '—'}</span>
+                                <span style={{ fontSize: 13, textAlign: 'right', color: 'var(--gray-400)' }}>{tracked ? st.committed : '—'}</span>
+                              </>
+                            )
+                          })()}
+                          <span style={{ fontSize: 13, color: 'var(--teal)', fontWeight: 600, textAlign: 'right' }}>{p.cost_price ? `$${Number(p.cost_price).toFixed(decimalPlaces)}` : '—'}</span>
                         </div>
                       ))}
                     </div>
@@ -669,10 +706,7 @@ export default function NewPurchaseOrder({
                           <NumInput className="li-input right" value={l.amount} onChange={n => updateCostLine(idx, 'amount', n)} decimals={decimalPlaces} min={0} style={{ width: 90, textAlign: 'right' }} />
                         </td>
                         <td className="li-td">
-                          <select className="li-input" value={l.tax_rate_id ?? ''} onChange={e => setCostLineTax(idx, e.target.value)} style={{ width: 130 }}>
-                          <option value="">{!l.tax_rate_id && l.tax_name ? l.tax_name : 'No Tax'}</option>
-                          {taxOptions.map(o => <option key={o.id} value={o.id}>{o.label}</option>)}
-                        </select>
+                          <TaxSelect value={l.tax_rate_id} label={l.tax_name} options={taxOptions} onChange={id => setCostLineTax(idx, id)} />
                         </td>
                         <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: 'var(--slate)', fontFamily: 'var(--font-display)' }}>
                           {fmtMoney(l.amount * (1 + l.tax_rate / 100))}

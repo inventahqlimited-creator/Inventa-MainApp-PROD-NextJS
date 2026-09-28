@@ -47,7 +47,7 @@ export default async function EditPurchaseOrderPage({ params }: { params: Promis
     adminClient.from('locations').select('id, name, address, city, country, phone, email').eq('org_id', m.org_id).eq('active', true).order('name'),
     adminClient.from('contacts').select('id, name, email, phone, bill_street, bill_city, bill_country, terms, currency, price_level_id').eq('org_id', m.org_id).eq('type', 'supplier').eq('is_active', true).order('name'),
     adminClient.from('products').select('id, name, sku, buy_uom, cost_price, tax_rate, buy_tax_rate_id, description, track_stock, type').eq('org_id', m.org_id).eq('is_active', true).order('name'),
-    adminClient.from('organisations').select('po_default_payment_terms').eq('id', m.org_id).single(),
+    adminClient.from('organisations').select('po_default_payment_terms, decimal_places').eq('id', m.org_id).single(),
     adminClient.from('tax_rates').select('id, name, rate, is_default').eq('org_id', m.org_id).order('name'),
   ])
 
@@ -67,6 +67,7 @@ export default async function EditPurchaseOrderPage({ params }: { params: Promis
       locations={(locations ?? []) as any}
       products={(products ?? []) as any}
       defaultTerms={(org as any)?.po_default_payment_terms ?? null}
+      decimalPlaces={(org as any)?.decimal_places ?? 2}
       taxRates={(taxRates ?? []) as any}
     />
   )

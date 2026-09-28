@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import NumInput from '@/components/app/num-input'
 
 type Supplier = {
   id: string
@@ -150,6 +151,7 @@ export default function EditPurchaseOrder({
   defaultTerms,
   priceLevels = [],
   taxRates = [],
+  decimalPlaces = 2,
 }: {
   orgId: string
   order: PurchaseOrder
@@ -159,6 +161,7 @@ export default function EditPurchaseOrder({
   defaultTerms?: string | null
   priceLevels?: PriceLevel[]
   taxRates?: TaxRate[]
+  decimalPlaces?: number
 }) {
   const router = useRouter()
 
@@ -212,8 +215,8 @@ export default function EditPurchaseOrder({
   const [terms, setTerms] = useState(order.terms ?? fallbackTerms)
   const [termsOpen, setTermsOpen] = useState(false)
   const [notes, setNotes] = useState(order.notes ?? '')
-  const [lines, setLines] = useState<LineItem[]>(() => (order.lines ?? []).map(l => withTaxName({ ...l, tax_rate: Number(l.tax_rate) || 0 })))
-  const [costLines, setCostLines] = useState<CostLine[]>(() => (order.cost_lines ?? []).map(l => withTaxName({ ...l, tax_rate: Number(l.tax_rate) || 0 })))
+  const [lines, setLines] = useState<LineItem[]>(() => (order.lines ?? []).map(l => withTaxName({ ...l, quantity_ordered: Number(l.quantity_ordered) || 0, unit_cost: Number(l.unit_cost) || 0, discount: Number(l.discount) || 0, tax_rate: Number(l.tax_rate) || 0 })))
+  const [costLines, setCostLines] = useState<CostLine[]>(() => (order.cost_lines ?? []).map(l => withTaxName({ ...l, amount: Number(l.amount) || 0, tax_rate: Number(l.tax_rate) || 0 })))
   const [itemSearch, setItemSearch] = useState('')
   const [itemDropOpen, setItemDropOpen] = useState(false)
   const [costSearch, setCostSearch] = useState('')
@@ -221,7 +224,7 @@ export default function EditPurchaseOrder({
   const [orderDiscountType, setOrderDiscountType] = useState<'%' | '$'>(
     (order.order_discount_type as '%' | '$') ?? '%'
   )
-  const [orderDiscount, setOrderDiscount] = useState<number>(order.order_discount ?? 0)
+  const [orderDiscount, setOrderDiscount] = useState<number>(Number(order.order_discount) || 0)
   const [supplierPriceLevelId, setSupplierPriceLevelId] = useState<string | null>(
     initialSupplier?.price_level_id ?? null
   )
@@ -709,19 +712,19 @@ export default function EditPurchaseOrder({
                     </td>
                     <td className="li-td" style={{ textAlign: 'right' }}>
                       {editable
-                        ? <input className="li-input right" type="number" min="1" step="1" value={l.quantity_ordered} onChange={e => updateLine(idx, 'quantity_ordered', parseFloat(e.target.value) || 0)} style={{ width: 70, textAlign: 'right' }} />
+                        ? <NumInput className="li-input right" value={l.quantity_ordered} onChange={n => updateLine(idx, 'quantity_ordered', n)} min={0} style={{ width: 70, textAlign: 'right' }} />
                         : <span style={{ fontSize: 13 }}>{l.quantity_ordered}</span>
                       }
                     </td>
                     <td className="li-td" style={{ textAlign: 'right' }}>
                       {editable
-                        ? <input className="li-input right" type="number" min="0" step="0.01" value={l.unit_cost} onChange={e => updateLine(idx, 'unit_cost', parseFloat(e.target.value) || 0)} style={{ width: 90, textAlign: 'right' }} />
+                        ? <NumInput className="li-input right" value={l.unit_cost} onChange={n => updateLine(idx, 'unit_cost', n)} decimals={decimalPlaces} min={0} style={{ width: 90, textAlign: 'right' }} />
                         : <span style={{ fontSize: 13, fontFamily: 'var(--font-display)' }}>{fmtMoney(l.unit_cost)}</span>
                       }
                     </td>
                     <td className="li-td" style={{ textAlign: 'right' }}>
                       {editable
-                        ? <input className="li-input right" type="number" min="0" max="100" step="0.1" value={l.discount} onChange={e => updateLine(idx, 'discount', parseFloat(e.target.value) || 0)} style={{ width: 70, textAlign: 'right' }} />
+                        ? <NumInput className="li-input right" value={l.discount} onChange={n => updateLine(idx, 'discount', n)} min={0} max={100} style={{ width: 70, textAlign: 'right' }} />
                         : <span style={{ fontSize: 13 }}>{l.discount}%</span>
                       }
                     </td>
@@ -834,7 +837,7 @@ export default function EditPurchaseOrder({
                         </td>
                         <td className="li-td" style={{ textAlign: 'right' }}>
                           {editable
-                            ? <input className="li-input right" type="number" min="0" step="0.01" value={l.amount} onChange={e => updateCostLine(idx, 'amount', parseFloat(e.target.value) || 0)} style={{ width: 90, textAlign: 'right' }} />
+                            ? <NumInput className="li-input right" value={l.amount} onChange={n => updateCostLine(idx, 'amount', n)} decimals={decimalPlaces} min={0} style={{ width: 90, textAlign: 'right' }} />
                             : <span style={{ fontSize: 13, fontFamily: 'var(--font-display)' }}>{fmtMoney(l.amount)}</span>
                           }
                         </td>
@@ -932,14 +935,15 @@ export default function EditPurchaseOrder({
                 <span>Order Discount</span>
                 {editable ? (
                   <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                    <input
-                      type="number"
-                      min="0"
-                      step="0.01"
-                      value={orderDiscount || ''}
-                      onChange={e => setOrderDiscount(parseFloat(e.target.value) || 0)}
-                      placeholder="0"
-                      style={{ width: 70, textAlign: 'right', border: '1px solid var(--gray-200)', borderRadius: 6, padding: '3px 7px', fontSize: 13, fontFamily: 'var(--font-display)', color: 'var(--slate)', background: 'var(--white)', outline: 'none' }}
+                    <NumInput
+                    value={orderDiscount}
+                    onChange={setOrderDiscount}
+                    decimals={orderDiscountType === '$' ? decimalPlaces : undefined}
+                    min={0}
+                    max={orderDiscountType === '%' ? 100 : undefined}
+                    blankWhenZero
+                    placeholder="0"
+                    style={{ width: 70, textAlign: 'right', border: '1px solid var(--gray-200)', borderRadius: 6, padding: '3px 7px', fontSize: 13, fontFamily: 'var(--font-display)', color: 'var(--slate)', background: 'var(--white)', outline: 'none' }}
                     />
                     <button
                       onClick={() => setOrderDiscountType(t => t === '%' ? '$' : '%')}

@@ -55,7 +55,11 @@ const TABS = [
   { key: 'open', label: 'Open' },
   { key: 'partial', label: 'Partially Received' },
   { key: 'closed', label: 'Closed' },
+  { key: 'cancelled', label: 'Cancelled' },
 ] as const
+
+// These tabs only appear when at least one order has that status
+const HIDE_WHEN_EMPTY = new Set<string>(['draft', 'partial', 'cancelled'])
 
 type Tab = typeof TABS[number]['key']
 
@@ -141,6 +145,7 @@ export default function PurchasesTable({
       if (tab === 'open' && o.status.toLowerCase() !== 'open') return false
       if (tab === 'partial' && o.status.toLowerCase() !== 'partially received') return false
       if (tab === 'closed' && o.status.toLowerCase() !== 'closed') return false
+      if (tab === 'cancelled' && o.status.toLowerCase() !== 'cancelled') return false
       if (supplierFilter && o.supplier_id !== supplierFilter) return false
       if (locationFilter && o.location_id !== locationFilter) return false
       if (search) {
@@ -162,7 +167,10 @@ export default function PurchasesTable({
     open: orders.filter(o => o.status.toLowerCase() === 'open').length,
     partial: orders.filter(o => o.status.toLowerCase() === 'partially received').length,
     closed: orders.filter(o => o.status.toLowerCase() === 'closed').length,
+    cancelled: orders.filter(o => o.status.toLowerCase() === 'cancelled').length,
   }), [orders])
+
+  const visibleTabs = TABS.filter(t => !HIDE_WHEN_EMPTY.has(t.key) || counts[t.key] > 0)
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / perPage))
   const paginated = filtered.slice((page - 1) * perPage, page * perPage)
@@ -191,7 +199,7 @@ export default function PurchasesTable({
           </div>
         </div>
         <div className="tab-bar">
-          {TABS.map(t => (
+          {visibleTabs.map(t => (
             <div
               key={t.key}
               className={`tab-item${tab === t.key ? ' active' : ''}`}

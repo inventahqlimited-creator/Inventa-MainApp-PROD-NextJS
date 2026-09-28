@@ -19,7 +19,7 @@ export default async function NewPurchaseOrderPage() {
   if (!membership) redirect('/login')
   const m = membership as { org_id: string; role: string }
 
-  const [{ data: locations }, { data: contacts }, { data: products }, { data: org }] = await Promise.all([
+  const [{ data: locations }, { data: contacts }, { data: products }, { data: org }, { data: taxRates }] = await Promise.all([
     adminClient
       .from('locations')
       .select('id, name, address, city, country, phone, email')
@@ -35,7 +35,7 @@ export default async function NewPurchaseOrderPage() {
       .order('name'),
     adminClient
       .from('products')
-      .select('id, name, sku, buy_uom, cost_price, tax_rate, description, track_stock, type')
+      .select('id, name, sku, buy_uom, cost_price, tax_rate, buy_tax_rate_id, description, track_stock, type')
       .eq('org_id', m.org_id)
       .eq('is_active', true)
       .order('name'),
@@ -44,6 +44,11 @@ export default async function NewPurchaseOrderPage() {
       .select('po_default_payment_terms')
       .eq('id', m.org_id)
       .single(),
+    adminClient
+      .from('tax_rates')
+      .select('id, name, rate, is_default')
+      .eq('org_id', m.org_id)
+      .order('name'),
   ])
 
   const orgData = org as { po_default_payment_terms: string | null } | null
@@ -77,12 +82,14 @@ export default async function NewPurchaseOrderPage() {
         sku: string | null
         buy_uom: string | null
         cost_price: number | null
-        tax_rate: string | null
+        tax_rate: string | number | null
+        buy_tax_rate_id: string | null
         description: string | null
         track_stock: boolean | null
         type: string
       }[]}
       defaultTerms={orgData?.po_default_payment_terms ?? null}
+      taxRates={(taxRates ?? []) as { id: string; name: string; rate: number; is_default: boolean | null }[]}
     />
   )
 }

@@ -102,6 +102,23 @@ function parseTaxRate(v: string | number | null | undefined): number {
   return m ? parseFloat(m[1]) : 0
 }
 
+function ConfirmModal({ title, message, confirmLabel, cancelLabel = 'Go back', onConfirm, onCancel }: {
+  title: string; message: string; confirmLabel: string; cancelLabel?: string; onConfirm: () => void; onCancel: () => void
+}) {
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onMouseDown={onCancel}>
+      <div style={{ background: 'var(--white)', borderRadius: 16, padding: '28px 32px', maxWidth: 420, width: '90%', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }} onMouseDown={e => e.stopPropagation()}>
+        <div style={{ fontFamily: 'var(--font-display)', fontSize: 17, fontWeight: 700, color: 'var(--slate)', marginBottom: 10 }}>{title}</div>
+        <div style={{ fontSize: 14, color: 'var(--gray-500)', lineHeight: 1.6, marginBottom: 24 }}>{message}</div>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+          <button className="btn btn-outline" style={{ height: 38 }} onClick={onCancel}>{cancelLabel}</button>
+          <button className="btn btn-primary" style={{ height: 38, padding: '0 20px', background: 'var(--danger)', borderColor: 'var(--danger)' }} onClick={onConfirm}>{confirmLabel}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export default function NewPurchaseOrder({
   orgId,
   suppliers,
@@ -176,6 +193,7 @@ export default function NewPurchaseOrder({
   const [supplierPriceLevelId, setSupplierPriceLevelId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [confirmLeave, setConfirmLeave] = useState(false)
 
   const filteredSuppliers = useMemo(() =>
     suppliers.filter(s => s.name.toLowerCase().includes(supplierSearch.toLowerCase())),
@@ -820,7 +838,7 @@ export default function NewPurchaseOrder({
 
       {/* Bottom action bar */}
       <div style={{ background: 'var(--white)', borderTop: '1px solid var(--gray-100)', padding: '14px 28px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 -4px 16px rgba(0,0,0,0.06)', flexShrink: 0 }}>
-        <button onClick={() => router.push('/purchases')} className="btn btn-outline" style={{ height: 38 }}>
+        <button onClick={() => setConfirmLeave(true)} className="btn btn-outline" style={{ height: 38 }}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
           Cancel
         </button>
@@ -833,6 +851,16 @@ export default function NewPurchaseOrder({
           </button>
         </div>
       </div>
+      {confirmLeave && (
+        <ConfirmModal
+          title="Cancel this purchase order?"
+          message="Are you sure you want to cancel? This purchase order hasn't been saved and everything you've entered will be lost."
+          confirmLabel="Yes, cancel"
+          cancelLabel="Keep editing"
+          onConfirm={() => router.push('/purchases')}
+          onCancel={() => setConfirmLeave(false)}
+        />
+      )}
     </div>
   )
 }

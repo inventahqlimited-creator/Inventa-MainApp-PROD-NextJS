@@ -122,11 +122,11 @@ export default function NewPurchaseOrder({
     [suppliers, supplierSearch]
   )
 
-  // All non-service items for main line items
+  // Stock + NonStock only (exclude Service) for line items
   const filteredProducts = useMemo(() => {
     const q = itemSearch.toLowerCase()
     return products.filter(p =>
-      p.type?.toLowerCase() !== 'service' && (
+      p.type !== 'Service' && (
         !q ||
         p.name.toLowerCase().includes(q) ||
         (p.sku ?? '').toLowerCase().includes(q)
@@ -138,34 +138,13 @@ export default function NewPurchaseOrder({
   const filteredCostProducts = useMemo(() => {
     const q = costSearch.toLowerCase()
     return products.filter(p =>
-      p.type?.toLowerCase() === 'service' && (
+      p.type === 'Service' && (
         !q ||
         p.name.toLowerCase().includes(q) ||
         (p.sku ?? '').toLowerCase().includes(q)
       )
     ).slice(0, 20)
   }, [products, costSearch])
-
-  function addCostLine(p: Product) {
-    setCostLines(prev => [...prev, {
-      product_id: p.id,
-      product_name: p.name,
-      product_sku: p.sku ?? '',
-      description: p.description ?? '',
-      amount: p.cost_price ?? 0,
-      tax_rate: parseTaxRate(p.tax_rate),
-    }])
-    setCostSearch('')
-    setCostDropOpen(false)
-  }
-
-  function updateCostLine(idx: number, field: keyof CostLine, value: string | number) {
-    setCostLines(prev => prev.map((l, i) => i === idx ? { ...l, [field]: value } : l))
-  }
-
-  function removeCostLine(idx: number) {
-    setCostLines(prev => prev.filter((_, i) => i !== idx))
-  }
 
   function selectSupplier(s: Supplier & { price_level_id?: string | null }) {
     setSelectedSupplier(s)
@@ -207,6 +186,27 @@ export default function NewPurchaseOrder({
     setLines(prev => prev.filter((_, i) => i !== idx))
   }
 
+  function addCostLine(p: Product) {
+    setCostLines(prev => [...prev, {
+      product_id: p.id,
+      product_name: p.name,
+      product_sku: p.sku ?? '',
+      description: p.description ?? '',
+      amount: p.cost_price ?? 0,
+      tax_rate: parseTaxRate(p.tax_rate),
+    }])
+    setCostSearch('')
+    setCostDropOpen(false)
+  }
+
+  function updateCostLine(idx: number, field: keyof CostLine, value: string | number) {
+    setCostLines(prev => prev.map((l, i) => i === idx ? { ...l, [field]: value } : l))
+  }
+
+  function removeCostLine(idx: number) {
+    setCostLines(prev => prev.filter((_, i) => i !== idx))
+  }
+
   const subtotal = lines.reduce((sum, l) => {
     return sum + l.quantity_ordered * l.unit_cost * (1 - l.discount / 100)
   }, 0)
@@ -223,7 +223,6 @@ export default function NewPurchaseOrder({
 
   const gstTotal = lines.reduce((sum, l) => {
     const lt = l.quantity_ordered * l.unit_cost * (1 - l.discount / 100)
-    // apply order discount proportion to each line for tax calc
     const discountFactor = preDiscountTotal > 0 ? discountedBase / preDiscountTotal : 1
     return sum + lt * discountFactor * (l.tax_rate / 100)
   }, 0) + costLines.reduce((sum, l) => {
@@ -590,7 +589,7 @@ export default function NewPurchaseOrder({
                       <th className="li-th">Name</th>
                       <th className="li-th">Description</th>
                       <th className="li-th" style={{ width: 110, textAlign: 'right' }}>Amount</th>
-                      <th className="li-th" style={{ width: 70, textAlign: 'right' }}>Tax</th>
+                      <th className="li-th" style={{ width: 70, textAlign: 'right' }}>Tax %</th>
                       <th className="li-th" style={{ width: 110, textAlign: 'right' }}>Line Total</th>
                       <th className="li-th" style={{ width: 36 }} />
                     </tr>
@@ -626,13 +625,13 @@ export default function NewPurchaseOrder({
               </div>
             )}
 
-            {/* Cost item search */}
+            {/* Cost item search — Service products only */}
             <div style={{ position: 'relative' }} data-dropdown onClick={e => e.stopPropagation()}>
               <div style={{ position: 'relative' }}>
                 <svg style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', color: 'var(--gray-400)', pointerEvents: 'none', zIndex: 1 }} width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
                 <input
                   className="modal-input"
-                  placeholder="Search by SKU or name to add costs…"
+                  placeholder="Search services to add costs…"
                   value={costSearch}
                   onChange={e => { setCostSearch(e.target.value); setCostDropOpen(true) }}
                   onFocus={() => setCostDropOpen(true)}
@@ -640,22 +639,30 @@ export default function NewPurchaseOrder({
                   autoComplete="off"
                 />
               </div>
-              {costDropOpen && filteredCostProducts.length > 0 && (
+              {costDropOpen && (
                 <div style={{ position: 'absolute', top: 'calc(100% - 4px)', left: 0, right: 0, background: 'var(--white)', border: '1px solid rgba(0,0,0,0.08)', borderRadius: 14, boxShadow: 'var(--shadow-lg)', zIndex: 200, overflow: 'hidden' }}>
-                  <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr auto', padding: '8px 14px 6px', background: 'var(--gray-50)', borderBottom: '1px solid var(--gray-100)' }}>
-                    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)' }}>SKU</span>
-                    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)' }}>Service</span>
-                    <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)', textAlign: 'right' }}>Price</span>
-                  </div>
-                  <div style={{ maxHeight: 220, overflowY: 'auto', padding: 6 }}>
-                    {filteredCostProducts.map(p => (
-                      <div key={p.id} className="fp-item" style={{ display: 'grid', gridTemplateColumns: '100px 1fr auto', alignItems: 'center', gap: 8 }} onClick={() => addCostLine(p)}>
-                        <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--gray-400)' }}>{p.sku ?? '—'}</span>
-                        <span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{p.name}</span>
-                        <span style={{ fontSize: 13, color: 'var(--teal)', fontWeight: 600, textAlign: 'right' }}>{p.cost_price ? `$${p.cost_price.toFixed(2)}` : '—'}</span>
+                  {filteredCostProducts.length > 0 ? (
+                    <>
+                      <div style={{ display: 'grid', gridTemplateColumns: '100px 1fr auto', padding: '8px 14px 6px', background: 'var(--gray-50)', borderBottom: '1px solid var(--gray-100)' }}>
+                        <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)' }}>SKU</span>
+                        <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)' }}>Service</span>
+                        <span style={{ fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)', textAlign: 'right' }}>Price</span>
                       </div>
-                    ))}
-                  </div>
+                      <div style={{ maxHeight: 220, overflowY: 'auto', padding: 6 }}>
+                        {filteredCostProducts.map(p => (
+                          <div key={p.id} className="fp-item" style={{ display: 'grid', gridTemplateColumns: '100px 1fr auto', alignItems: 'center', gap: 8 }} onClick={() => addCostLine(p)}>
+                            <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--gray-400)' }}>{p.sku ?? '—'}</span>
+                            <span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{p.name}</span>
+                            <span style={{ fontSize: 13, color: 'var(--teal)', fontWeight: 600, textAlign: 'right' }}>{p.cost_price ? `$${p.cost_price.toFixed(2)}` : '—'}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </>
+                  ) : (
+                    <div style={{ padding: '14px 16px', fontSize: 13, color: 'var(--gray-400)' }}>
+                      {costSearch ? `No services matching "${costSearch}"` : 'No service products available'}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

@@ -41,7 +41,7 @@ export default async function NewPurchaseOrderPage() {
       .order('name'),
     adminClient
       .from('organisations')
-      .select('po_default_payment_terms')
+      .select('po_default_payment_terms, decimal_places')
       .eq('id', m.org_id)
       .single(),
     adminClient
@@ -51,7 +51,7 @@ export default async function NewPurchaseOrderPage() {
       .order('name'),
   ])
 
-  const orgData = org as { po_default_payment_terms: string | null } | null
+  const orgData = org as { po_default_payment_terms: string | null; decimal_places: number | null } | null
 
   return (
     <NewPurchaseOrder
@@ -89,6 +89,7 @@ export default async function NewPurchaseOrderPage() {
         type: string
       }[]}
       defaultTerms={orgData?.po_default_payment_terms ?? null}
+      decimalPlaces={orgData?.decimal_places ?? 2}
       taxRates={(taxRates ?? []) as { id: string; name: string; rate: number; is_default: boolean | null }[]}
     />
   )

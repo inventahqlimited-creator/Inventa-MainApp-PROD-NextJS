@@ -38,7 +38,7 @@ export default async function ProductsPage() {
     adminClient.from('stock_levels').select('*').eq('org_id', m.org_id),
     adminClient.from('locations').select('id, name').eq('org_id', m.org_id).eq('active', true).order('name'),
     adminClient.from('contacts').select('id, name').eq('org_id', m.org_id).eq('type', 'supplier').order('name'),
-    adminClient.from('tax_rates').select('id, name, rate').eq('org_id', m.org_id).order('name'),
+    adminClient.from('tax_rates').select('id, name, rate, is_default').eq('org_id', m.org_id).order('name'),
     adminClient.from('uoms').select('id, name, abbr').eq('org_id', m.org_id).order('sort_order').order('created_at'),
     adminClient.from('price_levels').select('id, name, is_default').eq('org_id', m.org_id).order('name'),
     adminClient.from('product_custom_fields').select('id, name, field_type').eq('org_id', m.org_id).order('sort_order').order('created_at'),
@@ -64,7 +64,7 @@ export default async function ProductsPage() {
       orgId={m.org_id}
       isAdmin={m.role === 'admin'}
       suppliers={(suppliers ?? []) as { id: string; name: string }[]}
-      taxRates={(taxRates ?? []) as { id: string; name: string; rate: number }[]}
+      taxRates={(taxRates ?? []) as { id: string; name: string; rate: number; is_default?: boolean }[]}
       uoms={(uoms ?? []) as { id: string; name: string; abbr?: string }[]}
       priceLevels={(priceLevels ?? []) as { id: string; name: string; is_default?: boolean }[]}
       decimalPlaces={orgData?.decimal_places ?? 2}

@@ -30,6 +30,14 @@ export async function PATCH(request: Request, { params }: Params) {
   const { data: existingPo } = await db.from('purchase_orders').select('id').eq('id', id).eq('org_id', ctx.org_id).single()
   if (!existingPo) return NextResponse.json({ error: 'Purchase order not found' }, { status: 404 })
 
+  // Can't cancel once stock has been received against the order
+  if (typeof body.status === 'string' && body.status.toLowerCase() === 'cancelled') {
+    const { data: received } = await db.from('purchase_order_lines').select('id').eq('po_id', id).gt('quantity_received', 0).limit(1)
+    if (received && received.length > 0) {
+      return NextResponse.json({ error: 'This order has stock received against it and can\'t be cancelled.' }, { status: 400 })
+    }
+  }
+
   // 1. Header fields (status changes, supplier, dates, totals…)
   const updates = pickPO(body)
   if (Object.keys(updates).length > 0) {

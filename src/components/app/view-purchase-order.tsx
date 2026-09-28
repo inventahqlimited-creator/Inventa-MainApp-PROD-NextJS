@@ -365,12 +365,12 @@ export default function ViewPurchaseOrder({
 
   // ── Receive line helpers ─────────────────────────────────────────────────
   function updateReceiveLine(idx: number, field: keyof ReceiveLine, value: string | number) {
-    setReceiveLines(prev => prev.map((l, i) => {
+    setReceiveLines(prev => prev.map((l, i): ReceiveLine => {
       if (i !== idx) return l
       if (field === 'qty_to_receive' && !l.needs_serial) {
-        return { ...l, [field]: value }
+        return { ...l, qty_to_receive: Number(value) }
       }
-      return { ...l, [field]: value }
+      return { ...l, [field]: value } as ReceiveLine
     }))
     // Clear errors for this field
     if (lineErrors[idx]?.[field as string]) {

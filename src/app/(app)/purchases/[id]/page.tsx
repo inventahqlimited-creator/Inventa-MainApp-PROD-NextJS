@@ -30,7 +30,7 @@ export default async function EditPurchaseOrderPage({ params }: { params: Promis
       order_discount, order_discount_type, order_discount_amount,
       purchase_order_lines (
         id, product_id, product_name, product_sku, unit,
-        quantity_ordered, unit_cost, discount, tax_rate, tax_rate_id, tax_name, line_notes, sort_order
+        quantity_ordered, quantity_received, unit_cost, discount, tax_rate, tax_rate_id, tax_name, line_notes, sort_order
       ),
       purchase_order_cost_lines (
         id, product_id, product_name, product_sku,

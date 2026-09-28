@@ -34,6 +34,7 @@ type CostLine = {
   description: string | null
   amount: number
   tax_rate: number | null
+  tax_name?: string | null
 }
 
 type Line = {
@@ -48,6 +49,7 @@ type Line = {
   total_cost: number | null
   discount: number | null
   tax_rate: number | null
+  tax_name?: string | null
   line_notes: string | null
   batch_num: string | null
   expiry_date: string | null
@@ -1034,7 +1036,7 @@ export default function ViewPurchaseOrder({
                           <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: remaining > 0 ? 'var(--danger)' : '#059669' }}>{remaining}</td>
                           <td className="li-td" style={{ textAlign: 'right', color: 'var(--gray-400)' }}>{`$${l.unit_cost.toFixed(2)}`}</td>
                           <td className="li-td" style={{ textAlign: 'right', color: 'var(--gray-400)' }}>{l.discount ? `${l.discount}%` : '—'}</td>
-                          <td className="li-td" style={{ textAlign: 'right', color: 'var(--gray-400)' }}>{l.tax_rate ? `${l.tax_rate}%` : '—'}</td>
+                          <td className="li-td" style={{ textAlign: 'right', color: 'var(--gray-400)' }}>{l.tax_name ?? (l.tax_rate ? `${l.tax_rate}%` : '—')}</td>
                           <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: 'var(--slate)', fontFamily: 'var(--font-display)' }}>{`$${lt.toFixed(2)}`}</td>
                         </tr>
                       )
@@ -1069,7 +1071,7 @@ export default function ViewPurchaseOrder({
                             <td className="li-td"><span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{l.product_name ?? '—'}</span></td>
                             <td className="li-td" style={{ color: 'var(--gray-400)', fontSize: 13 }}>{l.description || '—'}</td>
                             <td className="li-td" style={{ textAlign: 'right', color: 'var(--gray-400)' }}>{`$${l.amount.toFixed(2)}`}</td>
-                            <td className="li-td" style={{ textAlign: 'right', color: 'var(--gray-400)' }}>{l.tax_rate ? `${l.tax_rate}%` : '—'}</td>
+                            <td className="li-td" style={{ textAlign: 'right', color: 'var(--gray-400)' }}>{l.tax_name ?? (l.tax_rate ? `${l.tax_rate}%` : '—')}</td>
                             <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: 'var(--slate)', fontFamily: 'var(--font-display)' }}>{`$${(l.amount * (1 + (l.tax_rate ?? 0) / 100)).toFixed(2)}`}</td>
                           </tr>
                         ))}

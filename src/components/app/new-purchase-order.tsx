@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import NumInput from '@/components/app/num-input'
 
 type Supplier = {
   id: string
@@ -98,6 +99,7 @@ export default function NewPurchaseOrder({
   defaultTerms,
   priceLevels = [],
   taxRates = [],
+  decimalPlaces = 2,
 }: {
   orgId: string
   suppliers: Supplier[]
@@ -106,6 +108,7 @@ export default function NewPurchaseOrder({
   defaultTerms?: string | null
   priceLevels?: PriceLevel[]
   taxRates?: TaxRate[]
+  decimalPlaces?: number
 }) {
   const router = useRouter()
 
@@ -560,13 +563,13 @@ export default function NewPurchaseOrder({
                       <input className="li-input" value={l.unit} onChange={e => updateLine(idx, 'unit', e.target.value)} style={{ width: 60, textAlign: 'center' }} />
                     </td>
                     <td className="li-td" style={{ textAlign: 'right' }}>
-                      <input className="li-input right" type="number" min="1" step="1" value={l.quantity_ordered} onChange={e => updateLine(idx, 'quantity_ordered', parseFloat(e.target.value) || 0)} style={{ width: 70, textAlign: 'right' }} />
+                      <NumInput className="li-input right" value={l.quantity_ordered} onChange={n => updateLine(idx, 'quantity_ordered', n)} min={0} style={{ width: 70, textAlign: 'right' }} />
                     </td>
                     <td className="li-td" style={{ textAlign: 'right' }}>
-                      <input className="li-input right" type="number" min="0" step="0.01" value={l.unit_cost} onChange={e => updateLine(idx, 'unit_cost', parseFloat(e.target.value) || 0)} style={{ width: 90, textAlign: 'right' }} />
+                      <NumInput className="li-input right" value={l.unit_cost} onChange={n => updateLine(idx, 'unit_cost', n)} decimals={decimalPlaces} min={0} style={{ width: 90, textAlign: 'right' }} />
                     </td>
                     <td className="li-td" style={{ textAlign: 'right' }}>
-                      <input className="li-input right" type="number" min="0" max="100" step="0.1" value={l.discount} onChange={e => updateLine(idx, 'discount', parseFloat(e.target.value) || 0)} style={{ width: 70, textAlign: 'right' }} />
+                      <NumInput className="li-input right" value={l.discount} onChange={n => updateLine(idx, 'discount', n)} min={0} max={100} style={{ width: 70, textAlign: 'right' }} />
                     </td>
                     <td className="li-td">
                       <select className="li-input" value={l.tax_rate_id ?? ''} onChange={e => setLineTax(idx, e.target.value)} style={{ width: 130 }}>
@@ -663,7 +666,7 @@ export default function NewPurchaseOrder({
                           <input className="li-input" value={l.description} onChange={e => updateCostLine(idx, 'description', e.target.value)} placeholder="Optional description…" style={{ width: '100%', minWidth: 160 }} />
                         </td>
                         <td className="li-td" style={{ textAlign: 'right' }}>
-                          <input className="li-input right" type="number" min="0" step="0.01" value={l.amount} onChange={e => updateCostLine(idx, 'amount', parseFloat(e.target.value) || 0)} style={{ width: 90, textAlign: 'right' }} />
+                          <NumInput className="li-input right" value={l.amount} onChange={n => updateCostLine(idx, 'amount', n)} decimals={decimalPlaces} min={0} style={{ width: 90, textAlign: 'right' }} />
                         </td>
                         <td className="li-td">
                           <select className="li-input" value={l.tax_rate_id ?? ''} onChange={e => setCostLineTax(idx, e.target.value)} style={{ width: 130 }}>
@@ -748,12 +751,13 @@ export default function NewPurchaseOrder({
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 13, color: 'var(--gray-400)' }} onClick={e => e.stopPropagation()}>
                 <span>Order Discount</span>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-                  <input
-                    type="number"
-                    min="0"
-                    step="0.01"
-                    value={orderDiscount || ''}
-                    onChange={e => setOrderDiscount(parseFloat(e.target.value) || 0)}
+                  <NumInput
+                    value={orderDiscount}
+                    onChange={setOrderDiscount}
+                    decimals={orderDiscountType === '$' ? decimalPlaces : undefined}
+                    min={0}
+                    max={orderDiscountType === '%' ? 100 : undefined}
+                    blankWhenZero
                     placeholder="0"
                     style={{ width: 70, textAlign: 'right', border: '1px solid var(--gray-200)', borderRadius: 6, padding: '3px 7px', fontSize: 13, fontFamily: 'var(--font-display)', color: 'var(--slate)', background: 'var(--white)', outline: 'none' }}
                   />

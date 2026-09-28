@@ -31,7 +31,9 @@ type Product = {
   lead_time_days: number | null
   min_order_qty: number | null
   notes: string | null
-  tax_rate: string | null
+  tax_rate: string | number | null
+  buy_tax_rate_id: string | null
+  sell_tax_rate_id: string | null
   custom_fields: Record<string, string> | null
 }
 
@@ -68,7 +70,8 @@ type ModalForm = {
   type: string
   barcode: string
   low_stock_threshold: string
-  tax_rate: string
+  buy_tax_rate_id: string
+  sell_tax_rate_id: string
   description: string
   cost_price: string
   buy_uom: string
@@ -90,7 +93,7 @@ type ModalForm = {
 
 const EMPTY_FORM: ModalForm = {
   sku: '', name: '', type: 'Stock', barcode: '', low_stock_threshold: '',
-  tax_rate: '', description: '', cost_price: '', buy_uom: 'Each', buy_uom_qty: '1',
+  buy_tax_rate_id: '', sell_tax_rate_id: '', description: '', cost_price: '', buy_uom: 'Each', buy_uom_qty: '1',
   sell_price: '', sell_uom: 'Each', sell_uom_qty: '1',
   serial_tracking: false, batch_tracking: false, expiry_tracking: false,
   default_supplier_id: '', supplier_code: '', lead_time_days: '', min_order_qty: '',
@@ -213,7 +216,7 @@ function Toggle({ active, onChange, disabled }: { active: boolean; onChange?: (v
   )
 }
 
-type TaxRate = { id: string; name: string; rate: number }
+type TaxRate = { id: string; name: string; rate: number; is_default?: boolean }
 type Uom = { id: string; name: string; abbr?: string }
 type PriceLevel = { id: string; name: string; is_default?: boolean }
 type CustomField = { id: string; name: string; field_type: string }
@@ -270,7 +273,7 @@ function ExportModal({ products, customFields, decimalPlaces, taxRates, priceLev
           p.id, p.name, p.sku ?? '', p.type, p.description ?? '', p.barcode ?? '',
           p.sell_price != null ? Number(p.sell_price).toFixed(decimalPlaces) : '',
           p.cost_price != null ? Number(p.cost_price).toFixed(decimalPlaces) : '',
-          (() => { const stored = Number(p.tax_rate); const m = taxRates.find(t => t.rate === stored); return m ? `${m.rate}% — ${m.name}` : (p.tax_rate ? String(p.tax_rate) : '') })(),
+          (() => { const byId = taxRates.find(t => t.id === p.sell_tax_rate_id); const stored = Number(p.tax_rate); const m = byId ?? taxRates.find(t => t.rate === stored); return m ? `${m.rate}% ${m.name}` : (p.tax_rate ? String(p.tax_rate) : '') })(),
           p.sell_uom ?? '', p.buy_uom ?? '',
           p.track_stock ? 'Yes' : 'No',
           p.serial_tracking ? 'Yes' : 'No',
@@ -506,12 +509,13 @@ function ImportModal({ orgId, customFields, customLists, taxRates, suppliers, pr
       // Resolve tax rate
       const taxStr = get(taxIdx).toLowerCase()
       let resolvedTaxRate: number | null = null
+      let resolvedTaxId: string | null = null
       if (taxStr) {
         const matchedTax = taxRates.find(t => {
           const rateStr = String(t.rate)
           return taxStr.includes(rateStr) || taxStr.replace(/[^a-z0-9]/g, '').includes(t.name.toLowerCase().replace(/[^a-z0-9]/g, ''))
         })
-        if (matchedTax) resolvedTaxRate = matchedTax.rate
+        if (matchedTax) { resolvedTaxRate = matchedTax.rate; resolvedTaxId = matchedTax.id }
       }
 
       // Resolve supplier
@@ -546,6 +550,8 @@ function ImportModal({ orgId, customFields, customLists, taxRates, suppliers, pr
         sell_price: parseFloat(get(sellPriceIdx)) || null,
         cost_price: parseFloat(get(costPriceIdx)) || null,
         tax_rate: resolvedTaxRate,
+        buy_tax_rate_id: resolvedTaxId,
+        sell_tax_rate_id: resolvedTaxId,
         sell_uom: get(sellUomIdx) || 'Each',
         buy_uom: get(buyUomIdx) || 'Each',
         buy_uom_qty: parseInt(get(buyUomQtyIdx)) || 1,
@@ -737,12 +743,19 @@ export default function ProductsTable({
   const canExport = isAdmin || permissions.export_products !== false
 
   // Derived from props
-  // TAX_OPTIONS: value = tax_rate_id (UUID), so we store the id and resolve display text
-  // For DB: we store just the numeric rate (t.rate), display the full label in UI
+  // TAX_OPTIONS: value = tax_rates.id. Products store buy_tax_rate_id / sell_tax_rate_id.
   const TAX_OPTIONS = [
-    { value: '', label: 'No Tax (0%)', rate: 0 },
-    ...taxRates.map(t => ({ value: t.id, label: `${t.rate}% — ${t.name}`, rate: t.rate })),
+    { value: '', label: 'No Tax', rate: 0 },
+    ...taxRates.map(t => ({ value: t.id, label: `${t.name} (${t.rate}%)`, rate: t.rate })),
   ]
+  const defaultTaxId = taxRates.find(t => t.is_default)?.id ?? ''
+  // Legacy fallback: products saved before buy/sell tax existed only have a numeric rate
+  const legacyTaxId = (p: Product | null | undefined) => {
+    if (!p || p.tax_rate == null || p.tax_rate === '') return ''
+    const stored = Number(p.tax_rate)
+    return (taxRates.find(t => t.rate === stored && t.is_default) ?? taxRates.find(t => t.rate === stored))?.id ?? ''
+  }
+  const taxLabel = (id: string | null | undefined) => TAX_OPTIONS.find(t => t.value === (id ?? ''))?.label ?? 'No Tax'
   const dp = decimalPlaces
   const priceStep = dp > 0 ? `0.${'0'.repeat(dp - 1)}1` : '1'
   // UOM list: prefer from settings, fall back to hardcoded
@@ -781,7 +794,7 @@ export default function ProductsTable({
   const [advUom, setAdvUom] = useState('')
   const [advSupplier, setAdvSupplier] = useState('')
   const [advStock, setAdvStock] = useState('')
-  const [taxOpen, setTaxOpen] = useState(false)
+  const [taxOpen, setTaxOpen] = useState<false | 'buy' | 'sell'>(false)
   const [supplierOpen, setSupplierOpen] = useState(false)
   const [showExport, setShowExport] = useState(false)
   const [showImport, setShowImport] = useState(false)
@@ -833,6 +846,7 @@ export default function ProductsTable({
   function openAdd() {
     setForm(EMPTY_FORM)
     setActiveProduct(null)
+    setForm(f => ({ ...f, buy_tax_rate_id: f.buy_tax_rate_id || defaultTaxId, sell_tax_rate_id: f.sell_tax_rate_id || defaultTaxId }))
     setModal('add')
     setModalTab('details')
     setError(null)
@@ -845,13 +859,9 @@ export default function ProductsTable({
       sku: p.sku ?? '', name: p.name, type: p.type,
       barcode: p.barcode ?? '',
       low_stock_threshold: p.low_stock_threshold != null ? String(p.low_stock_threshold) : '',
-      tax_rate: (() => {
-        // tax_rate stored as numeric in DB; find matching tax rate id by rate value
-        if (!p.tax_rate) return ''
-        const stored = Number(p.tax_rate)
-        const match = taxRates.find(t => t.rate === stored)
-        return match ? match.id : ''
-      })(), description: p.description ?? '',
+      buy_tax_rate_id: p.buy_tax_rate_id ?? legacyTaxId(p),
+      sell_tax_rate_id: p.sell_tax_rate_id ?? legacyTaxId(p),
+      description: p.description ?? '',
       cost_price: p.cost_price != null ? String(p.cost_price) : '',
       buy_uom: p.buy_uom ?? 'Each',
       buy_uom_qty: p.buy_uom_qty != null ? String(p.buy_uom_qty) : '1',
@@ -907,7 +917,10 @@ export default function ProductsTable({
       name: form.name.trim(), sku: form.sku.trim(), type: form.type,
       barcode: form.barcode || null,
       low_stock_threshold: form.low_stock_threshold ? parseInt(form.low_stock_threshold) : null,
-      tax_rate: form.tax_rate ? (TAX_OPTIONS.find(t => t.value === form.tax_rate)?.rate ?? null) : null,
+      buy_tax_rate_id: form.buy_tax_rate_id || null,
+      sell_tax_rate_id: form.sell_tax_rate_id || null,
+      // legacy numeric column kept in sync with the sell tax (used by export/older screens)
+      tax_rate: TAX_OPTIONS.find(t => t.value === form.sell_tax_rate_id)?.rate ?? 0,
       description: form.description || null,
       cost_price: form.cost_price ? parseFloat(form.cost_price) : null,
       buy_uom: form.buy_uom,
@@ -1430,30 +1443,6 @@ export default function ProductsTable({
                         <MInput value={isView ? String(curProduct?.low_stock_threshold ?? '') : form.low_stock_threshold} onChange={val => setF('low_stock_threshold', val)} type="number" placeholder="e.g. 5" disabled={isView} />
                       </Field>
                     </div>
-                    <Field label="Tax Rate">
-                      {isView ? (
-                        <MInput value={(() => {
-                          const stored = Number(curProduct?.tax_rate)
-                          const match = TAX_OPTIONS.find(t => t.rate === stored && t.value !== '')
-                          return match ? match.label : 'No Tax (0%)'
-                        })()} disabled />
-                      ) : (
-                        <div style={{ position: 'relative' }}>
-                          <button className="modal-dd-btn" onClick={e => { e.stopPropagation(); setTaxOpen(o => !o) }} type="button">
-                            <span>{form.tax_rate ? TAX_OPTIONS.find(t => t.value === form.tax_rate)?.label : 'Select tax rate…'}</span>
-                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg>
-                          </button>
-                          {taxOpen && (
-                            <div className="inv-dropdown filter-pick-dropdown" style={{ display: 'block', minWidth: 220 }}>
-                              <div className="col-dropdown-title">Tax Rate</div>
-                              {TAX_OPTIONS.map(opt => (
-                                <div key={opt.value} className={`fp-item${form.tax_rate === opt.value ? ' active' : ''}`} onClick={() => { setF('tax_rate', opt.value); setTaxOpen(false) }}>{opt.label}</div>
-                              ))}
-                            </div>
-                          )}
-                        </div>
-                      )}
-                    </Field>
                     <Field label="Description">
                       <textarea className="modal-input" value={isView ? (curProduct?.description ?? '') : form.description} onChange={e => setF('description', e.target.value)} placeholder="Short product description…" rows={2} disabled={isView} style={{ resize: 'vertical', height: 56, lineHeight: 1.5, opacity: isView ? 0.7 : 1 }} />
                     </Field>
@@ -1473,6 +1462,26 @@ export default function ProductsTable({
                     <div className="modal-grid-2">
                       <Field label="Units per Buy UOM" hint="e.g. 24 if 1 Carton = 24 Each">
                         <MInput value={isView ? String(curProduct?.buy_uom_qty ?? 1) : form.buy_uom_qty} onChange={val => setF('buy_uom_qty', val)} type="number" placeholder="1" disabled={isView} />
+                      </Field>
+                      <Field label="Buy Tax Rate">
+                        {isView ? (
+                          <MInput value={taxLabel(curProduct?.buy_tax_rate_id ?? legacyTaxId(curProduct))} disabled />
+                        ) : (
+                          <div style={{ position: 'relative' }}>
+                            <button className="modal-dd-btn" onClick={e => { e.stopPropagation(); setTaxOpen(o => o === 'buy' ? false : 'buy') }} type="button">
+                              <span>{taxLabel(form.buy_tax_rate_id)}</span>
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+                            </button>
+                            {taxOpen === 'buy' && (
+                              <div className="inv-dropdown filter-pick-dropdown" style={{ display: 'block', minWidth: 220 }}>
+                                <div className="col-dropdown-title">Buy Tax Rate</div>
+                                {TAX_OPTIONS.map(opt => (
+                                  <div key={opt.value} className={`fp-item${form.buy_tax_rate_id === opt.value ? ' active' : ''}`} onClick={() => { setF('buy_tax_rate_id', opt.value); setTaxOpen(false) }}>{opt.label}</div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </Field>
                     </div>
                     {(() => {
@@ -1513,6 +1522,26 @@ export default function ProductsTable({
                     <div className="modal-grid-2">
                       <Field label="Units per Sell UOM" hint="usually 1">
                         <MInput value={isView ? String(curProduct?.sell_uom_qty ?? 1) : form.sell_uom_qty} onChange={val => setF('sell_uom_qty', val)} type="number" placeholder="1" disabled={isView} />
+                      </Field>
+                      <Field label="Sell Tax Rate">
+                        {isView ? (
+                          <MInput value={taxLabel(curProduct?.sell_tax_rate_id ?? legacyTaxId(curProduct))} disabled />
+                        ) : (
+                          <div style={{ position: 'relative' }}>
+                            <button className="modal-dd-btn" onClick={e => { e.stopPropagation(); setTaxOpen(o => o === 'sell' ? false : 'sell') }} type="button">
+                              <span>{taxLabel(form.sell_tax_rate_id)}</span>
+                              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+                            </button>
+                            {taxOpen === 'sell' && (
+                              <div className="inv-dropdown filter-pick-dropdown" style={{ display: 'block', minWidth: 220 }}>
+                                <div className="col-dropdown-title">Sell Tax Rate</div>
+                                {TAX_OPTIONS.map(opt => (
+                                  <div key={opt.value} className={`fp-item${form.sell_tax_rate_id === opt.value ? ' active' : ''}`} onClick={() => { setF('sell_tax_rate_id', opt.value); setTaxOpen(false) }}>{opt.label}</div>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        )}
                       </Field>
                     </div>
                   </Section>

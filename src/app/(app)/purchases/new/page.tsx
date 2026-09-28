@@ -37,7 +37,7 @@ export default async function NewPurchaseOrderPage() {
       .from('products')
       .select('id, name, sku, buy_uom, cost_price, tax_rate, description, track_stock, type')
       .eq('org_id', m.org_id)
-      .eq('active', true)
+      .eq('is_active', true)
       .order('name'),
     adminClient
       .from('organisations')

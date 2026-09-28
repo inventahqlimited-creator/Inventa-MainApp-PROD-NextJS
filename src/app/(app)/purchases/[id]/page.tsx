@@ -30,11 +30,11 @@ export default async function EditPurchaseOrderPage({ params }: { params: Promis
       order_discount, order_discount_type, order_discount_amount,
       purchase_order_lines (
         id, product_id, product_name, product_sku, unit,
-        quantity_ordered, unit_cost, discount, tax_rate, line_notes, sort_order
+        quantity_ordered, unit_cost, discount, tax_rate, tax_rate_id, tax_name, line_notes, sort_order
       ),
       purchase_order_cost_lines (
         id, product_id, product_name, product_sku,
-        description, amount, tax_rate, sort_order
+        description, amount, tax_rate, tax_rate_id, tax_name, sort_order
       )
     `)
     .eq('id', id)
@@ -43,11 +43,12 @@ export default async function EditPurchaseOrderPage({ params }: { params: Promis
 
   if (!order) redirect('/purchases')
 
-  const [{ data: locations }, { data: contacts }, { data: products }, { data: org }] = await Promise.all([
+  const [{ data: locations }, { data: contacts }, { data: products }, { data: org }, { data: taxRates }] = await Promise.all([
     adminClient.from('locations').select('id, name, address, city, country, phone, email').eq('org_id', m.org_id).eq('active', true).order('name'),
     adminClient.from('contacts').select('id, name, email, phone, bill_street, bill_city, bill_country, terms, currency, price_level_id').eq('org_id', m.org_id).eq('type', 'supplier').eq('is_active', true).order('name'),
-    adminClient.from('products').select('id, name, sku, buy_uom, cost_price, tax_rate, description, track_stock, type').eq('org_id', m.org_id).eq('is_active', true).order('name'),
+    adminClient.from('products').select('id, name, sku, buy_uom, cost_price, tax_rate, buy_tax_rate_id, description, track_stock, type').eq('org_id', m.org_id).eq('is_active', true).order('name'),
     adminClient.from('organisations').select('po_default_payment_terms').eq('id', m.org_id).single(),
+    adminClient.from('tax_rates').select('id, name, rate, is_default').eq('org_id', m.org_id).order('name'),
   ])
 
   // Shape the order
@@ -66,6 +67,7 @@ export default async function EditPurchaseOrderPage({ params }: { params: Promis
       locations={(locations ?? []) as any}
       products={(products ?? []) as any}
       defaultTerms={(org as any)?.po_default_payment_terms ?? null}
+      taxRates={(taxRates ?? []) as any}
     />
   )
 }

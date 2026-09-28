@@ -63,6 +63,7 @@ type PriceLevel = {
 
 type LineItem = {
   id?: string
+  quantity_received?: number | null
   product_id: string
   product_name: string
   product_sku: string
@@ -153,18 +154,7 @@ function isEditable(status: string) {
   return s === 'draft' || s === 'open'
 }
 
-export default function EditPurchaseOrder({
-  orgId,
-  order,
-  suppliers,
-  locations,
-  products,
-  defaultTerms,
-  priceLevels = [],
-  taxRates = [],
-  decimalPlaces = 2,
-  stockLevels = [],
-}: {
+type Props = {
   orgId: string
   order: PurchaseOrder
   suppliers: Supplier[]
@@ -175,6 +165,70 @@ export default function EditPurchaseOrder({
   taxRates?: TaxRate[]
   decimalPlaces?: number
   stockLevels?: StockLevel[]
+}
+
+// Same classes as the purchase order list, so the status tag looks identical everywhere
+function statusClass(status: string) {
+  const s = status.toLowerCase()
+  if (s === 'open') return 'badge-open'
+  if (s === 'partially received') return 'badge-partial'
+  if (s === 'closed') return 'badge-closed'
+  if (s === 'cancelled') return 'badge-cancelled'
+  return 'badge-draft'
+}
+
+function ConfirmModal({ title, message, confirmLabel, cancelLabel = 'Go back', onConfirm, onCancel, danger, busy }: {
+  title: string; message: string; confirmLabel: string; cancelLabel?: string
+  onConfirm: () => void; onCancel: () => void; danger?: boolean; busy?: boolean
+}) {
+  return (
+    <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onMouseDown={onCancel}>
+      <div style={{ background: 'var(--white)', borderRadius: 16, padding: '28px 32px', maxWidth: 420, width: '90%', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }} onMouseDown={e => e.stopPropagation()}>
+        <div style={{ fontFamily: 'var(--font-display)', fontSize: 17, fontWeight: 700, color: 'var(--slate)', marginBottom: 10 }}>{title}</div>
+        <div style={{ fontSize: 14, color: 'var(--gray-500)', lineHeight: 1.6, marginBottom: 24 }}>{message}</div>
+        <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end' }}>
+          <button className="btn btn-outline" style={{ height: 38 }} onClick={onCancel} disabled={busy}>{cancelLabel}</button>
+          <button className="btn btn-primary" style={{ height: 38, padding: '0 20px', background: danger ? 'var(--danger)' : undefined, borderColor: danger ? 'var(--danger)' : undefined }} onClick={onConfirm} disabled={busy}>{busy ? 'Please wait…' : confirmLabel}</button>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+// Opens in view mode; the Edit button switches to edit mode.
+// "Cancel" while editing discards changes by remounting the form with the saved order.
+export default function EditPurchaseOrder(props: Props) {
+  const [mode, setMode] = useState<'view' | 'edit'>('view')
+  const [formKey, setFormKey] = useState(0)
+  return (
+    <PurchaseOrderForm
+      key={formKey}
+      {...props}
+      mode={mode}
+      setMode={setMode}
+      onDiscard={() => { setFormKey(k => k + 1); setMode('view') }}
+    />
+  )
+}
+
+function PurchaseOrderForm({
+  orgId,
+  order,
+  suppliers,
+  locations,
+  products,
+  defaultTerms,
+  priceLevels = [],
+  taxRates = [],
+  decimalPlaces = 2,
+  stockLevels = [],
+  mode,
+  setMode,
+  onDiscard,
+}: Props & {
+  mode: 'view' | 'edit'
+  setMode: (m: 'view' | 'edit') => void
+  onDiscard: () => void
 }) {
   const router = useRouter()
 
@@ -203,7 +257,9 @@ export default function EditPurchaseOrder({
   }
   const taxOptions = taxRates.map(t => ({ id: t.id, label: t.name }))
   const scrollRef = useRef<HTMLDivElement>(null)
-  const editable = isEditable(order.status)
+  const statusEditable = isEditable(order.status)
+  const editable = statusEditable && mode === 'edit'
+  const anyReceived = (order.lines ?? []).some(l => Number(l.quantity_received) > 0)
   const badge = statusBadge(order.status)
   const fallbackTerms = defaultTerms ?? 'Net 14'
 
@@ -243,6 +299,29 @@ export default function EditPurchaseOrder({
   )
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [confirmCancelOrder, setConfirmCancelOrder] = useState(false)
+  const [confirmDiscard, setConfirmDiscard] = useState(false)
+  const [cancelling, setCancelling] = useState(false)
+
+  async function cancelOrder() {
+    setCancelling(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/org/purchases/${order.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: 'Cancelled' }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { setError(data.error ?? 'Could not cancel this order'); return }
+      setConfirmCancelOrder(false)
+      router.refresh()
+    } catch {
+      setError('Network error — please try again.')
+    } finally {
+      setCancelling(false)
+    }
+  }
 
   const filteredSuppliers = useMemo(() =>
     suppliers.filter(s => s.name.toLowerCase().includes(supplierSearch.toLowerCase())),
@@ -418,8 +497,8 @@ export default function EditPurchaseOrder({
       const data = await res.json()
       setSaving(false)
       if (!res.ok) { setError(data.error ?? 'Something went wrong'); return }
+      setMode('view')
       router.refresh()
-      router.push(`/purchases/${order.id}`)
     } catch {
       setSaving(false)
       setError('Network error — please try again.')
@@ -477,15 +556,16 @@ export default function EditPurchaseOrder({
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{
-            display: 'inline-flex', alignItems: 'center',
-            fontSize: 12, fontWeight: 600, fontFamily: 'var(--font-ui)',
-            padding: '3px 10px', borderRadius: 99,
-            color: badge.color, background: badge.bg,
-            letterSpacing: '0.02em',
-          }}>
-            {badge.label}
-          </span>
+          {mode === 'edit' && (
+            <span style={{ fontSize: 12, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)' }}>Editing</span>
+          )}
+          <span className={`badge ${statusClass(order.status)}`}>{order.status}</span>
+          {mode === 'view' && statusEditable && (
+            <button className="btn btn-outline" style={{ height: 34, marginLeft: 4 }} onClick={() => { setError(null); setMode('edit') }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
+              Edit
+            </button>
+          )}
         </div>
       </div>
 
@@ -496,7 +576,7 @@ export default function EditPurchaseOrder({
           <div style={{ background: '#FEF2F2', border: '1.5px solid #FECACA', borderRadius: 10, padding: '12px 16px', fontSize: 13, color: '#B91C1C', marginBottom: 20 }}>{error}</div>
         )}
 
-        {isReadOnly && (
+        {!statusEditable && (
           <div style={{ background: '#F8FAFC', border: '1.5px solid var(--gray-200)', borderRadius: 10, padding: '10px 16px', fontSize: 13, color: 'var(--gray-400)', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 8 }}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
             This order is <strong style={{ color: 'var(--slate)' }}>{badge.label}</strong> and cannot be edited.
@@ -1009,13 +1089,48 @@ export default function EditPurchaseOrder({
 
       {/* Bottom action bar */}
       <div style={{ background: 'var(--white)', borderTop: '1px solid var(--gray-100)', padding: '14px 28px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 -4px 16px rgba(0,0,0,0.06)', flexShrink: 0 }}>
-        <button onClick={() => router.push('/purchases')} className="btn btn-outline" style={{ height: 38 }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-          {isReadOnly ? 'Close' : 'Cancel'}
-        </button>
+        {mode === 'edit' ? (
+          <button onClick={() => setConfirmDiscard(true)} className="btn btn-outline" style={{ height: 38 }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            Cancel
+          </button>
+        ) : (
+          <button onClick={() => router.push('/purchases')} className="btn btn-outline" style={{ height: 38 }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
+            Back to Purchases
+          </button>
+        )}
         {error && <div style={{ flex: 1, margin: '0 16px', fontSize: 12.5, color: '#B91C1C', textAlign: 'right' }}>{error}</div>}
 
-        {isDraft && (
+        {/* View mode actions */}
+        {mode === 'view' && (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {statusEditable && !anyReceived && (
+              <button className="btn btn-outline" style={{ height: 38, color: 'var(--danger)', borderColor: '#FECACA' }} onClick={() => setConfirmCancelOrder(true)}>
+                Cancel Order
+              </button>
+            )}
+            {isDraft && (
+              <button className="btn btn-primary" style={{ height: 38, padding: '0 20px', fontSize: 14 }} onClick={() => save('Open')} disabled={saving}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                {saving ? 'Submitting…' : 'Submit Order'}
+              </button>
+            )}
+            {(isOpen || statusLower === 'partially received') && (
+              <button
+                className="btn btn-primary"
+                style={{ height: 38, padding: '0 20px', fontSize: 14 }}
+                onClick={() => router.push(`/purchases/${order.id}/receive`)}
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M3 15v4c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2v-4"/><polyline points="17 9 12 14 7 9"/><line x1="12" y1="14" x2="12" y2="3"/></svg>
+                Receive Stock
+              </button>
+            )}
+          </div>
+        )}
+
+        {/* Edit mode actions */}
+        {mode === 'edit' && isDraft && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             <button className="btn btn-outline" style={{ height: 38 }} onClick={() => save('Draft')} disabled={saving}>
               {saving ? 'Saving…' : 'Save Draft'}
@@ -1026,29 +1141,38 @@ export default function EditPurchaseOrder({
             </button>
           </div>
         )}
-
-        {isOpen && (
+        {mode === 'edit' && isOpen && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            <button className="btn btn-outline" style={{ height: 38 }} onClick={() => save('Open')} disabled={saving}>
+            <button className="btn btn-primary" style={{ height: 38, padding: '0 20px', fontSize: 14 }} onClick={() => save('Open')} disabled={saving}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
               {saving ? 'Saving…' : 'Save Changes'}
             </button>
-            <button
-              className="btn btn-primary"
-              style={{ height: 38, padding: '0 20px', fontSize: 14 }}
-              onClick={() => router.push(`/purchases/${order.id}/receive`)}
-            >
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M3 15v4c0 1.1.9 2 2 2h14a2 2 0 0 0 2-2v-4"/><polyline points="17 9 12 14 7 9"/><line x1="12" y1="14" x2="12" y2="3"/></svg>
-              Receive Stock
-            </button>
-          </div>
-        )}
-
-        {isReadOnly && (
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            {/* no edit actions for closed/cancelled/partially received */}
           </div>
         )}
       </div>
+
+      {confirmCancelOrder && (
+        <ConfirmModal
+          title="Cancel purchase order?"
+          message={`Are you sure you want to cancel ${order.po_number ?? 'this purchase order'}? It will move to Cancelled and its quantities will no longer show as On Order.`}
+          confirmLabel="Yes, cancel order"
+          danger
+          busy={cancelling}
+          onConfirm={cancelOrder}
+          onCancel={() => setConfirmCancelOrder(false)}
+        />
+      )}
+      {confirmDiscard && (
+        <ConfirmModal
+          title="Discard changes?"
+          message="Are you sure you want to cancel? Any changes you've made will be lost."
+          confirmLabel="Yes, discard"
+          cancelLabel="Keep editing"
+          danger
+          onConfirm={() => { setConfirmDiscard(false); onDiscard() }}
+          onCancel={() => setConfirmDiscard(false)}
+        />
+      )}
     </div>
   )
 }

@@ -260,6 +260,7 @@ function PurchaseOrderForm({
   const statusEditable = isEditable(order.status)
   const editable = statusEditable && mode === 'edit'
   const anyReceived = (order.lines ?? []).some(l => Number(l.quantity_received) > 0)
+  const showReceived = anyReceived || !['draft', 'cancelled'].includes(String(order.status ?? '').toLowerCase())
   const badge = statusBadge(order.status)
   const fallbackTerms = defaultTerms ?? 'Net 14'
 
@@ -791,6 +792,7 @@ function PurchaseOrderForm({
                   <th className="li-th">Product Name</th>
                   <th className="li-th" style={{ width: 70, textAlign: 'center' }}>Unit</th>
                   <th className="li-th" style={{ width: 80, textAlign: 'right' }}>Qty</th>
+                  {showReceived && <th className="li-th" style={{ width: 90, textAlign: 'right' }}>Received</th>}
                   <th className="li-th" style={{ width: 100, textAlign: 'right' }}>Cost Price</th>
                   <th className="li-th" style={{ width: 80, textAlign: 'right' }}>Disc %</th>
                   <th className="li-th" style={{ width: 140 }}>Tax</th>
@@ -801,7 +803,7 @@ function PurchaseOrderForm({
               <tbody>
                 {lines.length === 0 && (
                   <tr>
-                    <td colSpan={editable ? 9 : 8} style={{ textAlign: 'center', padding: '24px 0', color: 'var(--gray-400)', fontSize: 13 }}>
+                    <td colSpan={(editable ? 9 : 8) + (showReceived ? 1 : 0)} style={{ textAlign: 'center', padding: '24px 0', color: 'var(--gray-400)', fontSize: 13 }}>
                       {editable ? 'No items added. Search below to add products.' : 'No line items on this order.'}
                     </td>
                   </tr>
@@ -822,6 +824,11 @@ function PurchaseOrderForm({
                         : <span style={{ fontSize: 13 }}>{l.quantity_ordered}</span>
                       }
                     </td>
+                    {showReceived && (
+                      <td className="li-td" style={{ textAlign: 'right' }}>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: Number(l.quantity_received) > 0 ? (Number(l.quantity_received) >= l.quantity_ordered ? '#059669' : '#B45309') : 'var(--gray-400)' }}>{Number(l.quantity_received) || 0}</span>
+                      </td>
+                    )}
                     <td className="li-td" style={{ textAlign: 'right' }}>
                       {editable
                         ? <NumInput className="li-input right" value={l.unit_cost} onChange={n => updateLine(idx, 'unit_cost', n)} decimals={decimalPlaces} min={0} style={{ width: 90, textAlign: 'right' }} />

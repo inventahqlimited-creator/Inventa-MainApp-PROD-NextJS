@@ -34,16 +34,29 @@ function fmtMoney(n: number | null) {
   return `$${Number(n).toLocaleString('en-NZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
 }
 
-function statusBadge(status: string) {
+// Draft → Open → Picking → Closed (or Cancelled). Older statuses fold in: stock-based ones into Open,
+// picked/packed into Picking, shipped/delivered into Closed.
+const OPEN_GROUP = ['open', 'no stock', 'stock available', 'partial stock']
+const PICKING_GROUP = ['picking', 'partially picked', 'picked', 'partially packed', 'packed']
+const CLOSED_GROUP = ['closed', 'shipped', 'delivered']
+
+function statusKey(status: string): 'draft' | 'open' | 'picking' | 'closed' | 'cancelled' {
   const s = status.toLowerCase()
-  if (s === 'draft') return <span className="badge badge-draft">{status}</span>
-  if (s === 'open') return <span className="badge badge-open">{status}</span>
-  if (s === 'picking') return <span className="badge" style={{ background: '#EDE9FE', color: '#5B21B6' }}>{status}</span>
-  if (s === 'packed') return <span className="badge" style={{ background: '#FEF3C7', color: '#92400E' }}>{status}</span>
-  if (s === 'shipped') return <span className="badge badge-partial">{status}</span>
-  if (s === 'delivered') return <span className="badge badge-closed">{status}</span>
-  if (s === 'cancelled') return <span className="badge badge-cancelled">{status}</span>
-  return <span className="badge badge-draft">{status}</span>
+  if (OPEN_GROUP.includes(s)) return 'open'
+  if (PICKING_GROUP.includes(s)) return 'picking'
+  if (CLOSED_GROUP.includes(s)) return 'closed'
+  if (s === 'cancelled') return 'cancelled'
+  return 'draft'
+}
+
+function statusBadge(status: string) {
+  switch (statusKey(status)) {
+    case 'open': return <span className="badge badge-open">Open</span>
+    case 'picking': return <span className="badge" style={{ background: '#EDE9FE', color: '#5B21B6' }}>Picking</span>
+    case 'closed': return <span className="badge badge-closed">Closed</span>
+    case 'cancelled': return <span className="badge badge-cancelled">Cancelled</span>
+    default: return <span className="badge badge-draft">Draft</span>
+  }
 }
 
 const TABS = [
@@ -51,9 +64,12 @@ const TABS = [
   { key: 'draft', label: 'Draft' },
   { key: 'open', label: 'Open' },
   { key: 'picking', label: 'Picking' },
-  { key: 'shipped', label: 'Shipped' },
-  { key: 'delivered', label: 'Delivered' },
+  { key: 'closed', label: 'Closed' },
+  { key: 'cancelled', label: 'Cancelled' },
 ] as const
+
+// These tabs only appear when at least one order has that status
+const HIDE_WHEN_EMPTY = new Set<string>(['draft', 'picking', 'cancelled'])
 
 type Tab = typeof TABS[number]['key']
 
@@ -81,11 +97,7 @@ export default function SalesTable({
 
   const filtered = useMemo(() => {
     return orders.filter(o => {
-      if (tab === 'draft' && o.status.toLowerCase() !== 'draft') return false
-      if (tab === 'open' && o.status.toLowerCase() !== 'open') return false
-      if (tab === 'picking' && o.status.toLowerCase() !== 'picking') return false
-      if (tab === 'shipped' && o.status.toLowerCase() !== 'shipped') return false
-      if (tab === 'delivered' && o.status.toLowerCase() !== 'delivered') return false
+      if (tab !== 'all' && statusKey(o.status) !== tab) return false
       if (customerFilter && o.customer_id !== customerFilter) return false
       if (locationFilter && o.location_id !== locationFilter) return false
       if (search) {
@@ -102,12 +114,14 @@ export default function SalesTable({
 
   const counts = useMemo(() => ({
     all: orders.length,
-    draft: orders.filter(o => o.status.toLowerCase() === 'draft').length,
-    open: orders.filter(o => o.status.toLowerCase() === 'open').length,
-    picking: orders.filter(o => o.status.toLowerCase() === 'picking').length,
-    shipped: orders.filter(o => o.status.toLowerCase() === 'shipped').length,
-    delivered: orders.filter(o => o.status.toLowerCase() === 'delivered').length,
+    draft: orders.filter(o => statusKey(o.status) === 'draft').length,
+    open: orders.filter(o => statusKey(o.status) === 'open').length,
+    picking: orders.filter(o => statusKey(o.status) === 'picking').length,
+    closed: orders.filter(o => statusKey(o.status) === 'closed').length,
+    cancelled: orders.filter(o => statusKey(o.status) === 'cancelled').length,
   }), [orders])
+
+  const visibleTabs = TABS.filter(t => !HIDE_WHEN_EMPTY.has(t.key) || counts[t.key] > 0)
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / perPage))
   const paginated = filtered.slice((page - 1) * perPage, page * perPage)
@@ -117,7 +131,7 @@ export default function SalesTable({
 
   function isOverdue(o: Order) {
     if (!o.expected_date) return false
-    if (['delivered', 'cancelled'].includes(o.status.toLowerCase())) return false
+    if (['closed', 'cancelled'].includes(statusKey(o.status))) return false
     return new Date(o.expected_date) < new Date()
   }
 
@@ -153,7 +167,7 @@ export default function SalesTable({
           </div>
         </div>
         <div className="tab-bar">
-          {TABS.map(t => (
+          {visibleTabs.map(t => (
             <div key={t.key} className={`tab-item${tab === t.key ? ' active' : ''}`} onClick={() => { setTab(t.key); setPage(1) }}>
               {t.label}<span className="tab-count">{counts[t.key]}</span>
             </div>

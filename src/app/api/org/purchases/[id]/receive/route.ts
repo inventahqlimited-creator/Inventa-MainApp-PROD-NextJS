@@ -45,9 +45,12 @@ export async function POST(request: Request, { params }: Params) {
     })),
     p_user: who,
     p_notes: typeof body.notes === 'string' && body.notes.trim() ? body.notes.trim() : null,
+    p_backorder: body.backorder === true,
+    p_bin: typeof body.bin === 'string' && body.bin.trim() ? body.bin.trim() : null,
+    p_date: typeof body.receive_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.receive_date) ? body.receive_date : null,
   })
 
   // Validation messages raised in the database (e.g. "only 3 left to receive") come back as error.message
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
-  return NextResponse.json(data as { new_status: string })
+  return NextResponse.json(data as { new_status: string; backorder_id?: string; backorder_number?: string })
 }

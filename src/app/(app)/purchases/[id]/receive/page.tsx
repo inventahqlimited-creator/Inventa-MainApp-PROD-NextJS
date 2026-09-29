@@ -24,7 +24,7 @@ export default async function ReceivePurchaseOrderPage({ params }: { params: Pro
     .select(`
       id, po_number, ref, reference, status, supplier_id, supplier_name, location_id, location_name,
       order_date, expected_date, received_date, notes, total_amount, terms, currency,
-      order_discount, order_discount_type, order_discount_amount,
+      order_discount, order_discount_type, order_discount_amount, backorder_from_number, backorder_to_number,
       purchase_order_lines (
         id, product_id, product_name, product_sku, unit, quantity_ordered, quantity_received,
         unit_cost, total_cost, discount, tax_rate, tax_name, line_notes, batch_num, expiry_date, sort_order,
@@ -47,11 +47,11 @@ export default async function ReceivePurchaseOrderPage({ params }: { params: Pro
   const [{ data: contacts }, { data: locations }, { data: org }] = await Promise.all([
     adminClient.from('contacts').select('id, name, email, phone, bill_street, bill_city, bill_country, terms, currency').eq('org_id', m.org_id).eq('type', 'supplier'),
     adminClient.from('locations').select('id, name').eq('org_id', m.org_id),
-    adminClient.from('organisations').select('serial_tracking, batch_tracking, expiry_tracking').eq('id', m.org_id).single(),
+    adminClient.from('organisations').select('serial_tracking, batch_tracking, expiry_tracking, allow_over_receive').eq('id', m.org_id).single(),
   ])
 
   // Tracking applies only when switched on for both the product and the organisation
-  const orgT = (org ?? {}) as { serial_tracking?: boolean | null; batch_tracking?: boolean | null; expiry_tracking?: boolean | null }
+  const orgT = (org ?? {}) as { allow_over_receive?: boolean | null; serial_tracking?: boolean | null; batch_tracking?: boolean | null; expiry_tracking?: boolean | null }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const raw = po as any
   const lines = (raw.purchase_order_lines ?? [])
@@ -73,6 +73,15 @@ export default async function ReceivePurchaseOrderPage({ params }: { params: Pro
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .map((c: any) => ({ ...c, amount: Number(c.amount) || 0, tax_rate: c.tax_rate != null ? Number(c.tax_rate) : null }))
 
+  // Number the next backorder will get: PO-0001 -> PO-0001A, PO-0001A -> PO-0001B ...
+  const poNo = String(raw.po_number ?? '')
+  const base = /[0-9][A-Z]$/.test(poNo) ? poNo.slice(0, -1) : poNo
+  const { data: siblings } = await adminClient
+    .from('purchase_orders').select('po_number').eq('org_id', m.org_id).like('po_number', `${base}_`)
+  const used = (siblings ?? []).map((r: { po_number: string }) => r.po_number.slice(-1)).filter((c: string) => /[A-Z]/.test(c)).sort()
+  const nextLetter = String.fromCharCode((used.length ? used[used.length - 1].charCodeAt(0) : 64) + 1)
+  const nextBackorderNumber = `${base}${nextLetter}`
+
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
   const { purchase_order_lines, purchase_order_cost_lines, ...header } = raw
 
@@ -85,6 +94,8 @@ export default async function ReceivePurchaseOrderPage({ params }: { params: Pro
       locations={(locations ?? []) as { id: string; name: string }[]}
       orgId={m.org_id}
       startInReceive
+      allowOverReceive={!!orgT.allow_over_receive}
+      nextBackorderNumber={nextBackorderNumber}
       returnTo={`/purchases/${id}`}
     />
   )

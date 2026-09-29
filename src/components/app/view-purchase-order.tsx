@@ -274,6 +274,8 @@ export default function ViewPurchaseOrder({
   contacts,
   locations,
   orgId,
+  startInReceive = false,
+  returnTo,
 }: {
   po: PO
   lines: Line[]
@@ -281,6 +283,8 @@ export default function ViewPurchaseOrder({
   contacts: Supplier[]
   locations: Location[]
   orgId: string
+  startInReceive?: boolean   // open straight into Receive Stock (used by /purchases/[id]/receive)
+  returnTo?: string          // where to go after receiving or cancelling the receipt
 }) {
   const router = useRouter()
   const [po, setPo] = useState(initialPo)
@@ -310,6 +314,13 @@ export default function ViewPurchaseOrder({
   const [receiveLines, setReceiveLines] = useState<ReceiveLine[]>([])
   const [receiveNotes, setReceiveNotes] = useState('')
   const [lineErrors, setLineErrors] = useState<Record<number, Record<string, string>>>({})
+  const [ready, setReady] = useState(!startInReceive)
+
+  // Leave receive mode: back to the PO page when opened from there, else back to view mode
+  function exitReceive() {
+    if (returnTo) router.push(returnTo)
+    else setMode('view')
+  }
 
   // ── Totals ───────────────────────────────────────────────────────────────
   const subtotal = lines.reduce((sum, l) => sum + l.quantity_ordered * l.unit_cost * (1 - (l.discount ?? 0) / 100), 0)
@@ -364,6 +375,11 @@ export default function ViewPurchaseOrder({
     setError(null)
     setMode('receive')
   }
+
+  useEffect(() => {
+    if (startInReceive) { enterReceive(); setReady(true) }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   // ── Receive line helpers ─────────────────────────────────────────────────
   function updateReceiveLine(idx: number, field: keyof ReceiveLine, value: string | number) {
@@ -531,6 +547,7 @@ export default function ViewPurchaseOrder({
     })
     setLines(updatedLines)
     setPo(prev => ({ ...prev, status: data.new_status }))
+    if (returnTo) { router.push(returnTo); router.refresh(); return }
     setMode('view')
   }
 
@@ -597,6 +614,8 @@ export default function ViewPurchaseOrder({
   const anyBatch  = lines.some(l => l.batch_tracking)
   const anyExpiry = lines.some(l => l.expiry_tracking)
 
+  if (!ready) return null
+
   return (
     <div
       style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}
@@ -616,7 +635,7 @@ export default function ViewPurchaseOrder({
       {/* ── Header ─────────────────────────────────────────────────────────── */}
       <div style={{ background: 'var(--white)', borderBottom: '1px solid var(--gray-100)', padding: '16px 28px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <button onClick={() => mode !== 'view' ? setMode('view') : router.push('/purchases')} className="sq-btn">
+          <button onClick={() => mode === 'receive' ? exitReceive() : mode !== 'view' ? setMode('view') : router.push('/purchases')} className="sq-btn">
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
           </button>
           <div>
@@ -842,7 +861,7 @@ export default function ViewPurchaseOrder({
 
           {/* Bottom bar — receive */}
           <div style={{ background: 'var(--white)', borderTop: '1px solid var(--gray-100)', padding: '14px 28px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 -4px 16px rgba(0,0,0,0.06)', flexShrink: 0 }}>
-            <button onClick={() => setMode('view')} className="btn btn-outline" style={{ height: 38 }}>Cancel</button>
+            <button onClick={exitReceive} className="btn btn-outline" style={{ height: 38 }}>Cancel</button>
             {receiveLines.length > 0 && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
                 <div style={{ fontSize: 13, color: 'var(--gray-400)' }}>

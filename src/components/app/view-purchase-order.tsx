@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo, useRef, useEffect, useCallback } from 'react'
+import { useState, useMemo, useRef, useEffect, useCallback, Fragment } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 
@@ -759,159 +759,144 @@ export default function ViewPurchaseOrder({
             )}
 
             {/* Receive lines */}
-            {receiveLines.map((rl, idx) => {
-              const remaining = rl.quantity_ordered - rl.quantity_received
-              const errs = lineErrors[idx] ?? {}
-              const receivingCount = rl.needs_serial
-                ? rl.serials.filter(s => s.serial_number.trim()).length
-                : Number(rl.qty_to_receive)
-
+            {receiveLines.length > 0 && (() => {
+              const anyBatchCol = receiveLines.some(l => l.needs_batch)
+              const anyExpiryCol = receiveLines.some(l => l.needs_expiry)
+              const colCount = 5 + (anyBatchCol ? 1 : 0) + (anyExpiryCol ? 1 : 0)
               return (
-                <div key={rl.id} className="npo-card" style={{ marginBottom: 16, overflow: 'visible' }}>
-                  {/* Line header */}
-                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 14 }}>
-                    <div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--gray-400)', background: 'var(--gray-100)', padding: '2px 6px', borderRadius: 5 }}>{rl.product_sku ?? '—'}</span>
-                        <span style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 700, color: 'var(--slate)' }}>{rl.product_name ?? '—'}</span>
-                      </div>
-                      <div style={{ marginTop: 4, display: 'flex', gap: 12, fontSize: 12, color: 'var(--gray-400)' }}>
-                        <span>Ordered: <strong style={{ color: 'var(--slate)' }}>{rl.quantity_ordered}</strong></span>
-                        <span>Already received: <strong style={{ color: '#059669' }}>{rl.quantity_received}</strong></span>
-                        <span>Remaining: <strong style={{ color: remaining > 0 ? 'var(--danger)' : '#059669' }}>{remaining}</strong></span>
-                      </div>
-                      {(rl.needs_serial || rl.needs_batch || rl.needs_expiry) && (
-                        <div style={{ marginTop: 4, display: 'flex', gap: 6 }}>
-                          {rl.needs_serial && <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--teal)', background: 'var(--teal-surface)', padding: '2px 7px', borderRadius: 20, letterSpacing: '0.04em' }}>SERIAL</span>}
-                          {rl.needs_batch  && <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--teal)', background: 'var(--teal-surface)', padding: '2px 7px', borderRadius: 20, letterSpacing: '0.04em' }}>BATCH</span>}
-                          {rl.needs_expiry && <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--teal)', background: 'var(--teal-surface)', padding: '2px 7px', borderRadius: 20, letterSpacing: '0.04em' }}>EXPIRY</span>}
-                        </div>
-                      )}
-                    </div>
-                    <div style={{ fontSize: 13, fontWeight: 700, color: receivingCount > 0 ? 'var(--teal)' : 'var(--gray-400)', textAlign: 'right' }}>
-                      {receivingCount > 0 ? `+${receivingCount} receiving` : 'Skip (0)'}
-                    </div>
+                <div className="npo-card" style={{ marginBottom: 16, overflow: 'visible' }}>
+                  <div className="npo-card-title">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+                    Items to Receive
                   </div>
-
-                  {/* ── SERIAL TRACKED ── */}
-                  {rl.needs_serial ? (
-                    <div>
-                      <div style={{ marginBottom: 8 }}>
-                        <label className="modal-label" style={{ marginBottom: 6, display: 'block' }}>
-                          Serial Numbers — paste multiple on separate lines, or enter one per row
-                        </label>
-                        {errs.serials && <div style={{ fontSize: 11.5, color: 'var(--danger)', marginBottom: 6 }}>{errs.serials}</div>}
-
-                        {rl.serials.map((s, si) => (
-                          <div key={s._key} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
-                            <span style={{ fontSize: 12, color: 'var(--gray-400)', minWidth: 24, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{si + 1}.</span>
-                            <input
-                              className={`modal-input${errs[`serial_${si}`] ? ' li-input-error' : ''}`}
-                              style={{ flex: 1, background: 'var(--gray-50)' }}
-                              placeholder={`Serial number ${si + 1}…`}
-                              value={s.serial_number}
-                              onChange={e => updateSerial(idx, si, e.target.value)}
-                              autoComplete="off"
-                            />
-                            {errs[`serial_${si}`] && (
-                              <span style={{ fontSize: 11, color: 'var(--danger)', whiteSpace: 'nowrap' }}>{errs[`serial_${si}`]}</span>
-                            )}
-                            {rl.serials.length > 1 && (
-                              <button
-                                onClick={() => removeSerialRow(idx, si)}
-                                style={{ width: 26, height: 26, borderRadius: 7, border: 'none', background: 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--gray-400)', flexShrink: 0 }}
-                                onMouseOver={e => (e.currentTarget.style.color = 'var(--danger)')}
-                                onMouseOut={e => (e.currentTarget.style.color = 'var(--gray-400)')}
-                              >
-                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                              </button>
-                            )}
-                          </div>
-                        ))}
-
-                        {/* Add serial row button */}
-                        <button
-                          onClick={() => addSerialRow(idx)}
-                          style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: '1.5px dashed var(--gray-200)', borderRadius: 8, padding: '6px 12px', cursor: 'pointer', fontSize: 12, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)', fontWeight: 600 }}
-                          onMouseOver={e => { e.currentTarget.style.borderColor = 'var(--teal)'; e.currentTarget.style.color = 'var(--teal)' }}
-                          onMouseOut={e => { e.currentTarget.style.borderColor = 'var(--gray-200)'; e.currentTarget.style.color = 'var(--gray-400)' }}
-                        >
-                          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-                          Add serial row
-                        </button>
-                      </div>
-
-                      {/* Batch / Expiry for serial items */}
-                      <div style={{ display: 'flex', gap: 14, marginTop: 12, flexWrap: 'wrap' }}>
-                        {rl.needs_batch && (
-                          <div className="modal-field" style={{ flex: 1, minWidth: 180 }}>
-                            <label className="modal-label">Batch / Lot # <span className="req">*</span></label>
-                            <input
-                              className={`modal-input${errs.batch_num ? ' li-input-error' : ''}`}
-                              value={rl.batch_num}
-                              onChange={e => updateReceiveLine(idx, 'batch_num', e.target.value)}
-                              placeholder="Batch number…"
-                              style={{ background: 'var(--gray-50)' }}
-                            />
-                            {errs.batch_num && <div style={{ fontSize: 11, color: 'var(--danger)', marginTop: 3 }}>{errs.batch_num}</div>}
-                          </div>
-                        )}
-                        {rl.needs_expiry && (
-                          <div className="modal-field">
-                            <label className="modal-label">Expiry Date <span className="req">*</span></label>
-                            <ExpiryInput value={rl.expiry_date} onChange={v => updateReceiveLine(idx, 'expiry_date', v)} />
-                            {errs.expiry_date && <div style={{ fontSize: 11, color: 'var(--danger)', marginTop: 3 }}>{errs.expiry_date}</div>}
-                          </div>
-                        )}
-                      </div>
-                    </div>
-                  ) : (
-                    /* ── NON-SERIAL ── */
-                    <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', alignItems: 'flex-end' }}>
-                      <div className="modal-field" style={{ minWidth: 130 }}>
-                        <label className="modal-label">Receive Now</label>
-                        <input
-                          className={`li-input right${errs.qty_to_receive ? ' li-input-error' : ''}`}
-                          type="number"
-                          min="0"
-                          max={allowOverReceive ? undefined : remaining}
-                          value={rl.qty_to_receive}
-                          onChange={e => updateReceiveLine(idx, 'qty_to_receive', parseFloat(e.target.value) || 0)}
-                          onFocus={e => e.target.select()}
-                          style={{ width: 100, textAlign: 'right' }}
-                        />
-                        {errs.qty_to_receive && <div style={{ fontSize: 11, color: 'var(--danger)', marginTop: 3 }}>{errs.qty_to_receive}</div>}
-                      </div>
-                      {rl.needs_batch && (
-                        <div className="modal-field" style={{ flex: 1, minWidth: 160 }}>
-                          <label className="modal-label">Batch / Lot # {rl.qty_to_receive > 0 && <span className="req">*</span>}</label>
-                          <input
-                            className={`modal-input${errs.batch_num ? ' li-input-error' : ''}`}
-                            value={rl.batch_num}
-                            onChange={e => updateReceiveLine(idx, 'batch_num', e.target.value)}
-                            placeholder="Batch number…"
-                            style={{ background: 'var(--gray-50)' }}
-                          />
-                          {errs.batch_num && <div style={{ fontSize: 11, color: 'var(--danger)', marginTop: 3 }}>{errs.batch_num}</div>}
-                        </div>
-                      )}
-                      {rl.needs_expiry && (
-                        <div className="modal-field">
-                          <label className="modal-label">Expiry Date {rl.qty_to_receive > 0 && <span className="req">*</span>}</label>
-                          <ExpiryInput value={rl.expiry_date} onChange={v => updateReceiveLine(idx, 'expiry_date', v)} />
-                          {errs.expiry_date && <div style={{ fontSize: 11, color: 'var(--danger)', marginTop: 3 }}>{errs.expiry_date}</div>}
-                        </div>
-                      )}
-                      {!rl.needs_batch && !rl.needs_expiry && (
-                        <div style={{ paddingBottom: 6, fontSize: 12, color: 'var(--gray-400)' }}>
-                          of {remaining} remaining{allowOverReceive ? ' (over-receiving allowed)' : ''}
-                        </div>
-                      )}
-                    </div>
-                  )}
+                  <div style={{ overflowX: 'auto', margin: '0 -20px' }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
+                      <thead>
+                        <tr style={{ background: 'var(--gray-50)' }}>
+                          <th className="li-th">Product</th>
+                          <th className="li-th" style={{ width: 80, textAlign: 'right' }}>Ordered</th>
+                          <th className="li-th" style={{ width: 90, textAlign: 'right' }}>Received</th>
+                          <th className="li-th" style={{ width: 90, textAlign: 'right' }}>Remaining</th>
+                          <th className="li-th" style={{ width: 120, textAlign: 'right' }}>Receive Now</th>
+                          {anyBatchCol && <th className="li-th" style={{ width: 170 }}>Batch / Lot #</th>}
+                          {anyExpiryCol && <th className="li-th" style={{ width: 170 }}>Expiry Date</th>}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {receiveLines.map((rl, idx) => {
+                          const remaining = rl.quantity_ordered - rl.quantity_received
+                          const errs = lineErrors[idx] ?? {}
+                          const receivingCount = rl.needs_serial
+                            ? rl.serials.filter(s => s.serial_number.trim()).length
+                            : Number(rl.qty_to_receive)
+                          return (
+                            <Fragment key={rl.id}>
+                              <tr style={{ borderBottom: rl.needs_serial ? 'none' : '1px solid var(--gray-100)' }}>
+                                <td className="li-td">
+                                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                                    <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--gray-400)', background: 'var(--gray-100)', padding: '2px 6px', borderRadius: 5 }}>{rl.product_sku ?? '—'}</span>
+                                    <span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{rl.product_name ?? '—'}</span>
+                                    {rl.needs_serial && <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--teal)', background: 'var(--teal-surface)', padding: '2px 7px', borderRadius: 20 }}>SERIAL</span>}
+                                  </div>
+                                </td>
+                                <td className="li-td" style={{ textAlign: 'right', fontSize: 13 }}>{rl.quantity_ordered}</td>
+                                <td className="li-td" style={{ textAlign: 'right', fontSize: 13, color: rl.quantity_received > 0 ? '#059669' : 'var(--gray-400)', fontWeight: 600 }}>{rl.quantity_received}</td>
+                                <td className="li-td" style={{ textAlign: 'right', fontSize: 13, fontWeight: 600, color: remaining > 0 ? 'var(--danger)' : '#059669' }}>{remaining}</td>
+                                <td className="li-td" style={{ textAlign: 'right' }}>
+                                  {rl.needs_serial ? (
+                                    <span style={{ fontSize: 13, fontWeight: 700, color: receivingCount > 0 ? 'var(--teal)' : 'var(--gray-400)' }}>{receivingCount}</span>
+                                  ) : (
+                                    <>
+                                      <input
+                                        className={`li-input right${errs.qty_to_receive ? ' li-input-error' : ''}`}
+                                        type="number"
+                                        min="0"
+                                        max={allowOverReceive ? undefined : remaining}
+                                        value={rl.qty_to_receive}
+                                        onChange={e => updateReceiveLine(idx, 'qty_to_receive', parseFloat(e.target.value) || 0)}
+                                        onFocus={e => e.target.select()}
+                                        style={{ width: 90, textAlign: 'right' }}
+                                      />
+                                      {errs.qty_to_receive && <div style={{ fontSize: 11, color: 'var(--danger)', marginTop: 3 }}>{errs.qty_to_receive}</div>}
+                                    </>
+                                  )}
+                                </td>
+                                {anyBatchCol && (
+                                  <td className="li-td">
+                                    {rl.needs_batch ? (
+                                      <>
+                                        <input
+                                          className={`modal-input${errs.batch_num ? ' li-input-error' : ''}`}
+                                          value={rl.batch_num}
+                                          onChange={e => updateReceiveLine(idx, 'batch_num', e.target.value)}
+                                          placeholder="Batch number…"
+                                          style={{ background: 'var(--gray-50)' }}
+                                        />
+                                        {errs.batch_num && <div style={{ fontSize: 11, color: 'var(--danger)', marginTop: 3 }}>{errs.batch_num}</div>}
+                                      </>
+                                    ) : <span style={{ color: 'var(--gray-300)' }}>—</span>}
+                                  </td>
+                                )}
+                                {anyExpiryCol && (
+                                  <td className="li-td">
+                                    {rl.needs_expiry ? (
+                                      <>
+                                        <ExpiryInput value={rl.expiry_date} onChange={v => updateReceiveLine(idx, 'expiry_date', v)} />
+                                        {errs.expiry_date && <div style={{ fontSize: 11, color: 'var(--danger)', marginTop: 3 }}>{errs.expiry_date}</div>}
+                                      </>
+                                    ) : <span style={{ color: 'var(--gray-300)' }}>—</span>}
+                                  </td>
+                                )}
+                              </tr>
+                              {rl.needs_serial && (
+                                <tr style={{ borderBottom: '1px solid var(--gray-100)' }}>
+                                  <td colSpan={colCount} style={{ padding: '0 20px 14px 44px' }}>
+                                    <div style={{ fontSize: 12, color: 'var(--gray-400)', fontWeight: 600, marginBottom: 6 }}>
+                                      Serial numbers — paste several on separate lines, or enter one per row
+                                    </div>
+                                    {errs.serials && <div style={{ fontSize: 11.5, color: 'var(--danger)', marginBottom: 6 }}>{errs.serials}</div>}
+                                    {rl.serials.map((s, si) => (
+                                      <div key={s._key} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, maxWidth: 520 }}>
+                                        <span style={{ fontSize: 12, color: 'var(--gray-400)', minWidth: 24, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{si + 1}.</span>
+                                        <input
+                                          className={`modal-input${errs[`serial_${si}`] ? ' li-input-error' : ''}`}
+                                          style={{ flex: 1, background: 'var(--gray-50)' }}
+                                          placeholder={`Serial number ${si + 1}…`}
+                                          value={s.serial_number}
+                                          onChange={e => updateSerial(idx, si, e.target.value)}
+                                          autoComplete="off"
+                                        />
+                                        {errs[`serial_${si}`] && <span style={{ fontSize: 11, color: 'var(--danger)', whiteSpace: 'nowrap' }}>{errs[`serial_${si}`]}</span>}
+                                        {rl.serials.length > 1 && (
+                                          <button
+                                            onClick={() => removeSerialRow(idx, si)}
+                                            style={{ width: 26, height: 26, borderRadius: 7, border: 'none', background: 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--gray-400)', flexShrink: 0 }}
+                                            onMouseOver={e => (e.currentTarget.style.color = 'var(--danger)')}
+                                            onMouseOut={e => (e.currentTarget.style.color = 'var(--gray-400)')}
+                                          >
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                                          </button>
+                                        )}
+                                      </div>
+                                    ))}
+                                    <button
+                                      onClick={() => addSerialRow(idx)}
+                                      style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: '1.5px dashed var(--gray-200)', borderRadius: 8, padding: '6px 12px', cursor: 'pointer', fontSize: 12, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)', fontWeight: 600 }}
+                                    >
+                                      + Add serial row
+                                    </button>
+                                  </td>
+                                </tr>
+                              )}
+                            </Fragment>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               )
-            })}
+            })()}
 
             {/* Receipt summary */}
             {receiveLines.length > 0 && (

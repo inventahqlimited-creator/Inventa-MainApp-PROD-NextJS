@@ -24,6 +24,8 @@ type PO = {
   order_discount: number | null
   order_discount_type: string | null
   order_discount_amount: number | null
+  backorder_from_number?: string | null
+  backorder_to_number?: string | null
 }
 
 type CostLine = {
@@ -276,6 +278,8 @@ export default function ViewPurchaseOrder({
   orgId,
   startInReceive = false,
   returnTo,
+  allowOverReceive = false,
+  nextBackorderNumber,
 }: {
   po: PO
   lines: Line[]
@@ -285,6 +289,8 @@ export default function ViewPurchaseOrder({
   orgId: string
   startInReceive?: boolean   // open straight into Receive Stock (used by /purchases/[id]/receive)
   returnTo?: string          // where to go after receiving or cancelling the receipt
+  allowOverReceive?: boolean // Settings → Purchases → Allow Over-Receiving
+  nextBackorderNumber?: string // what the next backorder of this PO will be called, e.g. PO-0001A
 }) {
   const router = useRouter()
   const [po, setPo] = useState(initialPo)
@@ -315,6 +321,9 @@ export default function ViewPurchaseOrder({
   const [receiveNotes, setReceiveNotes] = useState('')
   const [lineErrors, setLineErrors] = useState<Record<number, Record<string, string>>>({})
   const [ready, setReady] = useState(!startInReceive)
+  const [receiveDate, setReceiveDate] = useState(() => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` })
+  const [defaultBin, setDefaultBin] = useState('')
+  const [confirmReceive, setConfirmReceive] = useState<null | 'receive' | 'backorder'>(null)
 
   // Leave receive mode: back to the PO page when opened from there, else back to view mode
   function exitReceive() {
@@ -477,14 +486,14 @@ export default function ViewPurchaseOrder({
               seenInLine.add(s.serial_number.trim())
             }
           })
-          if (serials.length > remaining) {
+          if (!allowOverReceive && serials.length > remaining) {
             e.serials = `Cannot receive more than ${remaining} units (remaining on order)`
           }
         }
         if (l.needs_batch && !l.batch_num.trim()) e.batch_num = 'Batch number required'
         if (l.needs_expiry && !l.expiry_date) e.expiry_date = 'Expiry date required'
       } else {
-        if (l.qty_to_receive > remaining) {
+        if (!allowOverReceive && l.qty_to_receive > remaining) {
           e.qty_to_receive = `Max ${remaining}`
         }
         if (l.qty_to_receive < 0) e.qty_to_receive = 'Must be 0 or more'
@@ -499,7 +508,20 @@ export default function ViewPurchaseOrder({
   }
 
   // ── Submit Receipt ────────────────────────────────────────────────────────
-  async function submitReceive() {
+  // Step 1: validate, then ask "are you sure?"
+  function askReceive(kind: 'receive' | 'backorder') {
+    const totalToReceive = receiveLines.reduce((sum, l) => {
+      return sum + (l.needs_serial ? l.serials.filter(s => s.serial_number.trim()).length : Number(l.qty_to_receive))
+    }, 0)
+    if (totalToReceive <= 0) { setError('Enter a quantity to receive for at least one line.'); return }
+    if (!validate()) { setError('Please fix the errors below before confirming.'); return }
+    setError(null)
+    setConfirmReceive(kind)
+  }
+
+  // Step 2: after the confirmation, post it
+  async function submitReceive(backorder: boolean) {
+    setConfirmReceive(null)
     const totalToReceive = receiveLines.reduce((sum, l) => {
       return sum + (l.needs_serial ? l.serials.filter(s => s.serial_number.trim()).length : Number(l.qty_to_receive))
     }, 0)
@@ -519,6 +541,9 @@ export default function ViewPurchaseOrder({
         new_quantity_received: l.quantity_received + (l.needs_serial ? l.serials.filter(s => s.serial_number.trim()).length : Number(l.qty_to_receive)),
       })),
       notes: receiveNotes || null,
+      backorder,
+      bin: defaultBin.trim() || null,
+      receive_date: receiveDate || null,
     }
 
     const res = await fetch(`/api/org/purchases/${po.id}/receive`, {
@@ -529,7 +554,7 @@ export default function ViewPurchaseOrder({
     const data = await res.json()
     setSaving(false)
 
-    if (!res.ok) { setError(data.error ?? 'Something went wrong'); return }
+    if (!res.ok) { setError(data.error ?? 'Something went wrong'); window.scrollTo?.(0, 0); return }
 
     // Update local state: mark received lines as immutable
     const updatedLines = lines.map(l => {
@@ -609,6 +634,17 @@ export default function ViewPurchaseOrder({
     return sum + (l.needs_serial ? l.serials.filter(s => s.serial_number.trim()).length : Number(l.qty_to_receive))
   }, 0)
 
+  const sumOrdered = receiveLines.reduce((a, l) => a + l.quantity_ordered, 0)
+  const sumPrev = receiveLines.reduce((a, l) => a + l.quantity_received, 0)
+  const sumRemainingAfter = receiveLines.reduce((a, l) => {
+    const now = l.needs_serial ? l.serials.filter(s => s.serial_number.trim()).length : Number(l.qty_to_receive)
+    return a + Math.max(0, l.quantity_ordered - l.quantity_received - now)
+  }, 0)
+  const units = Array.from(new Set(receiveLines.map(l => (l.unit ?? '').trim()).filter(Boolean)))
+  const unitWord = units.length === 1 ? units[0].toLowerCase() : 'item'
+  const plural = (n: number, w: string) => (n === 1 || /s$/i.test(w) ? w : `${w}s`)
+  const backorderNo = nextBackorderNumber ?? `${po.po_number ?? 'PO'}A`
+
   // ── Serial tracking: does anything in this PO use it?
   const anySerial = lines.some(l => l.serial_tracking)
   const anyBatch  = lines.some(l => l.batch_tracking)
@@ -621,6 +657,24 @@ export default function ViewPurchaseOrder({
       style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}
       onClick={() => { setTermsOpen(false); setLocationOpen(false); setSupplierOpen(false) }}
     >
+      {confirmReceive === 'receive' && (
+        <ConfirmModal
+          title="Receive these items?"
+          message={`Are you sure you want to receive these items? ${totalReceivingNow} ${plural(totalReceivingNow, unitWord)} will be added to stock at ${po.location_name ?? 'the delivery location'}.${sumRemainingAfter > 0 ? ` ${sumRemainingAfter} will remain outstanding and ${po.po_number ?? 'this order'} will stay Partially Received.` : ` ${po.po_number ?? 'This order'} will be marked Closed.`}`}
+          confirmLabel="Yes, receive"
+          onConfirm={() => submitReceive(false)}
+          onCancel={() => setConfirmReceive(null)}
+        />
+      )}
+      {confirmReceive === 'backorder' && (
+        <ConfirmModal
+          title="Receive and create a backorder?"
+          message={`Are you sure? The current items (${totalReceivingNow} ${plural(totalReceivingNow, unitWord)}) will be received and ${po.po_number ?? 'this order'} will be closed. A new order, ${backorderNo}, will be created for the ${sumRemainingAfter} ${plural(sumRemainingAfter, unitWord)} still outstanding.`}
+          confirmLabel="Yes, create backorder"
+          onConfirm={() => submitReceive(true)}
+          onCancel={() => setConfirmReceive(null)}
+        />
+      )}
       {confirmCancel && (
         <ConfirmModal
           title="Cancel Purchase Order"
@@ -668,6 +722,12 @@ export default function ViewPurchaseOrder({
               <div style={{ background: '#FEF2F2', border: '1.5px solid #FECACA', borderRadius: 10, padding: '12px 16px', fontSize: 13, color: '#B91C1C', marginBottom: 20 }}>{error}</div>
             )}
 
+            {po.backorder_from_number && (
+              <div style={{ background: '#FEF3C7', border: '1.5px solid #FDE68A', borderRadius: 12, padding: '12px 16px', marginBottom: 20, fontSize: 13, fontWeight: 600, color: '#92400E' }}>
+                Backordered from {po.backorder_from_number}
+              </div>
+            )}
+
             {/* Info banner */}
             <div style={{ background: 'var(--teal-surface)', border: '1.5px solid var(--teal-pale)', borderRadius: 12, padding: '14px 18px', marginBottom: 20, display: 'flex', alignItems: 'center', gap: 10 }}>
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--teal)" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
@@ -676,6 +736,21 @@ export default function ViewPurchaseOrder({
                 {receiveLines.length === 0 && <span style={{ marginLeft: 12, color: '#059669', fontWeight: 700 }}>✓ All items already fully received</span>}
               </div>
             </div>
+
+            {receiveLines.length > 0 && (
+              <div className="npo-card" style={{ marginBottom: 20 }}>
+                <div style={{ display: 'flex', alignItems: 'flex-end', gap: 16, flexWrap: 'wrap' }}>
+                  <div className="modal-field" style={{ flex: '0 0 220px' }}>
+                    <label className="modal-label">Receive Date <span className="req">*</span></label>
+                    <input className="modal-input" type="date" value={receiveDate} onChange={e => setReceiveDate(e.target.value)} style={{ background: 'var(--white)' }} />
+                  </div>
+                  <div className="modal-field" style={{ flex: '0 0 260px' }}>
+                    <label className="modal-label">Default Bin (optional)</label>
+                    <input className="modal-input" value={defaultBin} onChange={e => setDefaultBin(e.target.value)} placeholder="e.g. A1-01" style={{ background: 'var(--white)' }} />
+                  </div>
+                </div>
+              </div>
+            )}
 
             {receiveLines.length === 0 && (
               <div className="npo-card" style={{ textAlign: 'center', padding: '40px 20px', color: 'var(--gray-400)', fontSize: 14 }}>
@@ -799,7 +874,7 @@ export default function ViewPurchaseOrder({
                           className={`li-input right${errs.qty_to_receive ? ' li-input-error' : ''}`}
                           type="number"
                           min="0"
-                          max={remaining}
+                          max={allowOverReceive ? undefined : remaining}
                           value={rl.qty_to_receive}
                           onChange={e => updateReceiveLine(idx, 'qty_to_receive', parseFloat(e.target.value) || 0)}
                           onFocus={e => e.target.select()}
@@ -829,7 +904,7 @@ export default function ViewPurchaseOrder({
                       )}
                       {!rl.needs_batch && !rl.needs_expiry && (
                         <div style={{ paddingBottom: 6, fontSize: 12, color: 'var(--gray-400)' }}>
-                          of {remaining} remaining
+                          of {remaining} remaining{allowOverReceive ? ' (over-receiving allowed)' : ''}
                         </div>
                       )}
                     </div>
@@ -837,6 +912,18 @@ export default function ViewPurchaseOrder({
                 </div>
               )
             })}
+
+            {/* Receipt summary */}
+            {receiveLines.length > 0 && (
+              <div className="npo-card" style={{ marginBottom: 16, display: 'flex', justifyContent: 'flex-end' }}>
+                <div style={{ minWidth: 280, display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: 'var(--gray-400)' }}><span>Total Ordered</span><span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--slate)' }}>{sumOrdered}</span></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: 'var(--gray-400)' }}><span>Previously Received</span><span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--gray-400)' }}>{sumPrev}</span></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: 'var(--gray-400)' }}><span>Receiving Now</span><span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 15, color: 'var(--teal)' }}>{totalReceivingNow}</span></div>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, color: 'var(--gray-400)', paddingTop: 6, borderTop: '1px solid var(--gray-100)' }}><span>Remaining After</span><span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, color: 'var(--slate)' }}>{sumRemainingAfter}</span></div>
+                </div>
+              </div>
+            )}
 
             {/* Receiving notes */}
             {receiveLines.length > 0 && (
@@ -865,9 +952,14 @@ export default function ViewPurchaseOrder({
             {receiveLines.length > 0 && (
               <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
                 <div style={{ fontSize: 13, color: 'var(--gray-400)' }}>
-                  Receiving <strong style={{ color: 'var(--slate)' }}>{totalReceivingNow}</strong> unit{totalReceivingNow !== 1 ? 's' : ''} into <strong style={{ color: 'var(--slate)' }}>{po.location_name}</strong>
+                  Receiving <strong style={{ color: 'var(--slate)' }}>{totalReceivingNow}</strong> {plural(totalReceivingNow, unitWord)} into <strong style={{ color: 'var(--slate)' }}>{po.location_name}</strong>
                 </div>
-                <button className="btn btn-primary" style={{ height: 38, padding: '0 20px' }} onClick={submitReceive} disabled={saving}>
+                {sumRemainingAfter > 0 && (
+                  <button className="btn btn-outline" style={{ height: 38 }} onClick={() => askReceive('backorder')} disabled={saving}>
+                    Receive &amp; Create Backorder
+                  </button>
+                )}
+                <button className="btn btn-primary" style={{ height: 38, padding: '0 20px' }} onClick={() => askReceive('receive')} disabled={saving}>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
                   {saving ? 'Receiving…' : 'Confirm Receipt'}
                 </button>

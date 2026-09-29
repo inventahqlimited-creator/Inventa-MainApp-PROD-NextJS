@@ -1,3 +1,7 @@
+// src/app/api/org/purchases/[id]/receive/route.ts
+// Receives stock against a purchase order. All the work (stock on hand, on order,
+// movements, costs, PO status) happens in one database transaction:
+// public.receive_purchase_order(...)
 import { NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 
@@ -16,56 +20,34 @@ export async function POST(request: Request, { params }: Params) {
     .eq('user_id', user.id)
     .eq('invite_status', 'accepted')
     .single()
-
   if (!m) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   const orgId = (m as { org_id: string }).org_id
 
   const body = await request.json()
-  const { lines } = body as {
-    lines: { id: string; qty_to_receive: number; batch_num: string | null; expiry_date: string | null; new_quantity_received: number }[]
-    notes: string | null
-  }
+  const lines = Array.isArray(body.lines) ? body.lines : []
+  if (lines.length === 0) return NextResponse.json({ error: 'Nothing to receive.' }, { status: 400 })
 
-  // Update each line's quantity_received, batch_num, expiry_date
-  for (const line of lines) {
-    if (line.qty_to_receive <= 0) continue
-    const { error } = await adminClient
-      .from('purchase_order_lines')
-      .update({
-        quantity_received: line.new_quantity_received,
-        batch_num: line.batch_num,
-        expiry_date: line.expiry_date,
-      })
-      .eq('id', line.id)
-      .eq('org_id', orgId)
+  const who =
+    (user.user_metadata?.full_name as string | undefined) ||
+    (user.user_metadata?.name as string | undefined) ||
+    user.email ||
+    'User'
 
-    if (error) return NextResponse.json({ error: error.message }, { status: 500 })
-  }
+  const { data, error } = await adminClient.rpc('receive_purchase_order', {
+    p_po: id,
+    p_org: orgId,
+    p_lines: lines.map((l: Record<string, unknown>) => ({
+      id: l.id,
+      qty_to_receive: Number(l.qty_to_receive) || 0,
+      batch_num: l.batch_num ?? null,
+      expiry_date: l.expiry_date ?? null,
+      serial_numbers: Array.isArray(l.serial_numbers) ? l.serial_numbers : null,
+    })),
+    p_user: who,
+    p_notes: typeof body.notes === 'string' && body.notes.trim() ? body.notes.trim() : null,
+  })
 
-  // Determine new PO status
-  const { data: allLines } = await adminClient
-    .from('purchase_order_lines')
-    .select('quantity_ordered, quantity_received')
-    .eq('po_id', id)
-    .eq('org_id', orgId)
-
-  const allReceived = allLines?.every((l: { quantity_ordered: number; quantity_received: number | null }) => (l.quantity_received ?? 0) >= l.quantity_ordered)
-  const anyReceived = allLines?.some((l: { quantity_received: number | null }) => (l.quantity_received ?? 0) > 0)
-  
-  const newStatus = allReceived ? 'Closed' : anyReceived ? 'Partially Received' : 'Open'
-
-  // Update PO status
-  await adminClient
-    .from('purchase_orders')
-    .update({ status: newStatus })
-    .eq('id', id)
-    .eq('org_id', orgId)
-
-  // Apply stock movement
-  if (newStatus === 'Closed' || newStatus === 'Partially Received') {
-    const { error: fnError } = await adminClient.rpc('apply_po_receive', { p_po_id: id })
-    if (fnError) console.error('apply_po_receive error:', fnError.message)
-  }
-
-  return NextResponse.json({ success: true, new_status: newStatus })
+  // Validation messages raised in the database (e.g. "only 3 left to receive") come back as error.message
+  if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+  return NextResponse.json(data as { new_status: string })
 }

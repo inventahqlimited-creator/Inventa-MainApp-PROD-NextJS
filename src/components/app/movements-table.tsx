@@ -37,7 +37,6 @@ type Movement = {
   expiry_date?: string | null
   reference_number?: string | null
   bin_id?: string | null
-  bin_name?: string | null
 }
 
 type SearchMode = 'product' | 'serial' | 'batch'
@@ -78,7 +77,7 @@ function fmtRef(referenceId: string | null, referenceType: string | null, refere
   const short = referenceId.replace(/-/g, '').slice(-6).toUpperCase()
   const prefix =
     referenceType === 'purchase_order'   ? 'PO' :
-    referenceType === 'sale_order'       ? 'SO' :
+    (referenceType === 'sale_order' || referenceType === 'sales_order') ? 'SO' :
     referenceType === 'transfer_order'   ? 'TR' :
     referenceType === 'adjustment_order' ? 'ADJ' :
     referenceType === 'return'           ? 'RET' : '#'
@@ -350,7 +349,7 @@ export default function MovementsTable({
       m.product_name ?? '',
       m.product_sku  ?? '',
       m.location_name ?? '—',
-      ...(showBinCsv  ? [m.bin_name       ?? '—'] : []),
+      ...(showBinCsv  ? [m.bin_id        ?? '—'] : []),
       ...(showSerial ? [m.serial_number ?? '—'] : []),
       ...(showBatch  ? [m.batch_number  ?? '—'] : []),
       m.qty > 0 ? `+${m.qty}` : String(m.qty),
@@ -692,7 +691,9 @@ export default function MovementsTable({
                   {paginated.map(m => {
                     const typeLabel = TYPE_LABELS[m.movement_type] ?? m.movement_type
                     const typeColor = TYPE_COLORS[m.movement_type] ?? 'background:var(--gray-100);color:var(--gray-400)'
-                    const navPath   = TYPE_NAV[m.movement_type] ?? '/products'
+                    const navPath   = m.reference_type === 'purchase_order' ? '/purchases'
+                                  : (m.reference_type === 'sales_order' || m.reference_type === 'sale_order') ? '/sales'
+                                  : (TYPE_NAV[m.movement_type] ?? '/products')
                     const refLabel  = fmtRef(m.reference_id, m.reference_type, m.reference_number)
                     return (
                       <tr key={m.id} className="li-row">
@@ -715,7 +716,7 @@ export default function MovementsTable({
                         <td className="li-td" style={{ fontWeight: 500, color: 'var(--slate)', fontSize: 13 }}>{m.product_name ?? '—'}</td>
                         <td className="li-td td-muted" style={{ fontSize: 12 }}>{m.product_sku || '—'}</td>
                         <td className="li-td td-muted" style={{ fontSize: 12.5 }}>{m.location_name ?? '—'}</td>
-                        {showBin    && <td className="li-td td-muted" style={{ fontSize: 12 }}>{m.bin_name     || '—'}</td>}
+                        {showBin    && <td className="li-td td-muted" style={{ fontSize: 12 }}>{m.bin_id       || '—'}</td>}
                         {showSerial && <td className="li-td td-muted" style={{ fontSize: 12 }}>{m.serial_number || '—'}</td>}
                         {showBatch  && <td className="li-td td-muted" style={{ fontSize: 12 }}>{m.batch_number  || '—'}</td>}
                         <td className="li-td td-muted" style={{ fontSize: 12, maxWidth: 140 }}>

@@ -38,13 +38,14 @@ function fmtMoney(n: number | null) {
 // Draft → Open → Picking → Closed (or Cancelled). Older statuses fold in: stock-based ones into Open,
 // picked/packed into Picking, shipped/delivered into Closed.
 const OPEN_GROUP = ['open', 'no stock', 'stock available', 'partial stock']
-const PICKING_GROUP = ['picking', 'partially picked', 'picked', 'partially packed']
+const PICKING_GROUP = ['picking', 'partially picked', 'partially packed']
 const CLOSED_GROUP = ['closed', 'shipped', 'delivered']
 
-function statusKey(status: string): 'draft' | 'open' | 'picking' | 'packed' | 'closed' | 'cancelled' {
+function statusKey(status: string): 'draft' | 'open' | 'picking' | 'picked' | 'packed' | 'closed' | 'cancelled' {
   const s = status.toLowerCase()
   if (OPEN_GROUP.includes(s)) return 'open'
   if (PICKING_GROUP.includes(s)) return 'picking'
+  if (s === 'picked') return 'picked'
   if (s === 'packed') return 'packed'
   if (CLOSED_GROUP.includes(s)) return 'closed'
   if (s === 'cancelled') return 'cancelled'
@@ -55,6 +56,7 @@ function statusBadge(status: string) {
   switch (statusKey(status)) {
     case 'open': return <span className="badge badge-open">Open</span>
     case 'picking': return <span className="badge" style={{ background: '#EDE9FE', color: '#5B21B6' }}>Picking</span>
+    case 'picked': return <span className="badge" style={{ background: '#DBEAFE', color: '#1D4ED8' }}>Picked</span>
     case 'packed': return <span className="badge" style={{ background: '#CCFBF1', color: '#0F766E' }}>Packed</span>
     case 'closed': return <span className="badge badge-closed">Closed</span>
     case 'cancelled': return <span className="badge badge-cancelled">Cancelled</span>
@@ -67,13 +69,14 @@ const TABS = [
   { key: 'draft', label: 'Draft' },
   { key: 'open', label: 'Open' },
   { key: 'picking', label: 'Picking' },
+  { key: 'picked', label: 'Picked' },
   { key: 'packed', label: 'Packed' },
   { key: 'closed', label: 'Closed' },
   { key: 'cancelled', label: 'Cancelled' },
 ] as const
 
 // These tabs only appear when at least one order has that status
-const HIDE_WHEN_EMPTY = new Set<string>(['draft', 'picking', 'packed', 'cancelled'])
+const HIDE_WHEN_EMPTY = new Set<string>(['draft', 'picking', 'picked', 'packed', 'cancelled'])
 
 type Tab = typeof TABS[number]['key']
 
@@ -121,11 +124,13 @@ export default function SalesTable({
   contacts,
   locations,
   orgId,
+  fulfilmentMode = 'full',
 }: {
   orders: Order[]
   contacts: Contact[]
   locations: Location[]
   orgId: string
+  fulfilmentMode?: string
 }) {
   const router = useRouter()
   const [search, setSearch] = useState('')
@@ -139,6 +144,23 @@ export default function SalesTable({
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(25)
   const [visibleCols, setVisibleCols] = useState<Set<ColKey>>(new Set(DEFAULT_COLS))
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [menu, setMenu] = useState<{ id: string; x: number; y: number; printOpen: boolean } | null>(null)
+  const [dialog, setDialog] = useState<
+    | { kind: 'cancel'; order: Order }
+    | { kind: 'close'; order: Order }
+    | { kind: 'po'; order: Order }
+    | { kind: 'bulk-close'; ids: string[]; skipped: number }
+    | null
+  >(null)
+  const [poScope, setPoScope] = useState<'all' | 'short'>('all')
+  const [busy, setBusy] = useState(false)
+  const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null)
+
+  function flash(ok: boolean, text: string) {
+    setNotice({ ok, text })
+    setTimeout(() => setNotice(n => (n && n.text === text ? null : n)), 6000)
+  }
 
   // Load persisted column visibility on mount
   useEffect(() => { setVisibleCols(loadCols()) }, [])
@@ -179,6 +201,7 @@ export default function SalesTable({
     draft: orders.filter(o => statusKey(o.status) === 'draft').length,
     open: orders.filter(o => statusKey(o.status) === 'open').length,
     picking: orders.filter(o => statusKey(o.status) === 'picking').length,
+    picked: orders.filter(o => statusKey(o.status) === 'picked').length,
     packed: orders.filter(o => statusKey(o.status) === 'packed').length,
     closed: orders.filter(o => statusKey(o.status) === 'closed').length,
     cancelled: orders.filter(o => statusKey(o.status) === 'cancelled').length,
@@ -192,6 +215,70 @@ export default function SalesTable({
   const customerName = contacts.find(c => c.id === customerFilter)?.name ?? 'All Customers'
   const locationName = locations.find(l => l.id === locationFilter)?.name ?? 'All Locations'
 
+  // ── Selection / bulk actions ──
+  const allPageSelected = paginated.length > 0 && paginated.every(o => selected.has(o.id))
+  function toggleAll(checked: boolean) {
+    setSelected(prev => { const n = new Set(prev); paginated.forEach(o => (checked ? n.add(o.id) : n.delete(o.id))); return n })
+  }
+  function toggleOne(id: string) {
+    setSelected(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n })
+  }
+  const selectedOrders = orders.filter(o => selected.has(o.id))
+  const toPick = selectedOrders.filter(o => statusKey(o.status) === 'open')
+  const toPack = selectedOrders.filter(o => statusKey(o.status) === 'picked')
+  const toClose = selectedOrders.filter(o => statusKey(o.status) === 'packed')
+  const pickEnabled = fulfilmentMode !== 'none'
+  const packEnabled = fulfilmentMode === 'full'
+
+  async function bulkClose(ids: string[]) {
+    setBusy(true)
+    try {
+      const res = await fetch('/api/org/sales/bulk-close', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }) })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { flash(false, data.error ?? 'Could not close these orders'); return }
+      const closed = (data.closed ?? []) as string[]
+      const failed = (data.failed ?? []) as { so_number: string; error: string }[]
+      flash(failed.length === 0, `${closed.length} order${closed.length !== 1 ? 's' : ''} closed` + (failed.length ? `. ${failed.length} failed — ${failed.map(f => `${f.so_number}: ${f.error}`).join('; ')}` : '.'))
+      setSelected(new Set())
+      router.refresh()
+    } catch { flash(false, 'Network error — please try again.') }
+    finally { setBusy(false); setDialog(null) }
+  }
+
+  // ── Row menu actions ──
+  async function closeOne(o: Order) {
+    setBusy(true)
+    try {
+      const res = await fetch(`/api/org/sales/${o.id}/close`, { method: 'POST' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) flash(false, `${o.so_number}: ${data.error ?? 'Could not close this order'}`)
+      else { flash(true, `${o.so_number} closed.`); router.refresh() }
+    } catch { flash(false, 'Network error — please try again.') }
+    finally { setBusy(false); setDialog(null) }
+  }
+  async function cancelOne(o: Order) {
+    setBusy(true)
+    try {
+      const res = await fetch(`/api/org/sales/${o.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'Cancelled' }) })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) flash(false, `${o.so_number}: ${data.error ?? 'Could not cancel this order'}`)
+      else { flash(true, `${o.so_number} cancelled.`); router.refresh() }
+    } catch { flash(false, 'Network error — please try again.') }
+    finally { setBusy(false); setDialog(null) }
+  }
+
+  const menuOrder = menu ? orders.find(o => o.id === menu.id) ?? null : null
+  function openMenu(e: React.MouseEvent, o: Order) {
+    e.stopPropagation()
+    if (menu?.id === o.id) { setMenu(null); return }
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    const width = 230
+    const x = Math.max(8, Math.min(r.right - width, window.innerWidth - width - 8))
+    // open upward when close to the bottom of the window
+    const y = r.bottom + 330 > window.innerHeight ? Math.max(8, r.top - 330) : r.bottom + 4
+    setMenu({ id: o.id, x, y, printOpen: false })
+  }
+
   function isOverdue(o: Order) {
     if (!o.expected_date) return false
     if (['closed', 'cancelled'].includes(statusKey(o.status))) return false
@@ -199,7 +286,7 @@ export default function SalesTable({
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }} onClick={() => { setCustomerOpen(false); setLocationOpen(false); setActionsOpen(false); setColOpen(false) }}>
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }} onClick={() => { setCustomerOpen(false); setLocationOpen(false); setActionsOpen(false); setColOpen(false); setMenu(null) }}>
 
       {/* Page header */}
       <div className="page-header-card">
@@ -321,31 +408,64 @@ export default function SalesTable({
         </div>
       </div>
 
+      {notice && (
+        <div style={{ margin: '0 0 10px', padding: '10px 14px', borderRadius: 10, fontSize: 13, background: notice.ok ? '#ECFDF5' : '#FEF2F2', border: `1px solid ${notice.ok ? '#A7F3D0' : '#FECACA'}`, color: notice.ok ? '#065F46' : '#B91C1C', display: 'flex', justifyContent: 'space-between', gap: 12 }}>
+          <span>{notice.text}</span>
+          <button onClick={() => setNotice(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', fontSize: 13 }}>✕</button>
+        </div>
+      )}
+
       {/* Table */}
       <div className="table-container">
         <div className="table-toolbar">
-          <span className="table-count"><strong>{filtered.length}</strong> orders</span>
+          {selected.size > 0 ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--slate)' }}>{selected.size} selected</span>
+              <div style={{ width: 1, height: 18, background: 'var(--gray-200)', margin: '0 4px' }} />
+              {pickEnabled && toPick.length > 0 && (
+                <button className="btn-sm btn-sm-primary" title={`${toPick.length} Open order${toPick.length !== 1 ? 's' : ''} will load`} onClick={() => router.push(`/sales/pick?ids=${toPick.map(o => o.id).join(',')}`)}>Start Picking</button>
+              )}
+              {packEnabled && toPack.length > 0 && (
+                <button className="btn-sm btn-sm-primary" title={`${toPack.length} Picked order${toPack.length !== 1 ? 's' : ''} will load`} onClick={() => router.push(`/sales/pack?ids=${toPack.map(o => o.id).join(',')}`)}>Start Packing</button>
+              )}
+              {toClose.length > 0 && (
+                <button className="btn-sm btn-sm-primary" title={`${toClose.length} Packed order${toClose.length !== 1 ? 's' : ''} will be closed`} onClick={() => setDialog({ kind: 'bulk-close', ids: toClose.map(o => o.id), skipped: selected.size - toClose.length })}>Close Order</button>
+              )}
+              {!(pickEnabled && toPick.length > 0) && !(packEnabled && toPack.length > 0) && toClose.length === 0 && (
+                <span style={{ fontSize: 12.5, color: 'var(--gray-400)' }}>No selected order is ready to pick, pack or close.</span>
+              )}
+              <button className="btn-sm btn-sm-ghost" style={{ marginLeft: 'auto' }} onClick={() => setSelected(new Set())}>✕ Clear</button>
+            </div>
+          ) : (
+            <span className="table-count"><strong>{filtered.length}</strong> orders</span>
+          )}
         </div>
         <div className="table-wrap">
           <table>
             <thead>
               <tr>
+                <th style={{ width: 36 }}>
+                  <input type="checkbox" checked={allPageSelected} onChange={e => toggleAll(e.target.checked)} style={{ accentColor: 'var(--teal)', cursor: 'pointer' }} />
+                </th>
                 {activeCols.map(c => (
                   <th key={c.key} style={c.key === 'total_amount' ? { textAlign: 'right' } : undefined}>{c.label}</th>
                 ))}
-                <th style={{ width: 40 }} />
+                <th style={{ width: 76 }} />
               </tr>
             </thead>
             <tbody>
               {paginated.length === 0 && (
                 <tr>
-                  <td colSpan={activeCols.length + 1} style={{ textAlign: 'center', padding: '48px 0', color: 'var(--gray-400)', fontSize: 13 }}>
+                  <td colSpan={activeCols.length + 2} style={{ textAlign: 'center', padding: '48px 0', color: 'var(--gray-400)', fontSize: 13 }}>
                     {search ? 'No orders match your search.' : 'No sales orders yet.'}
                   </td>
                 </tr>
               )}
               {paginated.map(o => (
                 <tr key={o.id} onClick={() => router.push(`/sales/${o.id}`)}>
+                  <td onClick={e => e.stopPropagation()}>
+                    <input type="checkbox" checked={selected.has(o.id)} onChange={() => toggleOne(o.id)} style={{ accentColor: 'var(--teal)', cursor: 'pointer' }} />
+                  </td>
                   {activeCols.map(c => {
                     switch (c.key) {
                       case 'so_number': return (
@@ -376,6 +496,9 @@ export default function SalesTable({
                       <button className="row-action-btn" onClick={e => { e.stopPropagation(); router.push(`/sales/${o.id}`) }} title="View">
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                       </button>
+                      <button className="row-action-btn" onClick={e => openMenu(e, o)} title="More actions">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg>
+                      </button>
                     </div>
                   </td>
                 </tr>
@@ -404,6 +527,127 @@ export default function SalesTable({
           </div>
         </div>
       </div>
+      {/* Row actions menu */}
+      {menu && menuOrder && (() => {
+        const o = menuOrder
+        const k = statusKey(o.status)
+        const closedLike = k === 'closed' || k === 'cancelled'
+        const item = (label: string, onClick: (() => void) | null, opts: { danger?: boolean; soon?: boolean; icon?: React.ReactNode; chevron?: boolean } = {}) => (
+          <div
+            key={label}
+            className="fp-item"
+            onClick={e => { e.stopPropagation(); if (!onClick || opts.soon) return; onClick() }}
+            style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: onClick && !opts.soon ? 'pointer' : 'default', opacity: opts.soon ? 0.5 : 1, color: opts.danger ? 'var(--danger)' : undefined }}
+          >
+            <span style={{ width: 16, display: 'inline-flex', justifyContent: 'center', flexShrink: 0 }}>{opts.icon}</span>
+            <span style={{ flex: 1 }}>{label}</span>
+            {opts.soon && <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--gray-400)', background: 'var(--gray-100)', borderRadius: 5, padding: '1px 6px' }}>Soon</span>}
+            {opts.chevron && <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ transform: menu.printOpen ? 'rotate(90deg)' : undefined }}><polyline points="9 18 15 12 9 6"/></svg>}
+          </div>
+        )
+        const ic = (d: string) => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d={d}/></svg>
+        const sep = (key: string) => <div key={key} style={{ height: 1, background: 'var(--gray-100)', margin: '5px 0' }} />
+
+        // 1 — the next fulfilment step for this order's status
+        let fulfil: React.ReactNode = null
+        if (k === 'open') {
+          fulfil = fulfilmentMode === 'none'
+            ? item('Close Order', () => { setMenu(null); setDialog({ kind: 'close', order: o }) }, { icon: ic('M20 6 9 17l-5-5') })
+            : item('Pick Order', () => router.push(`/sales/${o.id}/pick`), { icon: ic('M21 8l-9-5-9 5v8l9 5 9-5z') })
+        } else if (k === 'picking') {
+          fulfil = item('Continue Picking', () => router.push(`/sales/${o.id}/pick`), { icon: ic('M21 8l-9-5-9 5v8l9 5 9-5z') })
+        } else if (k === 'picked') {
+          fulfil = fulfilmentMode === 'full'
+            ? item('Pack Order', () => router.push(`/sales/${o.id}/pack`), { icon: ic('M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z') })
+            : item('Close Order', () => { setMenu(null); setDialog({ kind: 'close', order: o }) }, { icon: ic('M20 6 9 17l-5-5') })
+        } else if (k === 'packed') {
+          fulfil = item('Close Order', () => { setMenu(null); setDialog({ kind: 'close', order: o }) }, { icon: ic('M20 6 9 17l-5-5') })
+        }
+
+        return (
+          <div
+            className="inv-dropdown"
+            style={{ display: 'block', position: 'fixed', left: menu.x, top: menu.y, width: 230, padding: 6, zIndex: 400 }}
+            onClick={e => e.stopPropagation()}
+          >
+            {fulfil && <>{fulfil}{sep('s1')}</>}
+            {item('Clone Order', () => router.push(`/sales/new?clone=${o.id}`), { icon: ic('M9 9h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V11a2 2 0 0 1 2-2zM5 15H4a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v1') })}
+            {k !== 'cancelled' && item('Create Purchase Order', () => { setMenu(null); setPoScope('all'); setDialog({ kind: 'po', order: o }) }, { icon: ic('M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4zM3 6h18M16 10a4 4 0 0 1-8 0') })}
+            {sep('s2')}
+            {item('Print', () => setMenu(m => (m ? { ...m, printOpen: !m.printOpen } : m)), { icon: ic('M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6z'), chevron: true })}
+            {menu.printOpen && (
+              <div style={{ paddingLeft: 16 }}>
+                {item('Pick List', null, { soon: true })}
+                {item('Packing List', null, { soon: true })}
+                {item('Invoice', null, { soon: true })}
+              </div>
+            )}
+            {item('Email', null, { soon: true, icon: ic('M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM22 6l-10 7L2 6') })}
+            {item('Create Credit Note', null, { soon: true, icon: ic('M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M9 15h6') })}
+            {!closedLike && <>{sep('s3')}{item('Cancel Order', () => { setMenu(null); setDialog({ kind: 'cancel', order: o }) }, { danger: true, icon: ic('M18 6 6 18M6 6l12 12') })}</>}
+          </div>
+        )
+      })()}
+
+      {/* Dialogs */}
+      {dialog && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', zIndex: 500, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={e => e.stopPropagation()}>
+          <div style={{ background: 'var(--white)', borderRadius: 16, padding: '24px 26px', width: 440, maxWidth: '92vw', boxShadow: '0 20px 60px rgba(0,0,0,0.25)' }}>
+            {dialog.kind === 'cancel' && (<>
+              <div style={{ fontFamily: 'var(--font-display)', fontSize: 17, fontWeight: 700, color: 'var(--slate)', marginBottom: 8 }}>Cancel {dialog.order.so_number}?</div>
+              <div style={{ fontSize: 13.5, color: 'var(--gray-400)', lineHeight: 1.5, marginBottom: 20 }}>
+                The order moves to Cancelled{['picking', 'picked', 'packed'].includes(statusKey(dialog.order.status)) ? ', and anything already picked or packed is released back to stock' : ''}. Are you sure?
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                <button className="btn btn-outline" style={{ height: 38 }} onClick={() => setDialog(null)} disabled={busy}>Keep order</button>
+                <button className="btn btn-primary" style={{ height: 38, padding: '0 20px', background: 'var(--danger)', borderColor: 'var(--danger)' }} onClick={() => cancelOne(dialog.order)} disabled={busy}>{busy ? 'Please wait…' : 'Yes, cancel order'}</button>
+              </div>
+            </>)}
+
+            {dialog.kind === 'close' && (<>
+              <div style={{ fontFamily: 'var(--font-display)', fontSize: 17, fontWeight: 700, color: 'var(--slate)', marginBottom: 8 }}>Close {dialog.order.so_number}?</div>
+              <div style={{ fontSize: 13.5, color: 'var(--gray-400)', lineHeight: 1.5, marginBottom: 20 }}>
+                {statusKey(dialog.order.status) === 'open'
+                  ? 'Stock will be allocated automatically (oldest stock first, including batch, serial, expiry and bin where tracked) and the order closed.'
+                  : 'The picked stock will be taken out of inventory and the order closed.'} This can&apos;t be undone.
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                <button className="btn btn-outline" style={{ height: 38 }} onClick={() => setDialog(null)} disabled={busy}>Go back</button>
+                <button className="btn btn-primary" style={{ height: 38, padding: '0 20px' }} onClick={() => closeOne(dialog.order)} disabled={busy}>{busy ? 'Please wait…' : 'Yes, close order'}</button>
+              </div>
+            </>)}
+
+            {dialog.kind === 'bulk-close' && (<>
+              <div style={{ fontFamily: 'var(--font-display)', fontSize: 17, fontWeight: 700, color: 'var(--slate)', marginBottom: 8 }}>Close {dialog.ids.length} order{dialog.ids.length !== 1 ? 's' : ''}?</div>
+              <div style={{ fontSize: 13.5, color: 'var(--gray-400)', lineHeight: 1.5, marginBottom: 20 }}>
+                The picked stock on {dialog.ids.length === 1 ? 'this Packed order' : 'these Packed orders'} will be taken out of inventory. This can&apos;t be undone.
+                {dialog.skipped > 0 && <> {dialog.skipped} other selected order{dialog.skipped !== 1 ? 's aren\'t' : ' isn\'t'} Packed and will be left as they are.</>}
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                <button className="btn btn-outline" style={{ height: 38 }} onClick={() => setDialog(null)} disabled={busy}>Go back</button>
+                <button className="btn btn-primary" style={{ height: 38, padding: '0 20px' }} onClick={() => bulkClose(dialog.ids)} disabled={busy}>{busy ? 'Please wait…' : 'Yes, close'}</button>
+              </div>
+            </>)}
+
+            {dialog.kind === 'po' && (<>
+              <div style={{ fontFamily: 'var(--font-display)', fontSize: 17, fontWeight: 700, color: 'var(--slate)', marginBottom: 8 }}>Create a purchase order?</div>
+              <div style={{ fontSize: 13.5, color: 'var(--gray-400)', lineHeight: 1.5, marginBottom: 14 }}>
+                Are you sure? Choose which items from {dialog.order.so_number} to put on the new purchase order. The ship-from location is used as the delivery location.
+              </div>
+              {([['all', 'All items', 'Every stocked item on the order, at the sales order quantity.'], ['short', 'Only items with no stock', 'Only items where the location holds less than the order needs.']] as const).map(([v, label, hint]) => (
+                <label key={v} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px', border: `1.5px solid ${poScope === v ? 'var(--teal)' : 'var(--gray-200)'}`, background: poScope === v ? 'var(--teal-surface)' : 'var(--white)', borderRadius: 10, marginBottom: 8, cursor: 'pointer' }}>
+                  <input type="radio" name="po-scope" checked={poScope === v} onChange={() => setPoScope(v)} style={{ accentColor: 'var(--teal)', marginTop: 3 }} />
+                  <span><span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--slate)' }}>{label}</span><br /><span style={{ fontSize: 12, color: 'var(--gray-400)' }}>{hint}</span></span>
+                </label>
+              ))}
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>
+                <button className="btn btn-outline" style={{ height: 38 }} onClick={() => setDialog(null)}>Cancel</button>
+                <button className="btn btn-primary" style={{ height: 38, padding: '0 20px' }} onClick={() => { const id = dialog.order.id; setDialog(null); router.push(`/purchases/new?from_so=${id}&scope=${poScope}`) }}>Yes, create</button>
+              </div>
+            </>)}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

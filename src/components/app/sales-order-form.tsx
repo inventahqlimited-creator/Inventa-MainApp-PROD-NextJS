@@ -73,7 +73,9 @@ type LineItem = {
   tax_name?: string | null
   line_notes: string
   quantity_picked?: number | null
+  quantity_packed?: number | null
   _manual?: boolean // price typed by hand — price level changes leave it alone
+  _locked?: boolean // fully picked when the order was opened — can't be edited or removed
 }
 
 type ChargeLine = {
@@ -151,12 +153,13 @@ function lineTotal(l: LineItem) {
 
 // Statuses: Draft → Open → Picking → Closed (or Cancelled). Older stock-based statuses fold into Open / Picking.
 const OPEN_GROUP = ['open', 'no stock', 'stock available', 'partial stock']
-const PICKING_GROUP = ['picking', 'partially picked', 'picked', 'partially packed', 'packed']
+const PICKING_GROUP = ['picking', 'partially picked', 'picked', 'partially packed']
 
 function displayStatus(status: string) {
   const s = status.toLowerCase()
   if (OPEN_GROUP.includes(s)) return 'Open'
   if (PICKING_GROUP.includes(s)) return 'Picking'
+  if (s === 'packed') return 'Packed'
   if (s === 'draft') return 'Draft'
   if (s === 'closed') return 'Closed'
   if (s === 'cancelled') return 'Cancelled'
@@ -167,6 +170,7 @@ function statusClass(status: string) {
   switch (displayStatus(status)) {
     case 'Open': return 'badge-open'
     case 'Picking': return 'badge-partial'
+    case 'Packed': return 'badge-open'
     case 'Closed': return 'badge-closed'
     case 'Cancelled': return 'badge-cancelled'
     default: return 'badge-draft'
@@ -290,7 +294,9 @@ function SalesOrderFormInner({
 
   const statusLower = (order?.status ?? 'draft').toLowerCase()
   const anyPicked = (order?.lines ?? []).some(l => Number(l.quantity_picked) > 0)
-  const statusEditable = isNew || (['draft', ...OPEN_GROUP].includes(statusLower) && !anyPicked)
+  // Editable until closed / cancelled. Once picking starts, picked lines are protected (see _locked).
+  const fulfilling = [...PICKING_GROUP, 'packed'].includes(statusLower)
+  const statusEditable = isNew || ['draft', ...OPEN_GROUP, ...PICKING_GROUP, 'packed'].includes(statusLower)
   const editable = statusEditable && mode === 'edit'
   const isDraft = isNew || statusLower === 'draft'
   const shownStatus = displayStatus(order?.status ?? 'Draft')
@@ -322,6 +328,7 @@ function SalesOrderFormInner({
       tax_rate: Number(l.tax_rate) || 0,
       line_notes: l.line_notes ?? '',
       _manual: true, // saved prices are kept as they are
+      _locked: Number(l.quantity_picked) > 0 && Number(l.quantity_picked) >= Number(l.quantity),
     })))
   const [charges, setCharges] = useState<ChargeLine[]>(() =>
     (order?.cost_lines ?? []).map(l => withTaxName({ ...l, amount: Number(l.amount) || 0, tax_rate: Number(l.tax_rate) || 0, description: l.description ?? '' })))
@@ -383,23 +390,32 @@ function SalesOrderFormInner({
 
   // Line stock in view mode: does the ship-from location hold enough of this item for the whole order?
   const showStock = !isNew && mode === 'view' && !['closed', 'shipped', 'delivered', 'cancelled'].includes(statusLower)
-  function lineStock(l: LineItem): 'in' | 'no' | null {
+  type LineState = 'in' | 'no' | 'picked' | 'packed' | { partial: string } | null
+  function lineStock(l: LineItem): LineState {
     const p = products.find(x => x.id === l.product_id)
     if (!p || p.type === 'Service' || p.track_stock === false) return null
+    const qty = Number(l.quantity) || 0
+    const picked = Number(l.quantity_picked ?? 0)
+    const packed = Number(l.quantity_packed ?? 0)
+    if (qty > 0 && packed >= qty) return 'packed'
+    if (picked > 0 && picked >= qty) return packed > 0 ? { partial: `Partly Packed (${packed}/${qty})` } : 'picked'
+    if (picked > 0) return { partial: `Partially Picked (${picked}/${qty})` }
     const needed = lines.filter(x => x.product_id === l.product_id).reduce((sum, x) => sum + (Number(x.quantity) || 0), 0)
     return (stockByProduct[l.product_id]?.onHand ?? 0) >= needed ? 'in' : 'no'
   }
   const pickMode = fulfilmentMode === 'full' || fulfilmentMode === 'pick-only'
-  const inPicking = ['picking', 'partially picked', 'picked'].includes(statusLower)
-  const canFulfil = !isNew && mode === 'view' && (OPEN_GROUP.includes(statusLower) || inPicking)
+  const inPicking = ['picking', 'partially picked', 'picked', 'partially packed'].includes(statusLower)
+  const isPacked = statusLower === 'packed'
+  const canFulfil = !isNew && mode === 'view' && (OPEN_GROUP.includes(statusLower) || inPicking || isPacked)
   // Fully picked once every stocked line has its full quantity picked
   const allPicked = lines
     .filter(l => { const p = products.find(x => x.id === l.product_id); return !!p && p.type !== 'Service' && p.track_stock !== false && Number(l.quantity) > 0 })
     .every(l => Number(l.quantity_picked ?? 0) >= Number(l.quantity))
   // Open orders: Pick Order (Full / Pick Only) or Close Order (None). Picking orders: keep picking, or close once fully picked.
-  const showPick = canFulfil && (inPicking ? !allPicked : pickMode)
-  const showPack = canFulfil && inPicking && allPicked && fulfilmentMode === 'full'
-  const showClose = canFulfil && (inPicking ? allPicked && fulfilmentMode !== 'full' : !pickMode)
+  const showPick = canFulfil && !isPacked && (inPicking ? !allPicked : pickMode)
+  const showEditPick = canFulfil && inPicking && allPicked && fulfilmentMode === 'full'
+  const showPack = showEditPick
+  const showClose = canFulfil && (isPacked || (inPicking ? allPicked && fulfilmentMode !== 'full' : !pickMode))
 
   // Price for a product at a price level and quantity (quantity breaks supported); falls back to the standard sell price
   function priceFor(p: Product, levelId: string | null, qty: number): number {
@@ -525,7 +541,7 @@ function SalesOrderFormInner({
     charges.reduce((sum, l) => sum + l.amount * discountFactor * (l.tax_rate / 100), 0)
   const total = discountedBase + taxTotal
 
-  async function save(status: 'Draft' | 'Open') {
+  async function save(status?: 'Draft' | 'Open') {
     if (!selectedCustomer) { setError('Please select a customer.'); return }
     if (!selectedLocation) { setError('Please select a ship-from location.'); return }
     if (lines.length === 0) { setError('Add at least one line item.'); return }
@@ -552,7 +568,7 @@ function SalesOrderFormInner({
       order_discount_amount: orderDiscountAmount > 0 ? orderDiscountAmount : null,
       lines: lines.map((l, i) => {
         // eslint-disable-next-line @typescript-eslint/no-unused-vars
-        const { _manual, ...rest } = l
+        const { _manual, _locked, ...rest } = l
         return { ...rest, sort_order: i }
       }),
       cost_lines: charges.map((l, i) => ({ ...l, sort_order: i })),
@@ -661,7 +677,7 @@ function SalesOrderFormInner({
           {!isNew && mode === 'edit' && <span style={{ fontSize: 12, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)' }}>Editing</span>}
           {isNew
             ? <><span style={{ fontSize: 12, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)' }}>Draft</span><div style={{ width: 8, height: 8, borderRadius: '50%', background: '#F59E0B' }} /></>
-            : <span className={`badge ${statusClass(order!.status)}`}>{shownStatus}</span>}
+            : <span className={`badge ${statusClass(order!.status)}`} style={shownStatus === 'Packed' ? { background: '#CCFBF1', color: '#0F766E' } : undefined}>{shownStatus}</span>}
           {!isNew && mode === 'view' && statusEditable && (
             <button className="btn btn-outline" style={{ height: 34, marginLeft: 4 }} onClick={() => { setError(null); setMode('edit') }}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
@@ -784,7 +800,7 @@ function SalesOrderFormInner({
                       </div>
                     )}
                   </div>
-                  {editable && (
+                  {editable && !anyPicked && (
                     <button onClick={() => setSelectedLocation(null)} style={{ width: 24, height: 24, borderRadius: 6, border: 'none', background: 'rgba(13,148,136,0.15)', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--teal)', flexShrink: 0 }}>{closeX}</button>
                   )}
                 </div>
@@ -849,18 +865,21 @@ function SalesOrderFormInner({
                     </td>
                   </tr>
                 )}
-                {lines.map((l, idx) => (
+                {lines.map((l, idx) => {
+                  const rowEd = editable && !l._locked
+                  const hasPicks = Number(l.quantity_picked ?? 0) > 0
+                  return (
                   <tr key={l.id ?? idx} style={{ borderBottom: '1px solid var(--gray-100)' }}>
                     <td className="li-td"><span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--gray-400)' }}>{l.product_sku}</span></td>
                     <td className="li-td"><span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{l.product_name}</span></td>
                     <td className="li-td" style={{ textAlign: 'center' }}>
-                      {editable
+                      {rowEd
                         ? <input className="li-input" value={l.unit} onChange={e => updateLine(idx, 'unit', e.target.value)} style={{ width: 60, textAlign: 'center' }} />
                         : <span style={{ fontSize: 13 }}>{l.unit}</span>}
                     </td>
                     <td className="li-td" style={{ textAlign: 'right' }}>
-                      {editable
-                        ? <NumInput className="li-input right" value={l.quantity} onChange={n => updateLine(idx, 'quantity', n)} min={0} style={{ width: 70, textAlign: 'right' }} />
+                      {rowEd
+                        ? <NumInput className="li-input right" value={l.quantity} onChange={n => updateLine(idx, 'quantity', Math.max(n, Number(l.quantity_picked ?? 0)))} min={Number(l.quantity_picked ?? 0)} style={{ width: 70, textAlign: 'right' }} />
                         : <span style={{ fontSize: 13 }}>{l.quantity}</span>}
                     </td>
                     {showStock && (
@@ -868,6 +887,9 @@ function SalesOrderFormInner({
                         {(() => {
                           const st = lineStock(l)
                           if (!st) return <span style={{ color: 'var(--gray-300)' }}>—</span>
+                          if (st === 'packed') return <span className="badge" style={{ background: '#CCFBF1', color: '#0F766E' }}>Packed</span>
+                          if (st === 'picked') return <span className="badge" style={{ background: '#DBEAFE', color: '#1D4ED8' }}>Picked</span>
+                          if (typeof st === 'object') return <span className="badge" style={{ background: '#FEF3C7', color: '#B45309' }}>{st.partial}</span>
                           return st === 'no'
                             ? <span className="badge" style={{ background: '#FEE2E2', color: '#B91C1C' }} title={`${stockByProduct[l.product_id]?.onHand ?? 0} on hand`}>No Stock ({stockByProduct[l.product_id]?.onHand ?? 0} on hand)</span>
                             : <span className="badge" style={{ background: '#DCFCE7', color: '#15803D' }}>In Stock</span>
@@ -875,17 +897,17 @@ function SalesOrderFormInner({
                       </td>
                     )}
                     <td className="li-td" style={{ textAlign: 'right' }}>
-                      {editable
+                      {rowEd
                         ? <NumInput className="li-input right" value={l.unit_price} onChange={n => updateLine(idx, 'unit_price', n)} decimals={decimalPlaces} min={0} style={{ width: 90, textAlign: 'right' }} />
                         : <span style={{ fontSize: 13, fontFamily: 'var(--font-display)' }}>{fmtMoney(l.unit_price)}</span>}
                     </td>
                     <td className="li-td" style={{ textAlign: 'right' }}>
-                      {editable
+                      {rowEd
                         ? <NumInput className="li-input right" value={l.discount} onChange={n => updateLine(idx, 'discount', n)} min={0} max={100} style={{ width: 70, textAlign: 'right' }} />
                         : <span style={{ fontSize: 13 }}>{l.discount}%</span>}
                     </td>
                     <td className="li-td">
-                      {editable
+                      {rowEd
                         ? <TaxSelect value={l.tax_rate_id} label={l.tax_name} options={taxOptions} onChange={id => setLineTax(idx, id)} />
                         : <span style={{ fontSize: 13 }}>{l.tax_name ?? `${l.tax_rate}%`}</span>}
                     </td>
@@ -894,13 +916,16 @@ function SalesOrderFormInner({
                     </td>
                     {editable && (
                       <td className="li-td">
-                        <button onClick={() => removeLine(idx)} style={{ width: 26, height: 26, borderRadius: 7, border: 'none', background: 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--gray-400)' }}
-                          onMouseOver={e => (e.currentTarget.style.color = 'var(--danger)')}
-                          onMouseOut={e => (e.currentTarget.style.color = 'var(--gray-400)')}>{trashIcon}</button>
+                        {hasPicks
+                          ? <span title="Picked items can't be removed — un-pick them first" style={{ color: 'var(--gray-300)', fontSize: 11 }}>🔒</span>
+                          : <button onClick={() => removeLine(idx)} style={{ width: 26, height: 26, borderRadius: 7, border: 'none', background: 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--gray-400)' }}
+                              onMouseOver={e => (e.currentTarget.style.color = 'var(--danger)')}
+                              onMouseOut={e => (e.currentTarget.style.color = 'var(--gray-400)')}>{trashIcon}</button>}
                       </td>
                     )}
                   </tr>
-                ))}
+                  )
+                })}
               </tbody>
             </table>
           </div>
@@ -1139,7 +1164,7 @@ function SalesOrderFormInner({
         {/* View mode actions */}
         {!isNew && mode === 'view' && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            {statusEditable && (
+            {statusEditable && !anyPicked && (
               <button className="btn btn-outline" style={{ height: 38, color: 'var(--danger)', borderColor: '#FECACA' }} onClick={() => setConfirmCancelOrder(true)}>
                 Cancel Order
               </button>
@@ -1153,7 +1178,17 @@ function SalesOrderFormInner({
             {showPick && (
               <button className="btn btn-primary" style={{ height: 38, padding: '0 20px', fontSize: 14 }} onClick={() => router.push(`/sales/${order!.id}/pick`)}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 8l-9-5-9 5v8l9 5 9-5z"/><polyline points="3 8 12 13 21 8"/><line x1="12" y1="13" x2="12" y2="22"/></svg>
-                Pick Order
+                {inPicking && anyPicked ? 'Continue Picking' : 'Pick Order'}
+              </button>
+            )}
+            {(showEditPick || isPacked) && fulfilmentMode === 'full' && (
+              <button className="btn btn-outline" style={{ height: 38 }} onClick={() => router.push(`/sales/${order!.id}/pick`)}>
+                Edit Picking
+              </button>
+            )}
+            {isPacked && (
+              <button className="btn btn-outline" style={{ height: 38 }} onClick={() => router.push(`/sales/${order!.id}/pack`)}>
+                Edit Packing
               </button>
             )}
             {showPack && (
@@ -1184,7 +1219,7 @@ function SalesOrderFormInner({
           </div>
         )}
         {mode === 'edit' && !isDraft && (
-          <button className="btn btn-primary" style={{ height: 38, padding: '0 20px', fontSize: 14 }} onClick={() => save('Open')} disabled={saving}>
+          <button className="btn btn-primary" style={{ height: 38, padding: '0 20px', fontSize: 14 }} onClick={() => save(fulfilling ? undefined : 'Open')} disabled={saving}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
             {saving ? 'Saving…' : 'Save Changes'}
           </button>
@@ -1207,7 +1242,9 @@ function SalesOrderFormInner({
       {confirmClose && (
         <ConfirmModal
           title="Close sales order?"
-          message={`Stock for ${order?.so_number ?? 'this order'} will be allocated automatically (oldest stock first, including batch, serial, expiry and bin where tracked) and the order will be closed. This can't be undone.`}
+          message={anyPicked
+            ? `${order?.so_number ?? 'This order'} will be closed and the picked stock will be taken out of inventory. This can't be undone.`
+            : `Stock for ${order?.so_number ?? 'this order'} will be allocated automatically (oldest stock first, including batch, serial, expiry and bin where tracked) and the order will be closed. This can't be undone.`}
           confirmLabel="Yes, close order"
           busy={closing}
           onConfirm={closeOrder}

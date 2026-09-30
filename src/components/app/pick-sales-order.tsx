@@ -202,6 +202,7 @@ export default function PickSalesOrder({
         type="number" min={0} max={allowOverPicking ? undefined : l.ordered}
         value={pickedOf(l)} disabled={noStock}
         onChange={e => typeQty(l, e.target.value)}
+        onClick={e => e.stopPropagation()}
         style={{ width: 64, padding: '4px 8px', border: '1.5px solid var(--gray-200)', borderRadius: 8, fontSize: 13, fontWeight: 600, textAlign: 'right', background: noStock ? 'var(--gray-50)' : 'var(--white)', outline: 'none', fontFamily: 'var(--font-ui)' }}
         onFocus={e => (e.currentTarget.style.borderColor = 'var(--teal)')}
         onBlur={e => (e.currentTarget.style.borderColor = 'var(--gray-200)')}
@@ -209,7 +210,7 @@ export default function PickSalesOrder({
     )
   }
   const panelBtn = (l: Line) => status(l) === 'no-stock' ? null : (
-    <button onClick={() => openPanel(l)} title={pickedOf(l) > 0 ? 'Edit pick' : 'Select stock'} className={`pick-action-btn${pickedOf(l) > 0 ? ' pick-action-btn--active' : ''}`}>
+    <button onClick={e => { e.stopPropagation(); openPanel(l) }} title={pickedOf(l) > 0 ? 'Edit pick' : 'Select stock'} className={`pick-action-btn${pickedOf(l) > 0 ? ' pick-action-btn--active' : ''}`}>
       <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 10c0 7-9 13-9 13S3 17 3 10a9 9 0 0 1 18 0z"/><circle cx="12" cy="10" r="3"/></svg>
     </button>
   )
@@ -269,7 +270,7 @@ export default function PickSalesOrder({
                   </tr></thead>
                   <tbody>
                     {lines.map(l => (
-                      <tr key={l.id} style={{ borderBottom: '1px solid var(--gray-50)' }}>
+                      <tr key={l.id} onClick={() => status(l) !== 'no-stock' && openPanel(l)} style={{ borderBottom: '1px solid var(--gray-50)', cursor: status(l) === 'no-stock' ? 'default' : 'pointer', background: panelLine === l.id ? 'var(--teal-surface)' : undefined }}>
                         <td style={{ ...cell, fontSize: 13, fontWeight: 600, color: 'var(--slate)', fontFamily: 'var(--font-display)' }}>
                           {l.name}{l.sku && <div style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--gray-400)', fontWeight: 400 }}>{l.sku}</div>}
                         </td>
@@ -302,7 +303,7 @@ export default function PickSalesOrder({
                     {th('Order')}{th('Customer')}{th('Ordered', 80, 'right')}{th('Picked', 90, 'right')}{th('Bins', 140)}{th('Status', 130)}{th('', 40)}
                   </tr></thead>
                   <tbody>
-                    <tr>
+                    <tr onClick={() => status(l) !== 'no-stock' && openPanel(l)} style={{ cursor: status(l) === 'no-stock' ? 'default' : 'pointer', background: panelLine === l.id ? 'var(--teal-surface)' : undefined }}>
                       <td style={{ ...cell, fontFamily: 'var(--font-display)', fontSize: 13, fontWeight: 700, color: 'var(--slate)' }}>{order.so_number}</td>
                       <td style={{ ...cell, fontSize: 13, color: 'var(--gray-400)' }}>{order.customer_name}</td>
                       <td style={{ ...cell, textAlign: 'right', fontSize: 13, fontWeight: 600, color: 'var(--slate)' }}>{l.ordered}</td>
@@ -376,7 +377,7 @@ export default function PickSalesOrder({
               )}
             </div>
             <div style={{ padding: '14px 16px', borderTop: '1px solid var(--gray-100)', flexShrink: 0 }}>
-              <button onClick={applyPanel} className="btn btn-primary" style={{ width: '100%', height: 38 }}>Apply</button>
+              <button onClick={applyPanel} className="btn btn-primary" style={{ width: '100%', height: 38 }}>Add to Order</button>
             </div>
           </div>
         )}

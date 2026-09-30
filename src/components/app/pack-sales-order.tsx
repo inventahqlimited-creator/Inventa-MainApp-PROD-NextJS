@@ -1,7 +1,7 @@
 'use client'
 
 // src/components/app/pack-sales-order.tsx
-// Pack screen — put picked items into cartons, add shipping details, then Pack & Close.
+// Pack screen — put picked items into cartons, add shipping details, then mark the order Packed.
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
@@ -209,23 +209,29 @@ export default function PackSalesOrder({
           <button onClick={() => router.push(`/sales/${order.id}`)} className="btn btn-outline" style={{ height: 38 }}>Cancel</button>
           <div style={{ fontSize: 13, color: 'var(--gray-400)' }}>{totalPacked} / {totalPicked} units in cartons</div>
         </div>
-        <button onClick={() => { setError(null); setConfirm(true) }} className="btn btn-primary" style={{ height: 38, padding: '0 24px' }} disabled={saving}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-          Confirm Pack &amp; Close
-        </button>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <button onClick={() => router.push(`/sales/${order.id}/pick`)} className="btn btn-outline" style={{ height: 38 }} disabled={saving} title="Change what has been picked (unsaved carton changes are lost)">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
+            Back to Pick
+          </button>
+          <button onClick={() => { setError(null); setConfirm(true) }} className="btn btn-primary" style={{ height: 38, padding: '0 24px' }} disabled={saving}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+            Confirm Pack
+          </button>
+        </div>
       </div>
 
       {confirm && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', zIndex: 300, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
           <div style={{ background: 'var(--white)', borderRadius: 16, padding: '24px 26px', width: 420, maxWidth: '92vw', boxShadow: '0 20px 60px rgba(0,0,0,0.25)' }}>
-            <div style={{ fontFamily: 'var(--font-display)', fontSize: 17, fontWeight: 700, color: 'var(--slate)', marginBottom: 8 }}>Pack and close {order.so_number}?</div>
+            <div style={{ fontFamily: 'var(--font-display)', fontSize: 17, fontWeight: 700, color: 'var(--slate)', marginBottom: 8 }}>Confirm packing for {order.so_number}?</div>
             <div style={{ fontSize: 13.5, color: 'var(--gray-400)', lineHeight: 1.5, marginBottom: 20 }}>
               {unpacked > 0 && <>{unpacked} picked unit{unpacked !== 1 ? 's are' : ' is'} not in any carton. </>}
-              The picked stock will leave the location and the order will be closed. This can't be undone.
+              The order will be marked Packed. Nothing leaves stock yet — you can still change the picking or packing until you close the order.
             </div>
             <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
               <button className="btn btn-outline" style={{ height: 38 }} onClick={() => setConfirm(false)} disabled={saving}>Go back</button>
-              <button className="btn btn-primary" style={{ height: 38, padding: '0 20px' }} onClick={submit} disabled={saving}>{saving ? 'Please wait…' : 'Yes, pack & close'}</button>
+              <button className="btn btn-primary" style={{ height: 38, padding: '0 20px' }} onClick={submit} disabled={saving}>{saving ? 'Please wait…' : 'Yes, mark as Packed'}</button>
             </div>
           </div>
         </div>

@@ -2,7 +2,8 @@ import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import NewPurchaseOrder from '@/components/app/new-purchase-order'
 
-export default async function NewPurchaseOrderPage() {
+export default async function NewPurchaseOrderPage({ searchParams }: { searchParams: Promise<{ from_so?: string; scope?: string }> }) {
+  const { from_so, scope } = await searchParams
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
@@ -55,11 +56,41 @@ export default async function NewPurchaseOrderPage() {
       .eq('org_id', m.org_id),
   ])
 
+  // Create Purchase Order from a sales order: all stocked items, or only the ones the ship-from location can't cover
+  let prefill: { location_id: string | null; notes?: string; lines: { product_id: string; quantity: number }[] } | null = null
+  if (from_so) {
+    const { data: so } = await adminClient
+      .from('sales_orders')
+      .select('so_number, location_id, sales_order_lines ( product_id, quantity )')
+      .eq('id', from_so)
+      .eq('org_id', m.org_id)
+      .single()
+    if (so) {
+      const s = so as unknown as { so_number: string | null; location_id: string | null; sales_order_lines: { product_id: string | null; quantity: number | null }[] | null }
+      const prods = new Map(((products ?? []) as { id: string; track_stock: boolean | null; type: string }[]).map(p => [p.id, p]))
+      const need = new Map<string, number>()
+      for (const l of s.sales_order_lines ?? []) {
+        const p = l.product_id ? prods.get(l.product_id) : undefined
+        if (!l.product_id || !p || p.type === 'Service' || p.track_stock === false) continue
+        need.set(l.product_id, (need.get(l.product_id) ?? 0) + Number(l.quantity ?? 0))
+      }
+      const onHand = (pid: string) =>
+        ((stockLevels ?? []) as { product_id: string; location_id: string; quantity: number }[])
+          .filter(x => x.product_id === pid && (!s.location_id || x.location_id === s.location_id))
+          .reduce((t, x) => t + Number(x.quantity || 0), 0)
+      const lines = [...need]
+        .filter(([pid, qty]) => qty > 0 && (scope === 'short' ? onHand(pid) < qty : true))
+        .map(([product_id, quantity]) => ({ product_id, quantity }))
+      prefill = { location_id: s.location_id, notes: `Created from sales order ${s.so_number ?? ''}`.trim(), lines }
+    }
+  }
+
   const orgData = org as { po_default_payment_terms: string | null; decimal_places: number | null } | null
 
   return (
     <NewPurchaseOrder
       orgId={m.org_id}
+      prefill={prefill}
       suppliers={(contacts ?? []) as {
         id: string
         name: string

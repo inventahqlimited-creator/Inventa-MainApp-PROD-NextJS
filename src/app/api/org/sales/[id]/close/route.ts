@@ -1,0 +1,33 @@
+// src/app/api/org/sales/[id]/close/route.ts
+// Close Order — used when Settings → Sales → Fulfilment Mode is "None".
+// Allocates stock automatically (picking rule, FIFO by default; batch / serial / expiry / bin included) and closes the order.
+import { NextResponse } from 'next/server'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
+
+type Params = { params: Promise<{ id: string }> }
+
+export async function POST(_req: Request, { params }: Params) {
+  const { id } = await params
+  const supabase = await createClient()
+  const { data: { user } } = await supabase.auth.getUser()
+  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+
+  const db = createAdminClient()
+  const { data: m } = await db
+    .from('org_members')
+    .select('org_id')
+    .eq('user_id', user.id)
+    .eq('invite_status', 'accepted')
+    .single()
+  if (!m) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
+  const orgId = (m as { org_id: string }).org_id
+
+  const { data: org } = await db.from('organisations').select('fulfilment_mode').eq('id', orgId).single()
+  if (((org as { fulfilment_mode?: string | null } | null)?.fulfilment_mode ?? 'full') !== 'none') {
+    return NextResponse.json({ error: 'Orders are picked in your current fulfilment mode — use Pick Order.' }, { status: 400 })
+  }
+
+  const { data, error } = await db.rpc('close_sales_order', { p_so: id, p_org: orgId, p_user: user.id })
+  if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+  return NextResponse.json(data ?? { new_status: 'Closed' })
+}

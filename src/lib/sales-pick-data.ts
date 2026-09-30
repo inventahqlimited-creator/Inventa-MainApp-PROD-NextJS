@@ -1,0 +1,147 @@
+// src/lib/sales-pick-data.ts
+// Loads everything the Pick screen needs for one or several sales orders.
+// Stock is shown per ship-from location, and stock with the same bin / batch / serial / expiry is merged into ONE row
+// (including any un-grouped stock), so "Default" only ever appears once.
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type Db = any
+
+type PartOut = { group_id: string | null; available: number }
+type StockOut = {
+  key: string; bin: string | null; batch: string | null; serial: string | null; expiry: string | null
+  created_at: string; parts: PartOut[]
+}
+
+export async function loadPickData(db: Db, orgId: string, ids: string[], allowedStatuses: string[]) {
+  const { data: orderRows } = await db
+    .from('sales_orders')
+    .select(`
+      id, so_number, status, customer_name, location_id, location_name, created_at,
+      sales_order_lines ( id, product_id, product_name, product_sku, unit, quantity, quantity_picked, sort_order )
+    `)
+    .eq('org_id', orgId)
+    .in('id', ids)
+
+  type L = { id: string; product_id: string | null; product_name: string | null; product_sku: string | null; unit: string | null; quantity: number; quantity_picked: number | null; sort_order: number | null }
+  type O = { id: string; so_number: string | null; status: string; customer_name: string | null; location_id: string | null; location_name: string | null; created_at: string; sales_order_lines: L[] | null }
+
+  // keep the order the ids were given in; drop orders that can't be picked
+  const all = (orderRows ?? []) as O[]
+  const orders = ids
+    .map(i => all.find(o => o.id === i))
+    .filter((o): o is O => !!o && allowedStatuses.includes(String(o.status).toLowerCase()) && !!o.location_id)
+
+  const productIds = [...new Set(orders.flatMap(o => (o.sales_order_lines ?? []).map(l => l.product_id)).filter((x): x is string => !!x))]
+  const locationIds = [...new Set(orders.map(o => o.location_id as string))]
+  const onScreen = new Set(orders.map(o => o.id))
+
+  const empty = Promise.resolve({ data: [] })
+  const [{ data: org }, { data: products }, { data: levels }, { data: groups }, { data: bins }, { data: picks }] = await Promise.all([
+    db.from('organisations').select('allow_over_picking, auto_picking, picking_rule, fulfilment_mode').eq('id', orgId).single(),
+    productIds.length ? db.from('products').select('id, track_stock, type, batch_tracking, serial_tracking, expiry_tracking').in('id', productIds) : empty,
+    productIds.length ? db.from('stock_levels').select('product_id, location_id, quantity').eq('org_id', orgId).in('location_id', locationIds).in('product_id', productIds) : empty,
+    productIds.length ? db.from('stock_groups').select('id, product_id, location_id, bin_id, batch_number, serial_number, expiry_date, quantity, created_at')
+      .eq('org_id', orgId).in('location_id', locationIds).in('product_id', productIds).gt('quantity', 0) : empty,
+    db.from('bins').select('id, name').eq('org_id', orgId).in('location_id', locationIds),
+    productIds.length ? db.from('sales_order_picks').select('so_id, so_line_id, product_id, location_id, stock_group_id, qty').eq('org_id', orgId).in('location_id', locationIds).in('product_id', productIds) : empty,
+  ])
+
+  type P = { id: string; track_stock: boolean | null; type: string | null; batch_tracking: boolean | null; serial_tracking: boolean | null; expiry_tracking: boolean | null }
+  type G = { id: string; product_id: string; location_id: string; bin_id: string | null; batch_number: string | null; serial_number: string | null; expiry_date: string | null; quantity: number; created_at: string }
+  type K = { so_id: string; so_line_id: string; product_id: string; location_id: string; stock_group_id: string | null; qty: number }
+  const prodMap = new Map(((products ?? []) as P[]).map(p => [p.id, p]))
+  const binName = new Map(((bins ?? []) as { id: string; name: string }[]).map(b => [b.id, b.name]))
+  const onHand = new Map<string, number>()
+  for (const s of (levels ?? []) as { product_id: string; location_id: string; quantity: number }[]) {
+    const k = `${s.product_id}|${s.location_id}`
+    onHand.set(k, (onHand.get(k) ?? 0) + Number(s.quantity || 0))
+  }
+  const allPicks = (picks ?? []) as K[]
+  // picks made by orders that are NOT on this screen reserve stock; picks by on-screen orders are handled live in the UI
+  const othersOnGroup = new Map<string, number>()
+  const othersUntracked = new Map<string, number>()
+  for (const k of allPicks) {
+    if (onScreen.has(k.so_id)) continue
+    if (k.stock_group_id) othersOnGroup.set(k.stock_group_id, (othersOnGroup.get(k.stock_group_id) ?? 0) + Number(k.qty))
+    else {
+      const key = `${k.product_id}|${k.location_id}`
+      othersUntracked.set(key, (othersUntracked.get(key) ?? 0) + Number(k.qty))
+    }
+  }
+
+  // Merged stock rows per product + location
+  const stockCache = new Map<string, StockOut[]>()
+  function stockFor(productId: string, locationId: string): StockOut[] {
+    const ck = `${productId}|${locationId}`
+    const hit = stockCache.get(ck)
+    if (hit) return hit
+    const gs = ((groups ?? []) as G[]).filter(g => g.product_id === productId && g.location_id === locationId)
+    const rows = new Map<string, StockOut>()
+    const add = (attrs: { bin: string | null; batch: string | null; serial: string | null; expiry: string | null }, created: string, part: PartOut) => {
+      if (part.available <= 0) return
+      const key = [attrs.bin ?? '', attrs.batch ?? '', attrs.serial ?? '', attrs.expiry ?? ''].join('|')
+      const row = rows.get(key) ?? { key, ...attrs, created_at: created, parts: [] }
+      row.parts.push(part)
+      if (created && (!row.created_at || created < row.created_at)) row.created_at = created
+      rows.set(key, row)
+    }
+    for (const g of gs) {
+      add(
+        { bin: g.bin_id ? (binName.get(g.bin_id) ?? null) : null, batch: g.batch_number, serial: g.serial_number, expiry: g.expiry_date },
+        g.created_at,
+        { group_id: g.id, available: Math.max(Number(g.quantity) - (othersOnGroup.get(g.id) ?? 0), 0) },
+      )
+    }
+    // stock that isn't in any stock group yet (e.g. received before groups were kept) joins the plain "Default" row
+    const grouped = gs.reduce((s, g) => s + Number(g.quantity), 0)
+    const loose = Math.max((onHand.get(ck) ?? 0) - grouped - (othersUntracked.get(ck) ?? 0), 0)
+    add({ bin: null, batch: null, serial: null, expiry: null }, '', { group_id: null, available: loose })
+    const out = [...rows.values()]
+    for (const r of out) r.parts.sort((a, b) => (a.group_id === null ? 1 : 0) - (b.group_id === null ? 1 : 0))
+    stockCache.set(ck, out)
+    return out
+  }
+
+  const lines = orders.flatMap(o =>
+    [...(o.sales_order_lines ?? [])]
+      .sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
+      .filter(l => {
+        const p = l.product_id ? prodMap.get(l.product_id) : undefined
+        return !!p && p.track_stock !== false && (p.type ?? '') !== 'Service' && Number(l.quantity) > 0
+      })
+      .map(l => {
+        const p = prodMap.get(l.product_id as string) as P
+        const locId = o.location_id as string
+        return {
+          id: l.id,
+          order_id: o.id,
+          product_id: l.product_id as string,
+          location_id: locId,
+          name: l.product_name ?? '',
+          sku: l.product_sku ?? '',
+          unit: l.unit ?? 'Each',
+          ordered: Number(l.quantity),
+          onHand: onHand.get(`${l.product_id}|${locId}`) ?? 0,
+          tracking: { batch: !!p.batch_tracking, serial: !!p.serial_tracking, expiry: !!p.expiry_tracking },
+          stock: stockFor(l.product_id as string, locId),
+          picks: allPicks.filter(k => k.so_line_id === l.id).map(k => ({ group_id: k.stock_group_id, qty: Number(k.qty) })),
+          // legacy orders were picked before pick details were kept
+          legacyPicked: allPicks.some(k => k.so_line_id === l.id) ? 0 : Number(l.quantity_picked ?? 0),
+        }
+      }),
+  )
+
+  const orgData = (org ?? {}) as { allow_over_picking?: boolean | null; auto_picking?: boolean | null; picking_rule?: string | null; fulfilment_mode?: string | null }
+
+  return {
+    orders: orders.map(o => ({ id: o.id, so_number: o.so_number ?? '', customer_name: o.customer_name ?? '', location_name: o.location_name ?? '', status: o.status })),
+    lines,
+    allowOverPicking: !!orgData.allow_over_picking,
+    autoPicking: !!orgData.auto_picking,
+    pickingRule: (orgData.picking_rule ?? 'FIFO') as 'FIFO' | 'LIFO' | 'FEFO',
+    fulfilmentMode: orgData.fulfilment_mode ?? 'full',
+  }
+}
+
+export const PICK_OPEN = ['open', 'no stock', 'stock available', 'partial stock']
+export const PICK_ANY = [...PICK_OPEN, 'picking', 'partially picked', 'picked', 'packed']

@@ -3,7 +3,8 @@ import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import SalesOrderForm from '@/components/app/sales-order-form'
 
-export default async function NewSalesOrderPage() {
+export default async function NewSalesOrderPage({ searchParams }: { searchParams: Promise<{ clone?: string }> }) {
+  const { clone } = await searchParams
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
@@ -51,12 +52,41 @@ export default async function NewSalesOrderPage() {
   for (const r of (pricing ?? []) as { product_id: string; price_level_id: string; price: number }[]) addPrice(r.product_id, r.price_level_id, r.price, 1)
   const productsWithPrices = ((products ?? []) as { id: string }[]).map(p => ({ ...p, price_levels: byProduct.get(p.id) ?? [] }))
 
+  // Clone Order — pre-fill a new order from an existing one
+  let prefill: unknown = null
+  if (clone) {
+    const { data: src } = await adminClient
+      .from('sales_orders')
+      .select(`
+        id, customer_id, customer_name, location_id, location_name, expected_date, terms, notes, ref, currency,
+        price_level_id, order_discount, order_discount_type, order_discount_amount,
+        sales_order_lines ( product_id, product_name, product_sku, unit, quantity, unit_price, discount, tax_rate, tax_rate_id, tax_name, line_notes, sort_order ),
+        sales_order_cost_lines ( product_id, product_name, product_sku, description, amount, tax_rate, tax_rate_id, tax_name, sort_order )
+      `)
+      .eq('id', clone)
+      .eq('org_id', m.org_id)
+      .single()
+    if (src) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const o = src as any
+      const bySort = (a: { sort_order: number | null }, b: { sort_order: number | null }) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
+      prefill = {
+        ...o,
+        id: '', so_number: null, status: 'Draft', order_date: null, total_amount: null,
+        lines: [...(o.sales_order_lines ?? [])].sort(bySort),
+        cost_lines: [...(o.sales_order_cost_lines ?? [])].sort(bySort),
+      }
+    }
+  }
+
   const curs = (currencies ?? []) as { code: string; is_base: boolean | null }[]
   const orgData = (org ?? {}) as { so_default_payment_terms?: string | null; so_default_ship_from?: string | null; decimal_places?: number | null }
 
   return (
     <SalesOrderForm
       orgId={m.org_id}
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      prefill={prefill as any}
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       customers={(customers ?? []) as any}
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -179,6 +179,8 @@ export default function PickSalesOrder({
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) { setConfirm(false); setError(data.error ?? 'Could not save this pick'); return }
+      // Full mode: a fully picked order goes on to the Pack screen
+      if (data.all_picked && data.new_status !== 'Closed' && fulfilmentMode === 'full') { router.push(`/sales/${order.id}/pack`); return }
       router.push(`/sales/${order.id}`)
       router.refresh()
     } catch {
@@ -217,7 +219,9 @@ export default function PickSalesOrder({
     ? `This will record the pick and close ${order.so_number} — stock leaves ${order.location_name}.`
     : anyPartial
       ? 'Some lines are not fully picked. The order will stay in Picking so you can finish it later.'
-      : 'The order will move to Picking with everything picked.'
+      : fulfilmentMode === 'full'
+        ? 'Everything is picked. Next you\'ll pack the order into cartons.'
+        : 'The order will move to Picking with everything picked.'
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>

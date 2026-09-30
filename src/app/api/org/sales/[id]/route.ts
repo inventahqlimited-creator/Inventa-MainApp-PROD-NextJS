@@ -68,9 +68,6 @@ export async function PATCH(request: Request, { params }: Params) {
       delete updates.status
     }
   }
-  if (updates.status === 'Cancelled' && anyPicked) {
-    return NextResponse.json({ error: 'Items on this order have been picked. Un-pick them before cancelling.' }, { status: 400 })
-  }
   if (anyPicked && updates.location_id !== undefined && updates.location_id !== ex.location_id) {
     return NextResponse.json({ error: 'The ship-from location can\'t change once items have been picked.' }, { status: 400 })
   }
@@ -93,6 +90,16 @@ export async function PATCH(request: Request, { params }: Params) {
         return NextResponse.json({ error: `Quantity can't be lower than the ${picked} already picked.` }, { status: 400 })
       }
     }
+  }
+
+  // Cancelling releases anything picked or packed (stock hasn't left the shelf yet, so it's just reservations)
+  if (updates.status === 'Cancelled') {
+    await db.from('sales_order_picks').delete().eq('so_id', id)
+    const { data: cartons } = await db.from('sales_order_cartons').select('id').eq('so_id', id)
+    const cartonIds = ((cartons ?? []) as { id: string }[]).map(c => c.id)
+    if (cartonIds.length) await db.from('sales_order_carton_lines').delete().in('carton_id', cartonIds)
+    await db.from('sales_order_cartons').delete().eq('so_id', id)
+    await db.from('sales_order_lines').update({ quantity_picked: 0, quantity_packed: 0 }).eq('so_id', id)
   }
 
   if (Object.keys(updates).length > 0) {
@@ -160,7 +167,8 @@ export async function PATCH(request: Request, { params }: Params) {
     const allPicked = rel.every(r => Number(r.quantity_picked ?? 0) >= Number(r.quantity))
     let next: string | null = null
     if (picked === 0) next = 'Open'
-    else if (currentStatus === 'packed' && !allPicked) next = 'Picking'
+    else if (!allPicked) { if (['picked', 'packed', 'partially packed'].includes(currentStatus)) next = 'Picking' }
+    else if (['picking', 'partially picked'].includes(currentStatus)) next = 'Picked'
     if (next) await db.from('sales_orders').update({ status: next }).eq('id', id).eq('org_id', ctx.org_id)
   }
 

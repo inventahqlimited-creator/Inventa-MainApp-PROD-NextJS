@@ -25,7 +25,7 @@ export default async function SalesPage() {
   if (!membership) redirect('/login')
   const m = membership as { org_id: string; role: string }
 
-  const [{ data: orders }, { data: contacts }, { data: locations }, { data: stock }, { data: products }] = await Promise.all([
+  const [{ data: orders }, { data: contacts }, { data: locations }, { data: stock }, { data: products }, { data: orgRow }] = await Promise.all([
     adminClient
       .from('sales_orders')
       .select('id, so_number, status, order_date, expected_date, total_amount, customer_id, customer_name, location_id, location_name, notes, ref, terms, currency, sales_order_lines(product_id, quantity)')
@@ -35,6 +35,7 @@ export default async function SalesPage() {
     adminClient.from('locations').select('id, name').eq('org_id', m.org_id).eq('active', true).order('name'),
     adminClient.from('stock_levels').select('product_id, location_id, quantity').eq('org_id', m.org_id),
     adminClient.from('products').select('id, track_stock').eq('org_id', m.org_id),
+    adminClient.from('organisations').select('fulfilment_mode').eq('id', m.org_id).single(),
   ])
 
   // On hand per product per location, and per product overall
@@ -66,6 +67,7 @@ export default async function SalesPage() {
   return (
     <SalesTable
       orgId={m.org_id}
+      fulfilmentMode={(orgRow as { fulfilment_mode?: string | null } | null)?.fulfilment_mode ?? 'full'}
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       orders={shaped as any}
       contacts={(contacts ?? []) as { id: string; name: string }[]}

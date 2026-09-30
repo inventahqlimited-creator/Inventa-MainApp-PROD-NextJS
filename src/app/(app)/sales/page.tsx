@@ -3,7 +3,7 @@ import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import SalesTable from '@/components/app/sales-table'
 
-type Line = { product_id: string | null }
+type Line = { product_id: string | null; quantity: number | null }
 type Row = {
   id: string; status: string; location_id: string | null
   sales_order_lines: Line[] | null
@@ -28,7 +28,7 @@ export default async function SalesPage() {
   const [{ data: orders }, { data: contacts }, { data: locations }, { data: stock }, { data: products }] = await Promise.all([
     adminClient
       .from('sales_orders')
-      .select('id, so_number, status, order_date, expected_date, total_amount, customer_id, customer_name, location_id, location_name, notes, ref, terms, currency, sales_order_lines(product_id)')
+      .select('id, so_number, status, order_date, expected_date, total_amount, customer_id, customer_name, location_id, location_name, notes, ref, terms, currency, sales_order_lines(product_id, quantity)')
       .eq('org_id', m.org_id)
       .order('created_at', { ascending: false }),
     adminClient.from('contacts').select('id, name').eq('org_id', m.org_id).eq('type', 'customer').eq('is_active', true).order('name'),
@@ -47,14 +47,18 @@ export default async function SalesPage() {
   }
   const untracked = new Set(((products ?? []) as { id: string; track_stock: boolean | null }[]).filter(p => p.track_stock === false).map(p => p.id))
 
-  // "No Stock" when at least one stocked item has nothing on hand at the order's location
+  // "No Stock" when the ship-from location holds less than the order needs of at least one stocked item
   const shaped = ((orders ?? []) as unknown as Row[]).map(o => {
     const { sales_order_lines, ...rest } = o
-    const ids = (sales_order_lines ?? []).map(l => l.product_id).filter((x): x is string => !!x && !untracked.has(x))
+    const need = new Map<string, number>()
+    for (const l of sales_order_lines ?? []) {
+      if (!l.product_id || untracked.has(l.product_id)) continue
+      need.set(l.product_id, (need.get(l.product_id) ?? 0) + Number(l.quantity ?? 0))
+    }
     let stock_status: 'in' | 'no' | null = null
-    if (ids.length > 0) {
+    if (need.size > 0) {
       const onHand = (pid: string) => o.location_id ? (byLoc.get(`${pid}|${o.location_id}`) ?? 0) : (byProduct.get(pid) ?? 0)
-      stock_status = ids.some(pid => onHand(pid) <= 0) ? 'no' : 'in'
+      stock_status = [...need].some(([pid, qty]) => onHand(pid) < qty) ? 'no' : 'in'
     }
     return { ...rest, stock_status }
   })

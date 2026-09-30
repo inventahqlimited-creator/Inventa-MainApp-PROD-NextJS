@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 
 type Order = {
@@ -19,6 +19,7 @@ type Order = {
   ref: string | null
   terms: string | null
   currency: string | null
+  stock_status?: 'in' | 'no' | null
 }
 
 type Contact = { id: string; name: string }
@@ -73,6 +74,45 @@ const HIDE_WHEN_EMPTY = new Set<string>(['draft', 'picking', 'cancelled'])
 
 type Tab = typeof TABS[number]['key']
 
+// Column definitions (same idea as Purchases)
+const COLS = [
+  { key: 'so_number',     label: 'Order #',        required: true  },
+  { key: 'order_date',    label: 'Date',           required: false },
+  { key: 'customer',      label: 'Customer',       required: false },
+  { key: 'location',      label: 'Location',       required: false },
+  { key: 'status',        label: 'Status',         required: false },
+  { key: 'stock',         label: 'Stock',          required: false },
+  { key: 'expected_date', label: 'Delivery Date',  required: false },
+  { key: 'terms',         label: 'Terms',          required: false },
+  { key: 'ref',           label: 'Customer Order #', required: false },
+  { key: 'total_amount',  label: 'Total',          required: false },
+] as const
+
+type ColKey = typeof COLS[number]['key']
+
+const DEFAULT_COLS: ColKey[] = ['so_number', 'order_date', 'customer', 'location', 'status', 'stock', 'expected_date', 'total_amount']
+
+const LS_KEY = 'sales_visible_cols'
+
+function loadCols(): Set<ColKey> {
+  try {
+    const raw = typeof window !== 'undefined' ? localStorage.getItem(LS_KEY) : null
+    if (raw) {
+      const parsed = JSON.parse(raw) as ColKey[]
+      if (Array.isArray(parsed)) return new Set(parsed)
+    }
+  } catch {}
+  return new Set(DEFAULT_COLS)
+}
+
+function stockBadge(o: Order) {
+  const k = statusKey(o.status)
+  if (k === 'closed' || k === 'cancelled' || !o.stock_status) return <span style={{ color: 'var(--gray-300)' }}>—</span>
+  return o.stock_status === 'no'
+    ? <span className="badge" style={{ background: '#FEE2E2', color: '#B91C1C' }}>No Stock</span>
+    : <span className="badge" style={{ background: '#DCFCE7', color: '#15803D' }}>In Stock</span>
+}
+
 export default function SalesTable({
   orders,
   contacts,
@@ -92,8 +132,27 @@ export default function SalesTable({
   const [customerOpen, setCustomerOpen] = useState(false)
   const [locationOpen, setLocationOpen] = useState(false)
   const [actionsOpen, setActionsOpen] = useState(false)
+  const [colOpen, setColOpen] = useState(false)
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(25)
+  const [visibleCols, setVisibleCols] = useState<Set<ColKey>>(new Set(DEFAULT_COLS))
+
+  // Load persisted column visibility on mount
+  useEffect(() => { setVisibleCols(loadCols()) }, [])
+
+  function toggleCol(key: ColKey) {
+    const col = COLS.find(c => c.key === key)
+    if (col?.required) return
+    setVisibleCols(prev => {
+      const next = new Set(prev)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      try { localStorage.setItem(LS_KEY, JSON.stringify([...next])) } catch {}
+      return next
+    })
+  }
+
+  const activeCols = COLS.filter(c => visibleCols.has(c.key))
 
   const filtered = useMemo(() => {
     return orders.filter(o => {
@@ -136,7 +195,7 @@ export default function SalesTable({
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }} onClick={() => { setCustomerOpen(false); setLocationOpen(false); setActionsOpen(false) }}>
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }} onClick={() => { setCustomerOpen(false); setLocationOpen(false); setActionsOpen(false); setColOpen(false) }}>
 
       {/* Page header */}
       <div className="page-header-card">
@@ -184,7 +243,7 @@ export default function SalesTable({
 
         {/* Customer filter */}
         <div style={{ position: 'relative' }}>
-          <button className={`filter-dd-btn${customerFilter ? ' active-filter' : ''}`} onClick={() => { setCustomerOpen(o => !o); setLocationOpen(false) }}>
+          <button className={`filter-dd-btn${customerFilter ? ' active-filter' : ''}`} onClick={() => { setCustomerOpen(o => !o); setLocationOpen(false); setColOpen(false) }}>
             <span>{customerName}</span>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
@@ -201,7 +260,7 @@ export default function SalesTable({
 
         {/* Location filter */}
         <div style={{ position: 'relative' }}>
-          <button className={`filter-dd-btn${locationFilter ? ' active-filter' : ''}`} onClick={() => { setLocationOpen(o => !o); setCustomerOpen(false) }}>
+          <button className={`filter-dd-btn${locationFilter ? ' active-filter' : ''}`} onClick={() => { setLocationOpen(o => !o); setCustomerOpen(false); setColOpen(false) }}>
             <span>{locationName}</span>
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg>
           </button>
@@ -218,6 +277,44 @@ export default function SalesTable({
 
         <div className="filter-spacer" />
         <span style={{ fontSize: 13, color: 'var(--gray-400)' }}><strong style={{ color: 'var(--slate)' }}>{filtered.length}</strong> orders</span>
+
+        {/* Column selector */}
+        <div style={{ position: 'relative' }}>
+          <button
+            className="filter-dd-btn"
+            onClick={e => { e.stopPropagation(); setColOpen(o => !o); setCustomerOpen(false); setLocationOpen(false) }}
+            title="Show/hide columns"
+          >
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/></svg>
+            <span>Columns</span>
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg>
+          </button>
+          {colOpen && (
+            <div className="inv-dropdown" style={{ display: 'block', minWidth: 190, right: 0, left: 'auto' }} onClick={e => e.stopPropagation()}>
+              <div className="col-dropdown-title">Columns</div>
+              {COLS.map(c => (
+                <div
+                  key={c.key}
+                  className="fp-item"
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, opacity: c.required ? 0.5 : 1, cursor: c.required ? 'default' : 'pointer' }}
+                  onClick={() => toggleCol(c.key)}
+                >
+                  <div style={{
+                    width: 16, height: 16, borderRadius: 4,
+                    border: `1.5px solid ${visibleCols.has(c.key) ? 'var(--teal)' : 'var(--gray-300)'}`,
+                    background: visibleCols.has(c.key) ? 'var(--teal)' : 'transparent',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+                  }}>
+                    {visibleCols.has(c.key) && (
+                      <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.5"><polyline points="20 6 9 17 4 12"/></svg>
+                    )}
+                  </div>
+                  <span style={{ fontSize: 13, color: 'var(--slate)' }}>{c.label}</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Table */}
@@ -229,40 +326,47 @@ export default function SalesTable({
           <table>
             <thead>
               <tr>
-                <th>Order #</th>
-                <th>Date</th>
-                <th>Customer</th>
-                <th>Location</th>
-                <th>Status</th>
-                <th>Delivery Date</th>
-                <th style={{ textAlign: 'right' }}>Total</th>
+                {activeCols.map(c => (
+                  <th key={c.key} style={c.key === 'total_amount' ? { textAlign: 'right' } : undefined}>{c.label}</th>
+                ))}
                 <th style={{ width: 40 }} />
               </tr>
             </thead>
             <tbody>
               {paginated.length === 0 && (
                 <tr>
-                  <td colSpan={8} style={{ textAlign: 'center', padding: '48px 0', color: 'var(--gray-400)', fontSize: 13 }}>
+                  <td colSpan={activeCols.length + 1} style={{ textAlign: 'center', padding: '48px 0', color: 'var(--gray-400)', fontSize: 13 }}>
                     {search ? 'No orders match your search.' : 'No sales orders yet.'}
                   </td>
                 </tr>
               )}
               {paginated.map(o => (
                 <tr key={o.id} onClick={() => router.push(`/sales/${o.id}`)}>
-                  <td>
-                    <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, color: 'var(--slate)', fontSize: 13 }}>{o.so_number ?? '—'}</span>
-                    {o.ref && <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 1 }}>{o.ref}</div>}
-                  </td>
-                  <td className="td-muted">{fmtDate(o.order_date)}</td>
-                  <td><span style={{ fontWeight: 500, color: 'var(--slate)', fontSize: 13 }}>{o.customer_name ?? '—'}</span></td>
-                  <td className="td-muted">{o.location_name ?? '—'}</td>
-                  <td>{statusBadge(o.status)}</td>
-                  <td>
-                    <span style={{ color: isOverdue(o) ? 'var(--danger)' : 'var(--gray-400)', fontSize: 13, fontWeight: isOverdue(o) ? 600 : 400 }}>
-                      {fmtDate(o.expected_date)}{isOverdue(o) ? ' ⚠' : ''}
-                    </span>
-                  </td>
-                  <td style={{ textAlign: 'right', fontWeight: 600, color: 'var(--slate)' }}>{fmtMoney(o.total_amount)}</td>
+                  {activeCols.map(c => {
+                    switch (c.key) {
+                      case 'so_number': return (
+                        <td key={c.key}>
+                          <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, color: 'var(--slate)', fontSize: 13 }}>{o.so_number ?? '—'}</span>
+                          {o.ref && !visibleCols.has('ref') && <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 1 }}>{o.ref}</div>}
+                        </td>
+                      )
+                      case 'order_date': return <td key={c.key} className="td-muted">{fmtDate(o.order_date)}</td>
+                      case 'customer': return <td key={c.key}><span style={{ fontWeight: 500, color: 'var(--slate)', fontSize: 13 }}>{o.customer_name ?? '—'}</span></td>
+                      case 'location': return <td key={c.key} className="td-muted">{o.location_name ?? '—'}</td>
+                      case 'status': return <td key={c.key}>{statusBadge(o.status)}</td>
+                      case 'stock': return <td key={c.key}>{stockBadge(o)}</td>
+                      case 'expected_date': return (
+                        <td key={c.key}>
+                          <span style={{ color: isOverdue(o) ? 'var(--danger)' : 'var(--gray-400)', fontSize: 13, fontWeight: isOverdue(o) ? 600 : 400 }}>
+                            {fmtDate(o.expected_date)}{isOverdue(o) ? ' ⚠' : ''}
+                          </span>
+                        </td>
+                      )
+                      case 'terms': return <td key={c.key} className="td-muted">{o.terms ?? '—'}</td>
+                      case 'ref': return <td key={c.key} className="td-muted">{o.ref ?? '—'}</td>
+                      case 'total_amount': return <td key={c.key} style={{ textAlign: 'right', fontWeight: 600, color: 'var(--slate)' }}>{fmtMoney(o.total_amount)}</td>
+                    }
+                  })}
                   <td>
                     <div className="row-actions">
                       <button className="row-action-btn" onClick={e => { e.stopPropagation(); router.push(`/sales/${o.id}`) }} title="View">

@@ -125,6 +125,7 @@ type Props = {
   baseCurrency?: string
   decimalPlaces?: number
   stockLevels?: StockLevel[]
+  fulfilmentMode?: string // 'full' | 'pick-only' | 'none' (Settings → Sales)
 }
 
 // Item picker columns: SKU | Product | Unit | Available | Committed | Price
@@ -250,6 +251,7 @@ function SalesOrderFormInner({
   baseCurrency = 'NZD',
   decimalPlaces = 2,
   stockLevels = [],
+  fulfilmentMode = 'full',
   mode,
   setMode,
   onDiscard,
@@ -333,6 +335,8 @@ function SalesOrderFormInner({
   const [error, setError] = useState<string | null>(null)
   const [confirmLeave, setConfirmLeave] = useState(false)
   const [confirmCancelOrder, setConfirmCancelOrder] = useState(false)
+  const [confirmClose, setConfirmClose] = useState(false)
+  const [closing, setClosing] = useState(false)
   const [cancelling, setCancelling] = useState(false)
 
   const currencyOptions = useMemo(() => {
@@ -376,6 +380,16 @@ function SalesOrderFormInner({
     }
     return map
   }, [stockLevels, selectedLocation])
+
+  // Line stock in view mode: does the ship-from location hold any of this item?
+  const showStock = !isNew && mode === 'view' && !['closed', 'shipped', 'delivered', 'cancelled'].includes(statusLower)
+  function lineStock(l: LineItem): 'in' | 'no' | null {
+    const p = products.find(x => x.id === l.product_id)
+    if (!p || p.type === 'Service' || p.track_stock === false) return null
+    return (stockByProduct[l.product_id]?.onHand ?? 0) > 0 ? 'in' : 'no'
+  }
+  const pickMode = fulfilmentMode === 'full' || fulfilmentMode === 'pick-only'
+  const canFulfil = !isNew && mode === 'view' && OPEN_GROUP.includes(statusLower)
 
   // Price for a product at a price level and quantity (quantity breaks supported); falls back to the standard sell price
   function priceFor(p: Product, levelId: string | null, qty: number): number {
@@ -549,6 +563,23 @@ function SalesOrderFormInner({
     } catch {
       setSaving(false)
       setError('Network error — please try again.')
+    }
+  }
+
+  async function closeOrder() {
+    setClosing(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/org/sales/${order!.id}/close`, { method: 'POST' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { setConfirmClose(false); setError(data.error ?? 'Could not close this order'); return }
+      setConfirmClose(false)
+      router.refresh()
+    } catch {
+      setConfirmClose(false)
+      setError('Network error — please try again.')
+    } finally {
+      setClosing(false)
     }
   }
 
@@ -792,6 +823,7 @@ function SalesOrderFormInner({
                   <th className="li-th">Product Name</th>
                   <th className="li-th" style={{ width: 70, textAlign: 'center' }}>Unit</th>
                   <th className="li-th" style={{ width: 80, textAlign: 'right' }}>Qty</th>
+                  {showStock && <th className="li-th" style={{ width: 100 }}>Stock</th>}
                   <th className="li-th" style={{ width: 100, textAlign: 'right' }}>Unit Price</th>
                   <th className="li-th" style={{ width: 80, textAlign: 'right' }}>Disc %</th>
                   <th className="li-th" style={{ width: 140 }}>Tax</th>
@@ -802,7 +834,7 @@ function SalesOrderFormInner({
               <tbody>
                 {lines.length === 0 && (
                   <tr>
-                    <td colSpan={editable ? 9 : 8} style={{ textAlign: 'center', padding: '24px 0', color: 'var(--gray-400)', fontSize: 13 }}>
+                    <td colSpan={(editable ? 9 : 8) + (showStock ? 1 : 0)} style={{ textAlign: 'center', padding: '24px 0', color: 'var(--gray-400)', fontSize: 13 }}>
                       {editable ? 'No items added. Search below to add products.' : 'No line items on this order.'}
                     </td>
                   </tr>
@@ -821,6 +853,17 @@ function SalesOrderFormInner({
                         ? <NumInput className="li-input right" value={l.quantity} onChange={n => updateLine(idx, 'quantity', n)} min={0} style={{ width: 70, textAlign: 'right' }} />
                         : <span style={{ fontSize: 13 }}>{l.quantity}</span>}
                     </td>
+                    {showStock && (
+                      <td className="li-td">
+                        {(() => {
+                          const st = lineStock(l)
+                          if (!st) return <span style={{ color: 'var(--gray-300)' }}>—</span>
+                          return st === 'no'
+                            ? <span className="badge" style={{ background: '#FEE2E2', color: '#B91C1C' }}>No Stock</span>
+                            : <span className="badge" style={{ background: '#DCFCE7', color: '#15803D' }}>In Stock</span>
+                        })()}
+                      </td>
+                    )}
                     <td className="li-td" style={{ textAlign: 'right' }}>
                       {editable
                         ? <NumInput className="li-input right" value={l.unit_price} onChange={n => updateLine(idx, 'unit_price', n)} decimals={decimalPlaces} min={0} style={{ width: 90, textAlign: 'right' }} />
@@ -1097,6 +1140,18 @@ function SalesOrderFormInner({
                 {saving ? 'Submitting…' : 'Submit Order'}
               </button>
             )}
+            {canFulfil && pickMode && (
+              <button className="btn btn-primary" style={{ height: 38, padding: '0 20px', fontSize: 14 }} onClick={() => router.push(`/sales/${order!.id}/pick`)}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M21 8l-9-5-9 5v8l9 5 9-5z"/><polyline points="3 8 12 13 21 8"/><line x1="12" y1="13" x2="12" y2="22"/></svg>
+                Pick Order
+              </button>
+            )}
+            {canFulfil && !pickMode && (
+              <button className="btn btn-primary" style={{ height: 38, padding: '0 20px', fontSize: 14 }} onClick={() => setConfirmClose(true)} disabled={closing}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                Close Order
+              </button>
+            )}
           </div>
         )}
 
@@ -1131,6 +1186,16 @@ function SalesOrderFormInner({
           danger
           onConfirm={() => { setConfirmLeave(false); if (isNew) router.push('/sales'); else onDiscard() }}
           onCancel={() => setConfirmLeave(false)}
+        />
+      )}
+      {confirmClose && (
+        <ConfirmModal
+          title="Close sales order?"
+          message={`Stock for ${order?.so_number ?? 'this order'} will be allocated automatically (oldest stock first, including batch, serial, expiry and bin where tracked) and the order will be closed. This can't be undone.`}
+          confirmLabel="Yes, close order"
+          busy={closing}
+          onConfirm={closeOrder}
+          onCancel={() => setConfirmClose(false)}
         />
       )}
       {confirmCancelOrder && (

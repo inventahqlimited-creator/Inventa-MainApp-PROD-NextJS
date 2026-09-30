@@ -129,7 +129,9 @@ export default function NewPurchaseOrder({
   taxRates = [],
   decimalPlaces = 2,
   stockLevels = [],
+  prefill = null,
 }: {
+  prefill?: { location_id: string | null; notes?: string; lines: { product_id: string; quantity: number }[] } | null
   orgId: string
   suppliers: Supplier[]
   locations: Location[]
@@ -175,14 +177,29 @@ export default function NewPurchaseOrder({
   const [supplierSearch, setSupplierSearch] = useState('')
   const [supplierDropOpen, setSupplierDropOpen] = useState(false)
   const [supplierOrderNum, setSupplierOrderNum] = useState('')
-  const [selectedLocation, setSelectedLocation] = useState<Location | null>(null)
+  const [selectedLocation, setSelectedLocation] = useState<Location | null>(() => (prefill?.location_id ? locations.find(l => l.id === prefill.location_id) ?? null : null))
   const [locationOpen, setLocationOpen] = useState(false)
   const [orderDate, setOrderDate] = useState(new Date().toISOString().split('T')[0])
   const [expectedDate, setExpectedDate] = useState('')
   const [terms, setTerms] = useState(fallbackTerms)
   const [termsOpen, setTermsOpen] = useState(false)
-  const [notes, setNotes] = useState('')
-  const [lines, setLines] = useState<LineItem[]>([])
+  const [notes, setNotes] = useState(prefill?.notes ?? '')
+  const [lines, setLines] = useState<LineItem[]>(() =>
+    (prefill?.lines ?? []).flatMap(pl => {
+      const p = products.find(x => x.id === pl.product_id)
+      if (!p) return []
+      return [{
+        product_id: p.id,
+        product_name: p.name,
+        product_sku: p.sku ?? '',
+        unit: p.buy_uom ?? 'Each',
+        quantity_ordered: pl.quantity,
+        unit_cost: Number(p.cost_price) || 0,
+        discount: 0,
+        ...buyTaxFor(p),
+        line_notes: '',
+      }]
+    }))
   const [costLines, setCostLines] = useState<CostLine[]>([])
   const [itemSearch, setItemSearch] = useState('')
   const [itemDropOpen, setItemDropOpen] = useState(false)

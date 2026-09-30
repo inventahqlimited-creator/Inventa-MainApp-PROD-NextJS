@@ -246,7 +246,7 @@ function ExportModal({ products, customFields, decimalPlaces, taxRates, priceLev
 
     // Fetch all pricing rows for this org
     const sb = createClient()
-    const { data: allPricing } = await sb.from('product_pricing').select('product_id, level_id, price, break_qty').in('product_id', rows.map(p => p.id))
+    const { data: allPricing } = await sb.from('product_prices').select('product_id, level_id, price, break_qty').in('product_id', rows.map(p => p.id)).order('break_qty', { ascending: false })
     // Build map: product_id → { level_id → price }
     const pricingMap = new Map<string, Map<string, number>>()
     for (const row of (allPricing ?? []) as { product_id: string; level_id: string; price: number }[]) {
@@ -457,34 +457,18 @@ function ImportModal({ orgId, customFields, customLists, taxRates, suppliers, pr
     const createdItems: unknown[] = []
     let updatedCount = 0
 
-    // Helper: upsert pricing rows for a product
+    // Helper: upsert pricing rows for a product (replaces only the price levels that appear in the row)
     async function upsertPricing(productId: string, pricingData: { price_level: string; price: number; break_qty: number }[]) {
       if (pricingData.length === 0) return
       const pricingRows = pricingData.flatMap(pd => {
         const pl = priceLevels.find(p => p.name === pd.price_level)
-        return pl ? [{ org_id: orgId, product_id: productId, level_id: pl.id, price: pd.price, break_qty: pd.break_qty }] : []
+        return pl ? [{ level_id: pl.id, price: pd.price, break_qty: pd.break_qty }] : []
       })
       if (pricingRows.length === 0) return
-      const session = (await sb.auth.getSession()).data.session
-      // Delete existing rows for this product+level combo then reinsert (clean upsert)
-      for (const row of pricingRows) {
-        await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/product_pricing?product_id=eq.${productId}&level_id=eq.${row.level_id}`, {
-          method: 'DELETE',
-          headers: {
-            'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-            'Authorization': `Bearer ${session?.access_token}`,
-          },
-        })
-      }
-      await fetch(`${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/product_pricing`, {
+      await fetch(`/api/org/products/${productId}/prices`, {
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'apikey': process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-          'Authorization': `Bearer ${session?.access_token}`,
-          'Prefer': 'return=minimal',
-        },
-        body: JSON.stringify(pricingRows),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rows: pricingRows, mode: 'levels' }),
       })
     }
 
@@ -833,7 +817,53 @@ export default function ProductsTable({
     setForm(f => ({ ...f, [field]: value }))
   }
 
+  // Price-level prices (with quantity breaks) live in product_prices; every level always has at least one row to fill in
+  function blankPricing() {
+    return PRICE_LEVEL_NAMES.map(l => ({ price_level: l, price: 0, break_qty: 1 }))
+  }
+  async function loadPricing(productId: string) {
+    setPricing(blankPricing())
+    try {
+      const res = await fetch(`/api/org/products/${productId}/prices`)
+      if (!res.ok) return
+      const rows = (await res.json()) as { level_id: string; price: number; break_qty: number }[]
+      const next: PricingRow[] = []
+      for (const name of PRICE_LEVEL_NAMES) {
+        const pl = priceLevels.find(p => p.name === name)
+        const mine = pl ? rows.filter(r => r.level_id === pl.id).sort((a, b) => a.break_qty - b.break_qty) : []
+        if (mine.length) mine.forEach(r => next.push({ price_level: name, price: Number(r.price) || 0, break_qty: Number(r.break_qty) || 1 }))
+        else next.push({ price_level: name, price: 0, break_qty: 1 })
+      }
+      setPricing(next)
+    } catch { /* keep the blank rows */ }
+  }
+  function addBreak(level: string) {
+    setPricing(prev => {
+      const idxs = prev.map((r, i) => (r.price_level === level ? i : -1)).filter(i => i >= 0)
+      const maxBreak = Math.max(...idxs.map(i => prev[i].break_qty || 1))
+      const at = idxs[idxs.length - 1] + 1
+      const row = { price_level: level, price: 0, break_qty: maxBreak <= 1 ? 10 : maxBreak * 2 }
+      return [...prev.slice(0, at), row, ...prev.slice(at)]
+    })
+  }
+  function removeBreak(i: number) {
+    setPricing(prev => prev.filter((_, idx) => idx !== i))
+  }
+  async function savePricing(productId: string) {
+    const rows = pricing.flatMap(r => {
+      const pl = priceLevels.find(p => p.name === r.price_level)
+      return pl && r.price > 0 ? [{ level_id: pl.id, price: r.price, break_qty: r.break_qty || 1 }] : []
+    })
+    const res = await fetch(`/api/org/products/${productId}/prices`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rows, mode: 'all' }),
+    })
+    return res.ok
+  }
+
   function openView(p: Product) {
+    loadPricing(p.id)
     setActiveProduct(p)
     setModal('view')
     setModalTab('details')
@@ -882,7 +912,7 @@ export default function ProductsTable({
     setModalTab('details')
     setError(null)
     setCustomFieldValues(p.custom_fields ?? {})
-    setPricing(PRICE_LEVEL_NAMES.map(l => ({ price_level: l, price: 0, break_qty: 1 })))
+    loadPricing(p.id)
   }
 
   function closeModal() {
@@ -953,6 +983,12 @@ export default function ProductsTable({
     setSaving(false)
 
     if (!res.ok) { setError(data.error ?? 'Something went wrong'); return }
+
+    // price levels + quantity breaks
+    if (canViewPricing) {
+      const ok = await savePricing(isEdit ? activeProduct.id : data.id)
+      if (!ok) { setError('The product was saved, but its price level prices could not be saved. Please try again.'); return }
+    }
 
     if (isEdit) {
       const updated = { ...activeProduct, ...payload, custom_fields: customFieldValues } as Product
@@ -1625,35 +1661,45 @@ export default function ProductsTable({
                   <div style={{ background: 'var(--white)', border: '1.5px solid var(--gray-200)', borderRadius: 12, overflow: 'hidden' }}>
                     <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
                       <colgroup>
-                        <col style={{ width: '50%' }} />
-                        <col style={{ width: '25%' }} />
-                        <col style={{ width: '25%' }} />
+                        <col style={{ width: '38%' }} />
+                        <col style={{ width: '26%' }} />
+                        <col style={{ width: '26%' }} />
+                        <col style={{ width: '10%' }} />
                       </colgroup>
                       <thead>
                         <tr style={{ background: 'var(--gray-50)' }}>
                           <th className="li-th" style={{ textAlign: 'left' }}>Price Level</th>
                           <th className="li-th" style={{ textAlign: 'right' }}>Price</th>
-                          <th className="li-th" style={{ textAlign: 'right' }}>Break Qty</th>
+                          <th className="li-th" style={{ textAlign: 'right' }}>From Qty</th>
+                          <th className="li-th" />
                         </tr>
                       </thead>
                       <tbody>
-                        {pricing.map((row, i) => (
-                          <tr key={row.price_level} style={{ borderBottom: '1px solid var(--gray-100)' }}>
-                            <td className="li-td" style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{row.price_level}</td>
-                            <td className="li-td" style={{ textAlign: 'right', paddingRight: 8 }}>
-                              <input className="li-input right" type="number" step={priceStep} value={row.price || ''} onChange={e => { const a = [...pricing]; a[i].price = parseFloat(e.target.value) || 0; setPricing(a) }} placeholder={Number(0).toFixed(dp)} disabled={isView} style={{ textAlign: 'right', width: '100%', maxWidth: 120 }} />
-                            </td>
-                            <td className="li-td" style={{ textAlign: 'right', paddingRight: 8 }}>
-                              <input className="li-input right" type="number" step="1" value={row.break_qty || ''} onChange={e => { const a = [...pricing]; a[i].break_qty = parseInt(e.target.value) || 1; setPricing(a) }} placeholder="1" disabled={isView} style={{ textAlign: 'right', width: '100%', maxWidth: 80 }} />
-                            </td>
-                          </tr>
-                        ))}
+                        {pricing.map((row, i) => {
+                          const first = i === 0 || pricing[i - 1].price_level !== row.price_level
+                          return (
+                            <tr key={`${row.price_level}-${i}`} style={{ borderBottom: '1px solid var(--gray-100)' }}>
+                              <td className="li-td" style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{first ? row.price_level : ''}</td>
+                              <td className="li-td" style={{ textAlign: 'right', paddingRight: 8 }}>
+                                <input className="li-input right" type="number" step={priceStep} value={row.price || ''} onChange={e => { const a = [...pricing]; a[i] = { ...a[i], price: parseFloat(e.target.value) || 0 }; setPricing(a) }} placeholder={Number(0).toFixed(dp)} disabled={isView} style={{ textAlign: 'right', width: '100%', maxWidth: 120 }} />
+                              </td>
+                              <td className="li-td" style={{ textAlign: 'right', paddingRight: 8 }}>
+                                <input className="li-input right" type="number" step="1" min={1} value={row.break_qty || ''} onChange={e => { const a = [...pricing]; a[i] = { ...a[i], break_qty: parseInt(e.target.value) || 1 }; setPricing(a) }} placeholder="1" disabled={isView} style={{ textAlign: 'right', width: '100%', maxWidth: 80 }} />
+                              </td>
+                              <td className="li-td" style={{ textAlign: 'center' }}>
+                                {!isView && (first
+                                  ? <button type="button" onClick={() => addBreak(row.price_level)} title="Add a quantity break" style={{ width: 24, height: 24, borderRadius: 6, border: '1.5px solid var(--gray-200)', background: 'var(--white)', cursor: 'pointer', color: 'var(--teal)', fontSize: 15, lineHeight: 1 }}>+</button>
+                                  : <button type="button" onClick={() => removeBreak(i)} title="Remove this break" style={{ width: 24, height: 24, borderRadius: 6, border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--gray-400)', fontSize: 14 }}>✕</button>)}
+                              </td>
+                            </tr>
+                          )
+                        })}
                       </tbody>
                     </table>
                   </div>
                   <div style={{ background: 'var(--teal-surface)', border: '1px solid var(--teal-pale)', borderRadius: 9, padding: '10px 14px', fontSize: 12.5, color: 'var(--teal)', display: 'flex', alignItems: 'center', gap: 8 }}>
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-                    Price levels are configured in Settings → Products. Set the price and break qty for each level here.
+                    Price levels are configured in Settings → Products. Set a price for each level; use + to add quantity breaks — a price applies from its "From Qty" upwards.
                   </div>
                 </>
               )}

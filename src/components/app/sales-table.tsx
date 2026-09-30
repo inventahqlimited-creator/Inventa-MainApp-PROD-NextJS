@@ -38,13 +38,14 @@ function fmtMoney(n: number | null) {
 // Draft → Open → Picking → Closed (or Cancelled). Older statuses fold in: stock-based ones into Open,
 // picked/packed into Picking, shipped/delivered into Closed.
 const OPEN_GROUP = ['open', 'no stock', 'stock available', 'partial stock']
-const PICKING_GROUP = ['picking', 'partially picked', 'picked', 'partially packed', 'packed']
+const PICKING_GROUP = ['picking', 'partially picked', 'picked', 'partially packed']
 const CLOSED_GROUP = ['closed', 'shipped', 'delivered']
 
-function statusKey(status: string): 'draft' | 'open' | 'picking' | 'closed' | 'cancelled' {
+function statusKey(status: string): 'draft' | 'open' | 'picking' | 'packed' | 'closed' | 'cancelled' {
   const s = status.toLowerCase()
   if (OPEN_GROUP.includes(s)) return 'open'
   if (PICKING_GROUP.includes(s)) return 'picking'
+  if (s === 'packed') return 'packed'
   if (CLOSED_GROUP.includes(s)) return 'closed'
   if (s === 'cancelled') return 'cancelled'
   return 'draft'
@@ -54,6 +55,7 @@ function statusBadge(status: string) {
   switch (statusKey(status)) {
     case 'open': return <span className="badge badge-open">Open</span>
     case 'picking': return <span className="badge" style={{ background: '#EDE9FE', color: '#5B21B6' }}>Picking</span>
+    case 'packed': return <span className="badge" style={{ background: '#CCFBF1', color: '#0F766E' }}>Packed</span>
     case 'closed': return <span className="badge badge-closed">Closed</span>
     case 'cancelled': return <span className="badge badge-cancelled">Cancelled</span>
     default: return <span className="badge badge-draft">Draft</span>
@@ -65,12 +67,13 @@ const TABS = [
   { key: 'draft', label: 'Draft' },
   { key: 'open', label: 'Open' },
   { key: 'picking', label: 'Picking' },
+  { key: 'packed', label: 'Packed' },
   { key: 'closed', label: 'Closed' },
   { key: 'cancelled', label: 'Cancelled' },
 ] as const
 
 // These tabs only appear when at least one order has that status
-const HIDE_WHEN_EMPTY = new Set<string>(['draft', 'picking', 'cancelled'])
+const HIDE_WHEN_EMPTY = new Set<string>(['draft', 'picking', 'packed', 'cancelled'])
 
 type Tab = typeof TABS[number]['key']
 
@@ -176,6 +179,7 @@ export default function SalesTable({
     draft: orders.filter(o => statusKey(o.status) === 'draft').length,
     open: orders.filter(o => statusKey(o.status) === 'open').length,
     picking: orders.filter(o => statusKey(o.status) === 'picking').length,
+    packed: orders.filter(o => statusKey(o.status) === 'packed').length,
     closed: orders.filter(o => statusKey(o.status) === 'closed').length,
     cancelled: orders.filter(o => statusKey(o.status) === 'cancelled').length,
   }), [orders])

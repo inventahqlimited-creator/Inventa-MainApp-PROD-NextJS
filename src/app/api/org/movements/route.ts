@@ -122,21 +122,27 @@ export async function GET(request: Request) {
     for (const b of bins ?? []) binMap.set(b.id, b.name)
   }
 
-  // --- Fetch reference numbers (adj_number etc.) ---
+  // --- Fetch reference numbers (ADJ-…, PO-…, SO-…) ---
   const referenceMap = new Map<string, string>() // reference_id → human number
-  const adjIds = [...new Set(
-    movements
-      .filter((m: { reference_type: string | null; reference_id: string | null }) => m.reference_type === 'adjustment_order' && m.reference_id)
-      .map((m: { reference_id: string | null }) => m.reference_id as string)
+  type Mv = { reference_type: string | null; reference_id: string | null }
+  const idsFor = (type: string) => [...new Set(
+    (movements as Mv[]).filter(m => m.reference_type === type && m.reference_id).map(m => m.reference_id as string)
   )]
+
+  const adjIds = idsFor('adjustment_order')
   if (adjIds.length > 0) {
-    const { data: adjs } = await adminClient
-      .from('adjustment_orders')
-      .select('id, adj_number')
-      .in('id', adjIds)
-    for (const a of adjs ?? []) {
-      if (a.adj_number) referenceMap.set(a.id, a.adj_number)
-    }
+    const { data: adjs } = await adminClient.from('adjustment_orders').select('id, adj_number').in('id', adjIds)
+    for (const a of adjs ?? []) if (a.adj_number) referenceMap.set(a.id, a.adj_number)
+  }
+  const poIds = idsFor('purchase_order')
+  if (poIds.length > 0) {
+    const { data: pos } = await adminClient.from('purchase_orders').select('id, po_number').in('id', poIds)
+    for (const o of pos ?? []) if (o.po_number) referenceMap.set(o.id, o.po_number)
+  }
+  const soIds = [...new Set([...idsFor('sales_order'), ...idsFor('sale_order')])]
+  if (soIds.length > 0) {
+    const { data: sos } = await adminClient.from('sales_orders').select('id, so_number').in('id', soIds)
+    for (const o of sos ?? []) if (o.so_number) referenceMap.set(o.id, o.so_number)
   }
 
   // --- Enrich movements ---

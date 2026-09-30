@@ -3,7 +3,7 @@ import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import PickSalesOrder from '@/components/app/pick-sales-order'
 
-const PICKABLE = ['open', 'no stock', 'stock available', 'partial stock', 'picking', 'partially picked', 'picked']
+const PICKABLE = ['open', 'no stock', 'stock available', 'partial stock', 'picking', 'partially picked', 'picked', 'packed']
 
 export default async function PickSalesOrderPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -40,7 +40,7 @@ export default async function PickSalesOrderPage({ params }: { params: Promise<{
   const productIds = [...new Set(rawLines.map(l => l.product_id).filter((x): x is string => !!x))]
 
   const [{ data: org }, { data: products }, { data: levels }, { data: groups }, { data: bins }, { data: picks }] = await Promise.all([
-    adminClient.from('organisations').select('allow_over_picking, picking_rule, fulfilment_mode').eq('id', orgId).single(),
+    adminClient.from('organisations').select('allow_over_picking, auto_picking, picking_rule, fulfilment_mode').eq('id', orgId).single(),
     productIds.length
       ? adminClient.from('products').select('id, track_stock, type, batch_tracking, serial_tracking, expiry_tracking').in('id', productIds)
       : Promise.resolve({ data: [] }),
@@ -114,13 +114,14 @@ export default async function PickSalesOrderPage({ params }: { params: Promise<{
       }
     })
 
-  const orgData = (org ?? {}) as { allow_over_picking?: boolean | null; picking_rule?: string | null; fulfilment_mode?: string | null }
+  const orgData = (org ?? {}) as { allow_over_picking?: boolean | null; auto_picking?: boolean | null; picking_rule?: string | null; fulfilment_mode?: string | null }
 
   return (
     <PickSalesOrder
       order={{ id: o.id, so_number: o.so_number ?? '', customer_name: o.customer_name ?? '', location_name: o.location_name ?? '', status: o.status }}
       lines={lines}
       allowOverPicking={!!orgData.allow_over_picking}
+      autoPicking={!!orgData.auto_picking}
       pickingRule={(orgData.picking_rule ?? 'FIFO') as 'FIFO' | 'LIFO' | 'FEFO'}
       fulfilmentMode={orgData.fulfilment_mode ?? 'full'}
     />

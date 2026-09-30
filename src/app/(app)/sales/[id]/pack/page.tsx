@@ -32,7 +32,7 @@ export default async function PackSalesOrderPage({ params }: { params: Promise<{
   if (!order) redirect('/sales')
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const o = order as any
-  if (!['picking', 'partially picked', 'picked'].includes(String(o.status).toLowerCase())) redirect(`/sales/${id}`)
+  if (!['picking', 'partially picked', 'picked', 'packed'].includes(String(o.status).toLowerCase())) redirect(`/sales/${id}`)
 
   type L = { id: string; product_name: string | null; product_sku: string | null; unit: string | null; quantity_picked: number | null; sort_order: number | null }
   const lines = ([...(o.sales_order_lines ?? [])] as L[])

@@ -26,7 +26,7 @@ export default async function SalesOrderPage({ params }: { params: Promise<{ id:
       order_date, expected_date, terms, notes, ref, currency, price_level_id, total_amount,
       order_discount, order_discount_type, order_discount_amount,
       sales_order_lines (
-        id, product_id, product_name, product_sku, unit, quantity, quantity_picked,
+        id, product_id, product_name, product_sku, unit, quantity, quantity_picked, quantity_packed,
         unit_price, discount, tax_rate, tax_rate_id, tax_name, line_notes, sort_order
       ),
       sales_order_cost_lines (

@@ -35,11 +35,12 @@ const keyOf = (g: string | null) => g ?? 'loose'
 const sum = (a: Alloc[]) => a.reduce((s, x) => s + x.qty, 0)
 
 export default function PickSalesOrder({
-  order, lines, allowOverPicking, pickingRule, fulfilmentMode,
+  order, lines, allowOverPicking, autoPicking, pickingRule, fulfilmentMode,
 }: {
   order: Order
   lines: Line[]
   allowOverPicking: boolean
+  autoPicking: boolean
   pickingRule: 'FIFO' | 'LIFO' | 'FEFO'
   fulfilmentMode: string
 }) {
@@ -145,9 +146,10 @@ export default function PickSalesOrder({
   function applyPanel() {
     if (!panel) return
     const next: Alloc[] = []
-    for (const s of panel.stock) {
-      const q = Math.min(panelQty[keyOf(s.group_id)] ?? 0, s.available)
-      if (q > 0) next.push({ group_id: s.group_id, qty: q })
+    let room = capOf(panel) // never pick more than ordered unless over-picking is on in Settings
+    for (const s of ordered(panel)) {
+      const q = Math.min(panelQty[keyOf(s.group_id)] ?? 0, s.available, room)
+      if (q > 0) { next.push({ group_id: s.group_id, qty: q }); room -= q }
     }
     setLine(panel, next)
     setPanelLine(null)
@@ -179,8 +181,8 @@ export default function PickSalesOrder({
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) { setConfirm(false); setError(data.error ?? 'Could not save this pick'); return }
-      // Full mode: a fully picked order goes on to the Pack screen
-      if (data.all_picked && data.new_status !== 'Closed' && fulfilmentMode === 'full') { router.push(`/sales/${order.id}/pack`); return }
+      // Full mode: a freshly fully picked order goes on to the Pack screen (a Packed order goes back to its page)
+      if (data.all_picked && data.new_status === 'Picking' && fulfilmentMode === 'full') { router.push(`/sales/${order.id}/pack`); return }
       router.push(`/sales/${order.id}`)
       router.refresh()
     } catch {
@@ -216,7 +218,9 @@ export default function PickSalesOrder({
   )
   const cell = { padding: '10px 12px' } as const
 
-  const confirmMsg = fulfilmentMode === 'pick-only' && !anyPartial
+  const confirmMsg = order.status.toLowerCase() === 'packed'
+    ? 'This order is Packed. If everything stays fully picked it remains Packed; if you reduce a pick, the cartons are trimmed to match and the order goes back to Picking.'
+    : fulfilmentMode === 'pick-only' && !anyPartial
     ? `This will record the pick and close ${order.so_number} — stock leaves ${order.location_name}.`
     : anyPartial
       ? 'Some lines are not fully picked. The order will stay in Picking so you can finish it later.'
@@ -242,10 +246,12 @@ export default function PickSalesOrder({
             <button className={`seg-tab${grouping === 'order' ? ' active' : ''}`} onClick={() => setGrouping('order')}>By Order</button>
             <button className={`seg-tab${grouping === 'product' ? ' active' : ''}`} onClick={() => setGrouping('product')}>By Product</button>
           </div>
-          <button onClick={autoPick} className="btn btn-outline" style={{ height: 36 }}>
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
-            Auto Pick
-          </button>
+          {autoPicking && (
+            <button onClick={autoPick} className="btn btn-outline" style={{ height: 36 }}>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/></svg>
+              Auto Pick
+            </button>
+          )}
         </div>
       </div>
 
@@ -357,7 +363,8 @@ export default function PickSalesOrder({
                           <input
                             type="number" min={0} max={s.available} value={q}
                             onChange={e => {
-                              const v = Math.min(Math.max(parseFloat(e.target.value) || 0, 0), s.available)
+                              const others = panelTotal - q
+                              const v = Math.min(Math.max(parseFloat(e.target.value) || 0, 0), s.available, Math.max(capOf(panel) - others, 0))
                               setPanelQty(p => ({ ...p, [k]: v }))
                             }}
                             style={{ width: 80, padding: '6px 10px', border: '1.5px solid var(--gray-200)', borderRadius: 8, fontSize: 14, fontWeight: 700, textAlign: 'center', background: 'var(--white)', outline: 'none', fontFamily: 'var(--font-ui)' }}
@@ -365,6 +372,9 @@ export default function PickSalesOrder({
                             onBlur={e => (e.currentTarget.style.borderColor = 'var(--gray-200)')}
                           />
                           <span style={{ fontSize: 12, color: 'var(--gray-400)' }}>{panel.unit}</span>
+                          {!allowOverPicking && panelTotal >= panel.ordered && q === 0 && (
+                            <span style={{ fontSize: 11, color: 'var(--gray-400)' }}>Ordered qty reached</span>
+                          )}
                         </div>
                       </div>
                     )

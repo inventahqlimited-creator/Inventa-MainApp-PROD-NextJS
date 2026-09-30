@@ -1,5 +1,5 @@
 // src/app/api/org/sales/[id]/pack/route.ts
-// Confirm Pack & Close — saves cartons + shipping details, ships the picked stock and closes the order.
+// Confirm Pack — saves cartons + shipping details and marks the order Packed (closing is a separate step).
 import { NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 
@@ -28,5 +28,5 @@ export async function POST(req: Request, { params }: Params) {
     p_user: user.id,
   })
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
-  return NextResponse.json(data ?? { new_status: 'Closed' })
+  return NextResponse.json(data ?? { new_status: 'Packed' })
 }

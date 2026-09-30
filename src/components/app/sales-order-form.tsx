@@ -116,6 +116,7 @@ export type SalesOrder = {
 type Props = {
   orgId: string
   order?: SalesOrder | null
+  prefill?: SalesOrder | null // Clone Order — a new order pre-filled from an existing one
   customers: Customer[]
   locations: Location[]
   products: Product[]
@@ -153,12 +154,13 @@ function lineTotal(l: LineItem) {
 
 // Statuses: Draft → Open → Picking → Closed (or Cancelled). Older stock-based statuses fold into Open / Picking.
 const OPEN_GROUP = ['open', 'no stock', 'stock available', 'partial stock']
-const PICKING_GROUP = ['picking', 'partially picked', 'picked', 'partially packed']
+const PICKING_GROUP = ['picking', 'partially picked', 'partially packed']
 
 function displayStatus(status: string) {
   const s = status.toLowerCase()
   if (OPEN_GROUP.includes(s)) return 'Open'
   if (PICKING_GROUP.includes(s)) return 'Picking'
+  if (s === 'picked') return 'Picked'
   if (s === 'packed') return 'Packed'
   if (s === 'draft') return 'Draft'
   if (s === 'closed') return 'Closed'
@@ -170,6 +172,7 @@ function statusClass(status: string) {
   switch (displayStatus(status)) {
     case 'Open': return 'badge-open'
     case 'Picking': return 'badge-partial'
+    case 'Picked': return 'badge-open'
     case 'Packed': return 'badge-open'
     case 'Closed': return 'badge-closed'
     case 'Cancelled': return 'badge-cancelled'
@@ -244,6 +247,7 @@ export default function SalesOrderForm(props: Props) {
 
 function SalesOrderFormInner({
   order,
+  prefill,
   customers,
   locations,
   products,
@@ -295,49 +299,55 @@ function SalesOrderFormInner({
   const statusLower = (order?.status ?? 'draft').toLowerCase()
   const anyPicked = (order?.lines ?? []).some(l => Number(l.quantity_picked) > 0)
   // Editable until closed / cancelled. Once picking starts, picked lines are protected (see _locked).
-  const fulfilling = [...PICKING_GROUP, 'packed'].includes(statusLower)
-  const statusEditable = isNew || ['draft', ...OPEN_GROUP, ...PICKING_GROUP, 'packed'].includes(statusLower)
+  const fulfilling = [...PICKING_GROUP, 'picked', 'packed'].includes(statusLower)
+  const statusEditable = isNew || ['draft', ...OPEN_GROUP, ...PICKING_GROUP, 'picked', 'packed'].includes(statusLower)
   const editable = statusEditable && mode === 'edit'
   const isDraft = isNew || statusLower === 'draft'
   const shownStatus = displayStatus(order?.status ?? 'Draft')
   const fallbackTerms = defaultTerms ?? 'Net 14'
 
-  const initialCustomer = order?.customer_id ? customers.find(c => c.id === order.customer_id) ?? null : null
-  const initialLocation = order?.location_id
-    ? locations.find(l => l.id === order.location_id) ?? null
+  const seed = order ?? prefill ?? null
+  const initialCustomer = seed?.customer_id ? customers.find(c => c.id === seed.customer_id) ?? null : null
+  const initialLocation = seed?.location_id
+    ? locations.find(l => l.id === seed.location_id) ?? null
     : isNew && defaultLocationId ? locations.find(l => l.id === defaultLocationId) ?? null : null
 
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(initialCustomer)
   const [customerSearch, setCustomerSearch] = useState('')
   const [customerDropOpen, setCustomerDropOpen] = useState(false)
-  const [customerRef, setCustomerRef] = useState(order?.ref ?? '')
+  const [customerRef, setCustomerRef] = useState(seed?.ref ?? '')
   const [selectedLocation, setSelectedLocation] = useState<Location | null>(initialLocation)
-  const [orderDate, setOrderDate] = useState(order?.order_date ?? new Date().toISOString().split('T')[0])
-  const [expectedDate, setExpectedDate] = useState(order?.expected_date ?? '')
-  const [terms, setTerms] = useState(order?.terms ?? fallbackTerms)
-  const [currency, setCurrency] = useState(order?.currency ?? initialCustomer?.currency ?? baseCurrency)
-  const [priceLevelId, setPriceLevelId] = useState<string | null>(order ? order.price_level_id : null)
+  const [orderDate, setOrderDate] = useState((order?.order_date) ?? new Date().toISOString().split('T')[0])
+  const [expectedDate, setExpectedDate] = useState(seed?.expected_date ?? '')
+  const [terms, setTerms] = useState(seed?.terms ?? fallbackTerms)
+  const [currency, setCurrency] = useState(seed?.currency ?? initialCustomer?.currency ?? baseCurrency)
+  const [priceLevelId, setPriceLevelId] = useState<string | null>(seed ? seed.price_level_id : null)
   const [openDd, setOpenDd] = useState<null | 'location' | 'terms' | 'level' | 'currency'>(null)
-  const [notes, setNotes] = useState(order?.notes ?? '')
+  const [notes, setNotes] = useState(seed?.notes ?? '')
   const [lines, setLines] = useState<LineItem[]>(() =>
-    (order?.lines ?? []).map(l => withTaxName({
+    (seed?.lines ?? []).map(l => withTaxName({
       ...l,
+      ...(order ? {} : { id: undefined, quantity_picked: null, quantity_packed: null }),
       quantity: Number(l.quantity) || 0,
       unit_price: Number(l.unit_price) || 0,
       discount: Number(l.discount) || 0,
       tax_rate: Number(l.tax_rate) || 0,
       line_notes: l.line_notes ?? '',
-      _manual: true, // saved prices are kept as they are
+      // a saved price that still matches its price-level tier keeps following quantity breaks; a hand-typed one is left alone
+      _manual: (() => {
+        const pr = products.find(x => x.id === l.product_id)
+        return !(pr && Math.abs(priceFor(pr, seed?.price_level_id ?? null, Number(l.quantity) || 0) - (Number(l.unit_price) || 0)) < 0.005)
+      })(),
       _locked: Number(l.quantity_picked) > 0 && Number(l.quantity_picked) >= Number(l.quantity),
     })))
   const [charges, setCharges] = useState<ChargeLine[]>(() =>
-    (order?.cost_lines ?? []).map(l => withTaxName({ ...l, amount: Number(l.amount) || 0, tax_rate: Number(l.tax_rate) || 0, description: l.description ?? '' })))
+    (seed?.cost_lines ?? []).map(l => withTaxName({ ...l, ...(order ? {} : { id: undefined }), amount: Number(l.amount) || 0, tax_rate: Number(l.tax_rate) || 0, description: l.description ?? '' })))
   const [itemSearch, setItemSearch] = useState('')
   const [itemDropOpen, setItemDropOpen] = useState(false)
   const [chargeSearch, setChargeSearch] = useState('')
   const [chargeDropOpen, setChargeDropOpen] = useState(false)
-  const [orderDiscountType, setOrderDiscountType] = useState<'%' | '$'>((order?.order_discount_type as '%' | '$') ?? '%')
-  const [orderDiscount, setOrderDiscount] = useState<number>(Number(order?.order_discount) || 0)
+  const [orderDiscountType, setOrderDiscountType] = useState<'%' | '$'>((seed?.order_discount_type as '%' | '$') ?? '%')
+  const [orderDiscount, setOrderDiscount] = useState<number>(Number(seed?.order_discount) || 0)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [confirmLeave, setConfirmLeave] = useState(false)
@@ -422,9 +432,12 @@ function SalesOrderFormInner({
     if (levelId && p.price_levels?.length) {
       const forLevel = p.price_levels.filter(x => x.price_level_id === levelId)
       if (forLevel.length) {
-        const eligible = forLevel.filter(x => (Number(x.break_qty) || 1) <= Math.max(qty, 1))
-        const pick = (eligible.length ? eligible : forLevel).reduce((a, b) => ((Number(b.break_qty) || 1) > (Number(a.break_qty) || 1) ? b : a))
-        return Number(pick.price) || 0
+        // the tier with the highest break quantity that the ordered quantity reaches; below every break → standard price
+        const eligible = forLevel.filter(x => (Number(x.break_qty) || 1) <= Math.max(qty, 1) && Number(x.price) > 0)
+        if (eligible.length) {
+          const pick = eligible.reduce((a, b) => ((Number(b.break_qty) || 1) > (Number(a.break_qty) || 1) ? b : a))
+          return Number(pick.price) || 0
+        }
       }
     }
     return Number(p.sell_price) || 0
@@ -677,7 +690,7 @@ function SalesOrderFormInner({
           {!isNew && mode === 'edit' && <span style={{ fontSize: 12, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)' }}>Editing</span>}
           {isNew
             ? <><span style={{ fontSize: 12, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)' }}>Draft</span><div style={{ width: 8, height: 8, borderRadius: '50%', background: '#F59E0B' }} /></>
-            : <span className={`badge ${statusClass(order!.status)}`} style={shownStatus === 'Packed' ? { background: '#CCFBF1', color: '#0F766E' } : undefined}>{shownStatus}</span>}
+            : <span className={`badge ${statusClass(order!.status)}`} style={shownStatus === 'Packed' ? { background: '#CCFBF1', color: '#0F766E' } : shownStatus === 'Picked' ? { background: '#DBEAFE', color: '#1D4ED8' } : undefined}>{shownStatus}</span>}
           {!isNew && mode === 'view' && statusEditable && (
             <button className="btn btn-outline" style={{ height: 34, marginLeft: 4 }} onClick={() => { setError(null); setMode('edit') }}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
@@ -1164,7 +1177,7 @@ function SalesOrderFormInner({
         {/* View mode actions */}
         {!isNew && mode === 'view' && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            {statusEditable && !anyPicked && (
+            {statusEditable && (
               <button className="btn btn-outline" style={{ height: 38, color: 'var(--danger)', borderColor: '#FECACA' }} onClick={() => setConfirmCancelOrder(true)}>
                 Cancel Order
               </button>
@@ -1254,7 +1267,7 @@ function SalesOrderFormInner({
       {confirmCancelOrder && (
         <ConfirmModal
           title="Cancel sales order?"
-          message={`Are you sure you want to cancel ${order?.so_number ?? 'this sales order'}? It will move to Cancelled.`}
+          message={`Are you sure you want to cancel ${order?.so_number ?? 'this sales order'}? It will move to Cancelled${anyPicked ? ' and anything already picked or packed is released.' : '.'}`}
           confirmLabel="Yes, cancel order"
           danger
           busy={cancelling}

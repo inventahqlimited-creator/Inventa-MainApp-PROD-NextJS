@@ -381,12 +381,13 @@ function SalesOrderFormInner({
     return map
   }, [stockLevels, selectedLocation])
 
-  // Line stock in view mode: does the ship-from location hold any of this item?
+  // Line stock in view mode: does the ship-from location hold enough of this item for the whole order?
   const showStock = !isNew && mode === 'view' && !['closed', 'shipped', 'delivered', 'cancelled'].includes(statusLower)
   function lineStock(l: LineItem): 'in' | 'no' | null {
     const p = products.find(x => x.id === l.product_id)
     if (!p || p.type === 'Service' || p.track_stock === false) return null
-    return (stockByProduct[l.product_id]?.onHand ?? 0) > 0 ? 'in' : 'no'
+    const needed = lines.filter(x => x.product_id === l.product_id).reduce((sum, x) => sum + (Number(x.quantity) || 0), 0)
+    return (stockByProduct[l.product_id]?.onHand ?? 0) >= needed ? 'in' : 'no'
   }
   const pickMode = fulfilmentMode === 'full' || fulfilmentMode === 'pick-only'
   const inPicking = ['picking', 'partially picked', 'picked'].includes(statusLower)
@@ -832,7 +833,7 @@ function SalesOrderFormInner({
                   <th className="li-th">Product Name</th>
                   <th className="li-th" style={{ width: 70, textAlign: 'center' }}>Unit</th>
                   <th className="li-th" style={{ width: 80, textAlign: 'right' }}>Qty</th>
-                  {showStock && <th className="li-th" style={{ width: 100 }}>Stock</th>}
+                  {showStock && <th className="li-th" style={{ width: 150 }}>Stock</th>}
                   <th className="li-th" style={{ width: 100, textAlign: 'right' }}>Unit Price</th>
                   <th className="li-th" style={{ width: 80, textAlign: 'right' }}>Disc %</th>
                   <th className="li-th" style={{ width: 140 }}>Tax</th>
@@ -868,7 +869,7 @@ function SalesOrderFormInner({
                           const st = lineStock(l)
                           if (!st) return <span style={{ color: 'var(--gray-300)' }}>—</span>
                           return st === 'no'
-                            ? <span className="badge" style={{ background: '#FEE2E2', color: '#B91C1C' }}>No Stock</span>
+                            ? <span className="badge" style={{ background: '#FEE2E2', color: '#B91C1C' }} title={`${stockByProduct[l.product_id]?.onHand ?? 0} on hand`}>No Stock ({stockByProduct[l.product_id]?.onHand ?? 0} on hand)</span>
                             : <span className="badge" style={{ background: '#DCFCE7', color: '#15803D' }}>In Stock</span>
                         })()}
                       </td>

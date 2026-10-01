@@ -38,7 +38,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
     adminClient.from('tax_rates').select('*').eq('org_id', m.org_id).order('name'),
     adminClient.from('currencies').select('*').eq('org_id', m.org_id).order('code'),
     adminClient.from('bins').select('*').eq('org_id', m.org_id).eq('is_active', true).order('name'),
-    adminClient.from('org_members').select('id, first_name, last_name, email, role, invite_status, accepted_at, user_id').eq('org_id', m.org_id).order('accepted_at', { ascending: true }),
+    adminClient.from('org_members').select('id, first_name, last_name, email, role, invite_status, accepted_at, user_id, phone, designation, avatar_url').eq('org_id', m.org_id).order('accepted_at', { ascending: true }),
     adminClient.from('sales_orders').select('*', { count: 'exact', head: true }).eq('org_id', m.org_id).limit(1),
     adminClient.from('purchase_orders').select('*', { count: 'exact', head: true }).eq('org_id', m.org_id).limit(1),
     adminClient.from('stock_transfers').select('*', { count: 'exact', head: true }).eq('org_id', m.org_id).limit(1),
@@ -47,10 +47,11 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
 
   // Fetch last_sign_in_at from auth.users for accepted members
   const acceptedUserIds = (membersRaw ?? [])
-    .filter((mb: Record<string, unknown>) => mb.invite_status === 'accepted' && mb.user_id)
+    .filter((mb: Record<string, unknown>) => mb.invite_status !== 'pending' && mb.user_id)
     .map((mb: Record<string, unknown>) => mb.user_id as string)
 
   let lastSignInMap: Record<string, string | null> = {}
+  let emailMap: Record<string, string> = {}
   if (acceptedUserIds.length > 0) {
     const { data: { users: authUsers } } = await adminClient.auth.admin.listUsers({ perPage: 200 })
     lastSignInMap = Object.fromEntries(
@@ -58,10 +59,16 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
         .filter((u: { id: string; last_sign_in_at?: string | null }) => acceptedUserIds.includes(u.id))
         .map((u: { id: string; last_sign_in_at?: string | null }) => [u.id, u.last_sign_in_at ?? null])
     )
+    emailMap = Object.fromEntries(
+      (authUsers ?? [])
+        .filter((u: { id: string; email?: string | null }) => acceptedUserIds.includes(u.id) && u.email)
+        .map((u: { id: string; email?: string | null }) => [u.id, u.email as string])
+    )
   }
 
   const members = (membersRaw ?? []).map((mb: Record<string, unknown>) => ({
     ...mb,
+    email: (mb.email as string | null) || emailMap[mb.user_id as string] || null,
     last_sign_in_at: lastSignInMap[mb.user_id as string] ?? null,
     is_me: mb.user_id === user.id,
   }))

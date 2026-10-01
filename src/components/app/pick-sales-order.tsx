@@ -6,6 +6,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import PickListMenu from '@/components/app/pick-list-menu'
 
 type Part = { group_id: string | null; available: number }
 type Stock = {
@@ -325,6 +326,7 @@ export default function PickSalesOrder({
               Auto Pick
             </button>
           )}
+          {!isTr && <PickListMenu ids={orders.map(o => o.id)} grouping={grouping} onError={setError} />}
         </div>
       </div>
 

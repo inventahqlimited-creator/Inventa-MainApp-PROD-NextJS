@@ -107,7 +107,7 @@ export default function AuditLog({ allowed }: { allowed: boolean }) {
   }
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden', width: '100%' }} onClick={() => { setCatOpen(false); setUserOpen(false) }}>
+    <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }} onClick={() => { setCatOpen(false); setUserOpen(false) }}>
       <div className="page-header-card">
         <div className="page-header-top">
           <div>
@@ -166,30 +166,30 @@ export default function AuditLog({ allowed }: { allowed: boolean }) {
         <span style={{ fontSize: 12.5, color: 'var(--gray-400)' }}><strong>{total}</strong> events</span>
       </div>
 
-      <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', minHeight: 0, width: '100%' }}>
+      <div className="table-container">
         {error && <div style={{ margin: 16, padding: '10px 14px', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 10, fontSize: 13, color: '#B91C1C' }}>{error}</div>}
+        <div className="table-wrap" ref={scrollRef}>
         <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
-          <thead style={{ position: 'sticky', top: 0, zIndex: 2 }}>
-            <tr style={{ background: 'var(--gray-50)', borderBottom: '1.5px solid var(--gray-100)' }}>
-              <th style={{ ...th, padding: '10px 16px', width: 150 }}>TIMESTAMP</th>
-              <th style={{ ...th, width: 120 }}>CATEGORY</th>
-              <th style={{ ...th, width: 180 }}>ACTION</th>
-              <th style={{ ...th, width: 130 }}>REFERENCE</th>
-              <th style={th}>DETAIL</th>
-              <th style={{ ...th, width: 160 }}>USER</th>
+          <thead>
+            <tr>
+              <th style={{ width: 150 }}>TIMESTAMP</th>
+              <th style={{ width: 120 }}>CATEGORY</th>
+              <th style={{ width: 180 }}>ACTION</th>
+              <th style={{ width: 130 }}>REFERENCE</th>
+              <th>DETAIL</th>
+              <th style={{ width: 160 }}>USER</th>
             </tr>
           </thead>
           <tbody>
             {!loading && events.length === 0 && (
               <tr><td colSpan={6} style={{ padding: 40, textAlign: 'center', fontSize: 13, color: 'var(--gray-400)' }}>No audit events found</td></tr>
             )}
-            {events.map((e, i) => {
+            {events.map(e => {
               const [bg, color] = CATS[e.category] ?? ['#F1F5F9', '#475569']
               const d = new Date(e.created_at)
-              const rowBg = i % 2 === 0 ? 'var(--white)' : '#FAFBFC'
               const href = linkFor(e)
               return (
-                <tr key={e.id} style={{ borderBottom: '1px solid var(--gray-100)', background: rowBg, opacity: loading ? 0.6 : 1 }}>
+                <tr key={e.id} style={{ opacity: loading ? 0.6 : 1, cursor: 'default' }}>
                   <td style={{ padding: '10px 16px', fontSize: 12, whiteSpace: 'nowrap' }}>
                     <div style={{ fontWeight: 600, color: 'var(--slate)' }}>{d.toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: 'numeric' })}</div>
                     <div style={{ fontSize: 11, color: 'var(--gray-400)', marginTop: 1 }}>{d.toLocaleTimeString('en-NZ', { hour: '2-digit', minute: '2-digit', second: '2-digit' })}</div>
@@ -208,9 +208,8 @@ export default function AuditLog({ allowed }: { allowed: boolean }) {
             })}
           </tbody>
         </table>
-      </div>
-
-      <div style={{ background: 'var(--white)', borderTop: '1px solid var(--gray-100)', padding: '10px 24px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+        </div>
+        <div className="table-footer">
         <span style={{ fontSize: 12.5, color: 'var(--gray-400)' }}>
           {total ? `Showing ${start + 1}–${Math.min(start + PAGE_SIZE, total)} of ${total} events` : '0 events'}
         </span>
@@ -224,6 +223,7 @@ export default function AuditLog({ allowed }: { allowed: boolean }) {
             return null
           })}
           <button style={{ ...pageBtn(false), opacity: page >= totalPages ? 0.4 : 1, cursor: page >= totalPages ? 'default' : 'pointer' }} disabled={page >= totalPages} onClick={() => setPage(p => p + 1)}>›</button>
+        </div>
         </div>
       </div>
     </div>

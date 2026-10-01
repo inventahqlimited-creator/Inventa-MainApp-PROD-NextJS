@@ -380,7 +380,7 @@ export default function DashboardClient({
               const y = H - bh - 20
               return (
                 <g key={i}>
-                  <rect x={x} y={y} width={barW} height={bh} rx="5" fill={m.isLast ? '#0d9488' : '#0d948825'} />
+                  <rect x={x} y={y} width={barW} height={bh} rx="5" fill={m.isLast ? '#0d9488' : '#5EEAD4'} />
                   <text x={x + barW / 2} y={H - 4} textAnchor="middle" fontSize="8" fill="#64748b" fontFamily="sans-serif">{m.label}</text>
                   {m.val > 0 && <text x={x + barW / 2} y={y - 5} textAnchor="middle" fontSize="8" fill={m.isLast ? '#0d9488' : '#94a3b8'} fontWeight={m.isLast ? 700 : 400} fontFamily="sans-serif">{fmt(m.val)}</text>}
                 </g>
@@ -389,7 +389,7 @@ export default function DashboardClient({
           </svg>
           <div style={{ display: 'flex', gap: 16, marginTop: 6, paddingTop: 10, borderTop: '1px solid var(--gray-100)' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--gray-400)' }}><div style={{ width: 10, height: 10, borderRadius: 3, background: '#0d9488' }} />Current month</div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--gray-400)' }}><div style={{ width: 10, height: 10, borderRadius: 3, background: '#0d948825', border: '1px solid #0d948860' }} />Previous months</div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, color: 'var(--gray-400)' }}><div style={{ width: 10, height: 10, borderRadius: 3, background: '#5EEAD4' }} />Previous months</div>
           </div>
         </div>
 

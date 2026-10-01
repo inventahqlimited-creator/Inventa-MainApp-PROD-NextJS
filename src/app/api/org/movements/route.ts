@@ -139,6 +139,11 @@ export async function GET(request: Request) {
     const { data: pos } = await adminClient.from('purchase_orders').select('id, po_number').in('id', poIds)
     for (const o of pos ?? []) if (o.po_number) referenceMap.set(o.id, o.po_number)
   }
+  const trIds = idsFor('transfer_order')
+  if (trIds.length > 0) {
+    const { data: trs } = await adminClient.from('transfer_orders').select('id, tr_number').in('id', trIds)
+    for (const o of trs ?? []) if (o.tr_number) referenceMap.set(o.id, o.tr_number)
+  }
   const soIds = [...new Set([...idsFor('sales_order'), ...idsFor('sale_order')])]
   if (soIds.length > 0) {
     const { data: sos } = await adminClient.from('sales_orders').select('id, so_number').in('id', soIds)

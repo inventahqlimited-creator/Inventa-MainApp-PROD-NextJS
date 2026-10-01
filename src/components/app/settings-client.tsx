@@ -6,6 +6,8 @@ import Link from 'next/link'
 import MemberModal from './member-modal'
 import ProfileModal from './profile-modal'
 import PickListTemplate from '@/components/app/pick-list-template'
+import PackingListTemplate from '@/components/app/packing-list-template'
+import { normalizePackingListConfig, type PackingListConfig } from '@/lib/packing-list/config'
 import { normalizePickListConfig, type PickListConfig } from '@/lib/pick-list/config'
 
 type Org = Record<string, unknown>
@@ -1462,6 +1464,8 @@ export default function SettingsClient({
   const [savingSoDefaults, setSavingSoDefaults] = useState(false)
   const [pickListCfg, setPickListCfg] = useState<PickListConfig>(() => normalizePickListConfig(org.pick_list_settings))
   const [pickListOpen, setPickListOpen] = useState(false)
+  const [packingCfg, setPackingCfg] = useState<PackingListConfig>(() => normalizePackingListConfig(org.packing_list_settings))
+  const [packingOpen, setPackingOpen] = useState(false)
 
   async function saveFulfilment() {
     setSavingFulfilment(true)
@@ -2197,8 +2201,31 @@ export default function SettingsClient({
                   </span>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--gray-300)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setPackingOpen(true)}
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 14, padding: '12px 10px', background: 'transparent', border: 'none', borderRadius: 10, cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--gray-50)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                >
+                  <span style={{ width: 36, height: 36, borderRadius: 10, background: 'var(--teal-surface)', color: 'var(--teal)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z" /><polyline points="3.27 6.96 12 12.01 20.73 6.96" /><line x1="12" y1="22.08" x2="12" y2="12" /></svg>
+                  </span>
+                  <span style={{ flex: 1 }}>
+                    <span style={{ display: 'block', fontSize: 13.5, fontWeight: 600, color: 'var(--slate)', fontFamily: 'var(--font-display)' }}>Packing List</span>
+                    <span style={{ display: 'block', fontSize: 12.5, color: 'var(--gray-400)', marginTop: 2 }}>Logo, addresses, shipping details, columns, totals and signature lines on the printed packing list</span>
+                  </span>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--gray-300)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+                </button>
               </div>
             </Card>
+            {packingOpen && (
+              <PackingListTemplate
+                initial={packingCfg}
+                onClose={() => setPackingOpen(false)}
+                onSaved={cfg => { setPackingCfg(cfg); setPackingOpen(false); showToast('success', 'Packing list template saved') }}
+              />
+            )}
             {pickListOpen && (
               <PickListTemplate
                 initial={pickListCfg}

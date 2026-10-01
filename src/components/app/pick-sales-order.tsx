@@ -38,18 +38,22 @@ type Order = { id: string; so_number: string; customer_name: string; location_na
 const sum = (a: Alloc[]) => a.reduce((s, x) => s + x.qty, 0)
 
 export default function PickSalesOrder({
-  orders, lines, allowOverPicking, autoPicking, pickingRule, fulfilmentMode,
+  orders, lines, allowOverPicking = false, autoPicking = false, pickingRule = 'FIFO', fulfilmentMode = 'full', kind = 'sales',
 }: {
   orders: Order[]
   lines: Line[]
-  allowOverPicking: boolean
-  autoPicking: boolean
-  pickingRule: 'FIFO' | 'LIFO' | 'FEFO'
-  fulfilmentMode: string
+  allowOverPicking?: boolean
+  autoPicking?: boolean
+  pickingRule?: 'FIFO' | 'LIFO' | 'FEFO'
+  fulfilmentMode?: string
+  kind?: 'sales' | 'transfer'
 }) {
   const router = useRouter()
   const single = orders.length === 1
-  const backTo = single ? `/sales/${orders[0].id}` : '/sales'
+  const isTr = kind === 'transfer'
+  const base = isTr ? '/transfers' : '/sales'
+  const noun = isTr ? 'transfer' : 'order'
+  const backTo = single ? `${base}/${orders[0].id}` : base
   const orderOf = (l: Line) => orders.find(o => o.id === l.order_id) as Order
 
   const [grouping, setGrouping] = useState<'order' | 'product'>('order')
@@ -222,7 +226,7 @@ export default function PickSalesOrder({
       for (const o of orders) {
         const mine = lines.filter(l => l.order_id === o.id && dirty.has(l.id))
         if (mine.length === 0) continue
-        const res = await fetch(`/api/org/sales/${o.id}/pick`, {
+        const res = await fetch(`/api/org/${isTr ? 'transfers' : 'sales'}/${o.id}/pick`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ lines: mine.map(l => ({ line_id: l.id, picks: allocs[l.id] ?? [] })) }),
@@ -240,10 +244,10 @@ export default function PickSalesOrder({
       }
       if (single) {
         // Full mode: a freshly fully-picked order goes on to the Pack screen (a Packed order goes back to its page)
-        if (last.all_picked && last.new_status === 'Picked' && fulfilmentMode === 'full') { router.push(`/sales/${orders[0].id}/pack`); return }
-        router.push(`/sales/${orders[0].id}`)
+        if (!isTr && last.all_picked && last.new_status === 'Picked' && fulfilmentMode === 'full') { router.push(`/sales/${orders[0].id}/pack`); return }
+        router.push(`${base}/${orders[0].id}`)
       } else {
-        router.push('/sales')
+        router.push(base)
       }
       router.refresh()
     } catch {
@@ -279,7 +283,11 @@ export default function PickSalesOrder({
   )
   const cell = { padding: '10px 12px' } as const
 
-  const confirmMsg = !single
+  const confirmMsg = isTr
+    ? (anyPartial
+        ? 'Some lines are not fully picked. The transfer will stay in Picking so you can finish it later.'
+        : 'Everything is picked. Next, click Complete Transfer to move the stock.')
+    : !single
     ? `Save the picks for ${orders.length} orders. Fully picked orders move to Picked; the rest stay in Picking so you can finish them later.`
     : orders[0].status.toLowerCase() === 'packed'
       ? 'This order is Packed. If everything stays fully picked it remains Packed; if you reduce a pick, the cartons are trimmed to match and the order goes back to Picking.'
@@ -302,8 +310,8 @@ export default function PickSalesOrder({
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
           </button>
           <div>
-            <div style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--slate)' }}>{single ? 'Pick Order' : 'Pick Orders'}</div>
-            <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 1 }}>{orders.length} order{orders.length !== 1 ? 's' : ''} · {lines.length} line{lines.length !== 1 ? 's' : ''}</div>
+            <div style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--slate)' }}>{isTr ? (single ? 'Pick Transfer' : 'Pick Transfers') : (single ? 'Pick Order' : 'Pick Orders')}</div>
+            <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 1 }}>{orders.length} {noun}{orders.length !== 1 ? 's' : ''} · {lines.length} line{lines.length !== 1 ? 's' : ''}</div>
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
@@ -335,7 +343,7 @@ export default function PickSalesOrder({
               <div key={o.id} style={{ marginBottom: 20 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
                   <div style={{ fontFamily: 'var(--font-display)', fontSize: 14, fontWeight: 700, color: 'var(--slate)', letterSpacing: '-0.02em' }}>{o.so_number}</div>
-                  <div style={{ fontSize: 12.5, color: 'var(--gray-400)' }}>{o.customer_name}{!single && o.location_name ? ` · ${o.location_name}` : ''}</div>
+                  <div style={{ fontSize: 12.5, color: 'var(--gray-400)' }}>{o.customer_name}{!isTr && !single && o.location_name ? ` · ${o.location_name}` : ''}</div>
                 </div>
                 <div style={{ background: 'var(--white)', border: '1px solid var(--gray-100)', borderRadius: 12, overflow: 'hidden' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
@@ -379,7 +387,7 @@ export default function PickSalesOrder({
                 <div style={{ background: 'var(--white)', border: '1px solid var(--gray-100)', borderRadius: 12, overflow: 'hidden' }}>
                   <table style={{ width: '100%', borderCollapse: 'collapse' }}>
                     <thead><tr style={{ background: 'var(--gray-50)' }}>
-                      {th('Order')}{th('Customer')}{th('Ordered', 80, 'right')}{th('Picked', 90, 'right')}{th('Bins', 140)}{th('Status', 130)}{th('', 40)}
+                      {th('Order')}{th(isTr ? 'Route' : 'Customer')}{th('Ordered', 80, 'right')}{th('Picked', 90, 'right')}{th('Bins', 140)}{th('Status', 130)}{th('', 40)}
                     </tr></thead>
                     <tbody>
                       {pl.map(l => (
@@ -407,7 +415,7 @@ export default function PickSalesOrder({
             <div style={{ padding: '16px 18px', borderBottom: '1px solid var(--gray-100)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
               <div>
                 <div style={{ fontFamily: 'var(--font-display)', fontSize: 14, fontWeight: 700, color: 'var(--slate)' }}>{panel.name}</div>
-                <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>{single ? '' : `${orderOf(panel).so_number} · `}{panel.ordered} {panel.unit} ordered · {orderOf(panel).location_name} · On hand: {panel.onHand}</div>
+                <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>{single ? '' : `${orderOf(panel).so_number} · `}{panel.ordered} {panel.unit} {isTr ? 'to transfer' : 'ordered'} · {orderOf(panel).location_name} · On hand: {panel.onHand}</div>
               </div>
               <button onClick={() => setPanelLine(null)} className="sq-btn" style={{ width: 28, height: 28 }}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>

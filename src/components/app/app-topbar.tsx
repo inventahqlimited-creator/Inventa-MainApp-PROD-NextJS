@@ -3,6 +3,8 @@
 import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import GlobalSearch from '@/components/app/global-search'
+import ProfileModal, { type ProfileData } from '@/components/app/profile-modal'
 
 export default function AppTopbar({
   displayName,
@@ -10,6 +12,7 @@ export default function AppTopbar({
   role,
   orgName,
   email,
+  avatarUrl = '',
   canCreateContact = true,
   canCreateProduct = true,
   canViewProducts = true,
@@ -19,6 +22,7 @@ export default function AppTopbar({
   role: string
   orgName: string
   email: string
+  avatarUrl?: string
   canCreateContact?: boolean
   canCreateProduct?: boolean
   canViewProducts?: boolean
@@ -27,6 +31,8 @@ export default function AppTopbar({
   const supabase = createClient()
   const [profileOpen, setProfileOpen] = useState(false)
   const [quickOpen, setQuickOpen] = useState(false)
+  const [showProfile, setShowProfile] = useState(false)
+  const [me, setMe] = useState({ name: displayName, avatar: avatarUrl })
   const profileRef = useRef<HTMLDivElement>(null)
   const quickRef = useRef<HTMLDivElement>(null)
 
@@ -54,16 +60,13 @@ export default function AppTopbar({
     role === 'read_only' ? 'Read Only' : 'Staff'
 
   // Show name if set, fall back to email
-  const nameDisplay = displayName && displayName !== email ? displayName : email
+  const nameDisplay = me.name && me.name !== email ? me.name : email
+  const meInitials = (nameDisplay || '?').split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2)
 
   return (
+    <>
     <header className="topbar">
-      <div className="search-wrap">
-        <svg className="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
-          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
-        </svg>
-        <input className="search-input" placeholder="Search contacts, products, orders…" />
-      </div>
+      <GlobalSearch canViewProducts={canViewProducts} />
 
       <div className="topbar-spacer" />
 
@@ -176,7 +179,12 @@ export default function AppTopbar({
         {/* Profile dropdown — LAST */}
         <div style={{ position: 'relative' }} ref={profileRef}>
           <div className="topbar-user" onClick={() => setProfileOpen(o => !o)}>
-            <div className="topbar-avatar">{initials}</div>
+            <div className="topbar-avatar" style={me.avatar ? { padding: 0, overflow: 'hidden' } : undefined}>
+              {me.avatar
+                // eslint-disable-next-line @next/next/no-img-element
+                ? <img src={me.avatar} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                : (me.name === displayName ? initials : meInitials)}
+            </div>
             <div className="topbar-user-info">
               <div className="topbar-user-name">{nameDisplay}</div>
               <div className="topbar-user-role">{roleLabel}</div>
@@ -192,7 +200,7 @@ export default function AppTopbar({
                 <div className="profile-dropdown-biz">{orgName}</div>
                 <div className="profile-dropdown-email">{email}</div>
               </div>
-              <div className="dd-item" onClick={() => { setProfileOpen(false); router.push('/settings/profile') }}>
+              <div className="dd-item" onClick={() => { setProfileOpen(false); setShowProfile(true) }}>
                 <div className="dd-icon-wrap">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
                     <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
@@ -217,5 +225,16 @@ export default function AppTopbar({
         </div>
       </div>
     </header>
+    {showProfile && (
+      <ProfileModal
+        onClose={() => setShowProfile(false)}
+        onSaved={(p: ProfileData) => {
+          const full = [p.first_name, p.last_name].filter(Boolean).join(' ')
+          setMe({ name: full || email, avatar: p.avatar_url })
+          router.refresh()
+        }}
+      />
+    )}
+    </>
   )
 }

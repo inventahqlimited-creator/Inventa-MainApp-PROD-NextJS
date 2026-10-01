@@ -6,17 +6,22 @@
 //   2 or more orders → "Print Pick List" (one page per order) and "Print Consolidated Pick List"
 // On the Pick screen the consolidated list follows the grouping on screen (By Order / By Product).
 // Where there is no grouping to follow (the Sales list), both groupings are offered.
+// On the Sales list the same menu also prints the Packing List (packIds): one page per order.
 
 import { useEffect, useRef, useState } from 'react'
 import { printPickList } from '@/lib/pick-list/print'
+import { printPackingList } from '@/lib/packing-list/print'
 import type { PickListMode } from '@/lib/pick-list/types'
 
 const PRINTER = 'M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6z'
 
 export default function PickListMenu({
-  ids, grouping, size = 'md', onError,
+  ids, packIds = [], grouping, size = 'md', onError,
 }: {
+  /** Orders a pick list can be printed for */
   ids: string[]
+  /** Orders a packing list can be printed for (leave out where packing lists aren't offered) */
+  packIds?: string[]
   grouping?: 'order' | 'product'
   size?: 'md' | 'sm'
   onError?: (message: string) => void
@@ -41,6 +46,14 @@ export default function PickListMenu({
     if (!res.ok) onError?.(res.error)
   }
 
+  async function runPacking() {
+    setOpen(false)
+    setBusy(true)
+    const res = await printPackingList(packIds)
+    setBusy(false)
+    if (!res.ok) onError?.(res.error)
+  }
+
   const item = (label: string, sub: string, mode: PickListMode) => (
     <div key={mode + label} className="fp-item" onClick={() => run(mode)} style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 1, cursor: 'pointer', padding: '8px 12px' }}>
       <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--slate)' }}>{label}</span>
@@ -55,7 +68,7 @@ export default function PickListMenu({
         className={size === 'sm' ? 'btn-sm btn-sm-ghost' : 'btn btn-outline'}
         style={size === 'sm' ? { display: 'inline-flex', alignItems: 'center', gap: 6 } : { height: 36 }}
         onClick={() => setOpen(o => !o)}
-        disabled={busy || ids.length === 0}
+        disabled={busy || (ids.length === 0 && packIds.length === 0)}
         title="Print"
         aria-haspopup="menu"
         aria-expanded={open}
@@ -66,11 +79,18 @@ export default function PickListMenu({
       </button>
       {open && (
         <div className="inv-dropdown" role="menu" style={{ display: 'block', position: 'absolute', right: 0, top: 'calc(100% + 6px)', minWidth: 270, padding: 6, zIndex: 60 }}>
-          {item('Print Pick List', many ? `One page per order · ${ids.length} orders` : 'This order', 'single')}
+          {ids.length > 0 && item('Print Pick List', many ? `One page per order · ${ids.length} orders` : 'This order', 'single')}
           {many && grouping === 'order' && item('Print Consolidated Pick List', 'One list, grouped by order', 'consolidated-order')}
           {many && grouping === 'product' && item('Print Consolidated Pick List', 'One list, grouped by product', 'consolidated-product')}
           {many && !grouping && item('Print Consolidated Pick List', 'One list, grouped by order', 'consolidated-order')}
           {many && !grouping && item('Print Consolidated Pick List', 'One list, grouped by product', 'consolidated-product')}
+          {packIds.length > 0 && ids.length > 0 && <div style={{ height: 1, background: 'var(--gray-100)', margin: '5px 0' }} />}
+          {packIds.length > 0 && (
+            <div className="fp-item" onClick={runPacking} style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 1, cursor: 'pointer', padding: '8px 12px' }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--slate)' }}>Print Packing List</span>
+              <span style={{ fontSize: 11.5, color: 'var(--gray-400)', fontWeight: 400 }}>{packIds.length > 1 ? `One page per order · ${packIds.length} orders` : 'This order'}</span>
+            </div>
+          )}
         </div>
       )}
     </div>

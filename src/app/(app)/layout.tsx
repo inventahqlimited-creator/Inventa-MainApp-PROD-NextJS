@@ -12,14 +12,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   const { data: membership } = await adminClient
     .from('org_members')
-    .select('role, org_id, first_name, last_name')
+    .select('role, org_id, first_name, last_name, avatar_url')
     .eq('user_id', user.id)
     .eq('invite_status', 'accepted')
     .single()
 
   if (!membership) redirect('/login')
 
-  const m = membership as { role: string; org_id: string; first_name: string | null; last_name: string | null }
+  const m = membership as { role: string; org_id: string; first_name: string | null; last_name: string | null; avatar_url: string | null }
 
   const { data: org } = await adminClient
     .from('organisations')
@@ -41,6 +41,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           role={m.role}
           orgName={orgName}
           email={user.email ?? ''}
+          avatarUrl={m.avatar_url ?? ''}
         />
         <div className="content">
           {children}

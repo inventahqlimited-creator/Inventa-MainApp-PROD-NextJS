@@ -813,6 +813,18 @@ export default function ProductsTable({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams])
 
+  // Global search deep link: /products?open=<id> opens that product's view popup
+  useEffect(() => {
+    const openId = searchParams.get('open')
+    if (!openId) return
+    const prod = products.find(x => x.id === openId)
+    if (prod) openView(prod)
+    const url = new URL(window.location.href)
+    url.searchParams.delete('open')
+    window.history.replaceState({}, '', url.toString())
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams])
+
   function setF(field: keyof ModalForm, value: string | boolean) {
     setForm(f => ({ ...f, [field]: value }))
   }

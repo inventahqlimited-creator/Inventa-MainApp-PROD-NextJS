@@ -3,6 +3,8 @@
 import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
+import MemberModal from './member-modal'
+import ProfileModal from './profile-modal'
 
 type Org = Record<string, unknown>
 type Location = {
@@ -30,6 +32,10 @@ type Member = {
   accepted_at: string | null
   last_sign_in_at: string | null
   is_me: boolean
+  user_id?: string | null
+  phone?: string | null
+  designation?: string | null
+  avatar_url?: string | null
 }
 
 const TABS = [
@@ -1202,6 +1208,9 @@ export default function SettingsClient({
   const router = useRouter()
   const [tab, setTab] = useState<Tab>((initialTab as Tab) ?? 'general')
   const [showRolesModal, setShowRolesModal] = useState(false)
+  const [memberModal, setMemberModal] = useState<{ member: Member | null } | null>(null)
+  const [showProfile, setShowProfile] = useState(false)
+  const [memberNotice, setMemberNotice] = useState<string | null>(null)
 
   // Org details
   const [bizName, setBizName] = useState(String(org.name ?? ''))
@@ -2184,13 +2193,19 @@ export default function SettingsClient({
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-7 8-7s8 3 8 7"/><path d="M18 14l2 2 4-4" strokeWidth="2"/></svg>
                   Roles &amp; Permissions
                 </button>
-                <button className="btn btn-primary" style={{ height: 32, fontSize: 12.5, display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+                <button className="btn btn-primary" style={{ height: 32, fontSize: 12.5, display: 'inline-flex', alignItems: 'center', gap: 6 }} onClick={() => setMemberModal({ member: null })}>
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
                   Invite User
                 </button>
               </div>
             }
           >
+            {memberNotice && (
+              <div style={{ margin: '12px 20px 0', padding: '9px 12px', borderRadius: 9, background: '#ECFDF5', color: '#065F46', fontSize: 12.5, fontWeight: 600, display: 'flex', justifyContent: 'space-between' }}>
+                <span>{memberNotice}</span>
+                <button onClick={() => setMemberNotice(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit' }}>✕</button>
+              </div>
+            )}
             {/* Table header */}
             <div style={{ display: 'grid', gridTemplateColumns: '2fr 2.5fr 1.2fr 1fr 1.2fr 48px', padding: '10px 20px', borderBottom: '1px solid var(--gray-100)' }}>
               {['Name', 'Email', 'Role', 'Status', 'Last Active'].map(h => (
@@ -2205,6 +2220,7 @@ export default function SettingsClient({
               const initials = [mb.first_name, mb.last_name].filter(Boolean).map(s => s![0].toUpperCase()).join('') || (mb.email ? mb.email[0].toUpperCase() : '?')
               const fullName = [mb.first_name, mb.last_name].filter(Boolean).join(' ') || mb.email?.split('@')[0] || '—'
               const isAccepted = mb.invite_status === 'accepted'
+              const isInactive = mb.invite_status === 'inactive'
 
               // Avatar colour based on initials
               const colours = ['#0D9488','#7C3AED','#DB2777','#D97706','#2563EB','#059669']
@@ -2230,14 +2246,21 @@ export default function SettingsClient({
                 staff:   { bg: '#DBEAFE', color: '#1D4ED8' },
               }
               const roleStyle = roleMeta[mb.role?.toLowerCase()] ?? { bg: 'var(--gray-100)', color: 'var(--gray-400)' }
-              const roleLabel = mb.role ? mb.role.charAt(0).toUpperCase() + mb.role.slice(1) : '—'
+              const roleLabel = ({ admin: 'Administrator', manager: 'Manager', staff: 'Staff', read_only: 'Read Only' } as Record<string, string>)[mb.role] ?? (mb.role ? mb.role.charAt(0).toUpperCase() + mb.role.slice(1) : '—')
 
               return (
-                <div key={mb.id} style={{ display: 'grid', gridTemplateColumns: '2fr 2.5fr 1.2fr 1fr 1.2fr 48px', padding: '14px 20px', borderBottom: '1px solid var(--gray-100)', alignItems: 'center' }}>
+                <div key={mb.id}
+                  onClick={() => { if (!isAdmin && !mb.is_me) return; if (mb.is_me) setShowProfile(true); else setMemberModal({ member: mb }) }}
+                  style={{ display: 'grid', gridTemplateColumns: '2fr 2.5fr 1.2fr 1fr 1.2fr 48px', padding: '14px 20px', borderBottom: '1px solid var(--gray-100)', alignItems: 'center', cursor: isAdmin || mb.is_me ? 'pointer' : 'default' }}
+                  onMouseEnter={e => { if (isAdmin || mb.is_me) e.currentTarget.style.background = 'var(--gray-50)' }}
+                  onMouseLeave={e => { e.currentTarget.style.background = '' }}>
                   {/* Name + avatar */}
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                    <div style={{ width: 32, height: 32, borderRadius: '50%', background: avatarBg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
-                      <span style={{ fontSize: 12, fontWeight: 700, color: '#fff', letterSpacing: '0.02em' }}>{initials}</span>
+                    <div style={{ width: 32, height: 32, borderRadius: '50%', background: avatarBg, display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, overflow: 'hidden' }}>
+                      {mb.avatar_url
+                        // eslint-disable-next-line @next/next/no-img-element
+                        ? <img src={mb.avatar_url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                        : <span style={{ fontSize: 12, fontWeight: 700, color: '#fff', letterSpacing: '0.02em' }}>{initials}</span>}
                     </div>
                     <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--slate)', fontFamily: 'var(--font-display)' }}>{fullName}</div>
                   </div>
@@ -2251,6 +2274,8 @@ export default function SettingsClient({
                   <div>
                     {isAccepted
                       ? <span style={{ fontSize: 12, fontWeight: 600, padding: '3px 10px', borderRadius: 20, background: '#D1FAE5', color: '#065F46' }}>Active</span>
+                      : isInactive
+                      ? <span style={{ fontSize: 12, fontWeight: 600, padding: '3px 10px', borderRadius: 20, background: 'var(--gray-100)', color: 'var(--gray-400)' }}>Inactive</span>
                       : <span style={{ fontSize: 12, fontWeight: 600, padding: '3px 10px', borderRadius: 20, background: '#FEF3C7', color: '#92400E' }}>Pending</span>
                     }
                   </div>
@@ -2260,7 +2285,7 @@ export default function SettingsClient({
                   <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
                     {mb.is_me
                       ? <span style={{ fontSize: 11.5, color: 'var(--gray-400)', fontStyle: 'italic' }}>You</span>
-                      : <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--gray-400)', padding: 4 }}>
+                      : <button style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--gray-400)', padding: 4 }} title="Manage user">
                           <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor"><circle cx="5" cy="12" r="2"/><circle cx="12" cy="12" r="2"/><circle cx="19" cy="12" r="2"/></svg>
                         </button>
                     }
@@ -2302,6 +2327,17 @@ export default function SettingsClient({
           </Card>
         )}
       </div>
+
+      {memberModal && (
+        <MemberModal
+          member={memberModal.member}
+          onClose={() => setMemberModal(null)}
+          onDone={msg => { setMemberModal(null); setMemberNotice(msg); router.refresh() }}
+        />
+      )}
+      {showProfile && (
+        <ProfileModal onClose={() => setShowProfile(false)} onSaved={() => router.refresh()} />
+      )}
 
       {/* Roles & Permissions Modal */}
       {showRolesModal && (

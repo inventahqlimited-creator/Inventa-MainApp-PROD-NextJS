@@ -20,11 +20,10 @@ export default async function DashboardPage() {
   if (!membership) redirect('/login')
   const m = membership as { org_id: string; role: string; first_name: string | null; last_name: string | null }
 
+  // Order dates are plain dates; the six-month window starts on the 1st (local calendar date, not UTC-shifted)
   const now = new Date()
-  const thisMonthStart = new Date(now.getFullYear(), now.getMonth(), 1).toISOString()
-  const lastMonthStart = new Date(now.getFullYear(), now.getMonth() - 1, 1).toISOString()
-  const lastMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0).toISOString()
-  const sixMonthsAgo = new Date(now.getFullYear(), now.getMonth() - 5, 1).toISOString()
+  const sixMonthsAgoD = new Date(now.getFullYear(), now.getMonth() - 5, 1)
+  const sixMonthsAgo = `${sixMonthsAgoD.getFullYear()}-${String(sixMonthsAgoD.getMonth() + 1).padStart(2, '0')}-01`
 
   const [
     { data: salesOrders },
@@ -36,12 +35,12 @@ export default async function DashboardPage() {
   ] = await Promise.all([
     adminClient
       .from('sales_orders')
-      .select('id, so_number, status, order_date, total_amount, customer_name, location_id, expected_date, shipped_date')
+      .select('id, so_number, status, order_date, total_amount, customer_name, location_id, expected_date, shipped_date, created_at, closed_at')
       .eq('org_id', m.org_id)
       .gte('order_date', sixMonthsAgo),
     adminClient
       .from('purchase_orders')
-      .select('id, po_number, status, order_date, total_amount, supplier_name, expected_date')
+      .select('id, po_number, status, order_date, total_amount, supplier_name, expected_date, location_id')
       .eq('org_id', m.org_id)
       .order('created_at', { ascending: false })
       .limit(100),
@@ -78,9 +77,6 @@ export default async function DashboardPage() {
       locations={locations ?? []}
       displayName={displayName}
       orgName={orgName}
-      thisMonthStart={thisMonthStart}
-      lastMonthStart={lastMonthStart}
-      lastMonthEnd={lastMonthEnd}
     />
   )
 }

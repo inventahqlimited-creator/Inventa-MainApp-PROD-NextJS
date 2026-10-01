@@ -24,6 +24,7 @@ const ALLOWED_KEYS = [
   'default_shipping_method',
   'so_default_payment_terms',
   'so_default_ship_from',
+  'pick_list_settings',
 ]
 
 export async function PATCH(req: Request) {

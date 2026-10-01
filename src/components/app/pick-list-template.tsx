@@ -113,3 +113,42 @@ export default function PickListTemplate({
                     )
                   })}
                 </div>
+              </div>
+            ))}
+            <button type="button" className="btn-sm btn-sm-ghost" style={{ alignSelf: 'flex-start' }} onClick={() => setCfg(DEFAULT_PICK_LIST_CONFIG)}>Show everything</button>
+          </div>
+
+          {/* Preview */}
+          <div style={{ flex: 1, minWidth: 0, display: 'flex', flexDirection: 'column', background: 'var(--gray-50)' }}>
+            <div style={{ padding: '12px 18px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 10, flexShrink: 0 }}>
+              <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>Preview with sample data</div>
+              <div className="modal-seg" style={{ width: 'auto' }}>
+                {([['single', 'Single order'], ['consolidated-order', 'Consolidated · by order'], ['consolidated-product', 'Consolidated · by product']] as [PickListMode, string][]).map(([m, label]) => (
+                  <button key={m} type="button" onClick={() => setMode(m)} className={mode === m ? 'active' : ''} style={{ padding: '5px 12px', fontSize: 12, fontWeight: 600, border: 'none', borderRadius: 7, cursor: 'pointer', background: mode === m ? 'var(--white)' : 'transparent', color: mode === m ? 'var(--teal)' : 'var(--gray-400)', boxShadow: mode === m ? '0 1px 3px rgba(0,0,0,0.08)' : 'none' }}>{label}</button>
+                ))}
+              </div>
+            </div>
+            <div ref={pane} style={{ flex: 1, overflow: 'auto', padding: '0 16px 20px' }}>
+              <div style={{ width: PAGE_W * scale, height: frameH * scale, margin: '0 auto', position: 'relative' }}>
+                <iframe
+                  ref={frame}
+                  title="Pick list preview"
+                  srcDoc={html}
+                  sandbox="allow-same-origin"
+                  onLoad={measure}
+                  style={{ width: PAGE_W, height: frameH, border: 0, transform: `scale(${scale})`, transformOrigin: 'top left', position: 'absolute', left: 0, top: 0, background: 'transparent' }}
+                />
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div className="modal-footer">
+          {error && <span style={{ marginRight: 'auto', fontSize: 12.5, color: '#B91C1C' }}>{error}</span>}
+          <button className="btn btn-outline" onClick={onClose} disabled={saving}>Cancel</button>
+          <button className="btn btn-primary" onClick={save} disabled={saving || !dirty}>{saving ? 'Saving…' : 'Save template'}</button>
+        </div>
+      </div>
+    </div>
+  )
+}

@@ -18,7 +18,10 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   }
 
-  const { email, role } = await request.json()
+  const body = await request.json()
+  const { role } = body
+  const email = String(body.email ?? '').trim().toLowerCase()
+  const str = (v: unknown, max: number) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null)
   if (!email || !role) {
     return NextResponse.json({ error: 'email and role are required' }, { status: 400 })
   }
@@ -32,7 +35,7 @@ export async function POST(request: Request) {
     .from('org_members')
     .select('id, invite_status')
     .eq('org_id', m.org_id)
-    .eq('email', email)
+    .ilike('email', email)
     .maybeSingle()
 
   const existingMember = existing as { id: string; invite_status: string } | null
@@ -51,6 +54,10 @@ export async function POST(request: Request) {
       org_id: m.org_id,
       role,
       email,
+      first_name: str(body.first_name, 80),
+      last_name: str(body.last_name, 80),
+      phone: str(body.phone, 40),
+      designation: str(body.designation, 80),
       invite_status: 'pending',
       invited_at: new Date().toISOString(),
     })

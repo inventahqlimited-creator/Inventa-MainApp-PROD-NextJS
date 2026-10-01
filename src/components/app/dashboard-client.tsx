@@ -14,6 +14,8 @@ type SalesOrder = {
   location_id: string | null
   expected_date: string | null
   shipped_date: string | null
+  created_at: string | null
+  closed_at: string | null
 }
 
 type PurchaseOrder = {
@@ -24,6 +26,7 @@ type PurchaseOrder = {
   total_amount: number | null
   supplier_name: string | null
   expected_date: string | null
+  location_id?: string | null
 }
 
 type StockLevel = {
@@ -65,15 +68,47 @@ function fmtDate(d: string | null) {
   return new Date(d).toLocaleDateString('en-NZ', { day: 'numeric', month: 'short' })
 }
 
-function soStatusBadge(status: string) {
+// Sales order statuses in the database: Draft, Open (No Stock / Stock Available / Partial Stock), Picking
+// (Partially Picked / Partially Packed), Picked, Packed, Closed, Cancelled.
+function soGroup(status: string) {
   const s = status.toLowerCase()
-  if (s === 'draft') return <span className="badge badge-draft" style={{ fontSize: 11 }}>{status}</span>
-  if (s === 'open') return <span className="badge badge-open" style={{ fontSize: 11 }}>{status}</span>
-  if (s === 'picking') return <span className="badge" style={{ background: '#EDE9FE', color: '#5B21B6', fontSize: 11 }}>{status}</span>
-  if (s === 'shipped') return <span className="badge badge-partial" style={{ fontSize: 11 }}>{status}</span>
-  if (s === 'delivered') return <span className="badge badge-closed" style={{ fontSize: 11 }}>{status}</span>
-  if (s === 'cancelled') return <span className="badge badge-cancelled" style={{ fontSize: 11 }}>{status}</span>
-  return <span className="badge badge-draft" style={{ fontSize: 11 }}>{status}</span>
+  if (s === 'draft') return 'draft'
+  if (s === 'closed') return 'closed'
+  if (s === 'cancelled') return 'cancelled'
+  if (s === 'picked') return 'picked'
+  if (s === 'packed') return 'packed'
+  if (s === 'picking' || s === 'partially picked' || s === 'partially packed') return 'picking'
+  return 'open'
+}
+
+// "Live" orders = still being worked on (not draft, closed or cancelled)
+const isLiveSO = (status: string) => ['open', 'picking', 'picked', 'packed'].includes(soGroup(status))
+
+// Local calendar date as YYYY-MM-DD (toISOString shifts the day for NZ browsers)
+function ymd(d: Date) {
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+// "2.3 days" / "5.2 hrs" / "12 min" — average fulfil time reads best in the unit that fits
+function fmtDuration(ms: number) {
+  const min = ms / 60000
+  if (min < 60) return `${Math.max(1, Math.round(min))} min`
+  const hrs = min / 60
+  if (hrs < 24) return `${hrs.toFixed(1)} hrs`
+  const days = hrs / 24
+  return `${days.toFixed(1)} days`
+}
+
+function soStatusBadge(status: string) {
+  switch (soGroup(status)) {
+    case 'open': return <span className="badge badge-open" style={{ fontSize: 11 }}>Open</span>
+    case 'picking': return <span className="badge" style={{ background: '#EDE9FE', color: '#5B21B6', fontSize: 11 }}>Picking</span>
+    case 'picked': return <span className="badge" style={{ background: '#DBEAFE', color: '#1D4ED8', fontSize: 11 }}>Picked</span>
+    case 'packed': return <span className="badge" style={{ background: '#CCFBF1', color: '#0F766E', fontSize: 11 }}>Packed</span>
+    case 'closed': return <span className="badge badge-closed" style={{ fontSize: 11 }}>Closed</span>
+    case 'cancelled': return <span className="badge badge-cancelled" style={{ fontSize: 11 }}>Cancelled</span>
+    default: return <span className="badge badge-draft" style={{ fontSize: 11 }}>Draft</span>
+  }
 }
 
 function poStatusBadge(status: string) {
@@ -94,9 +129,6 @@ export default function DashboardClient({
   locations,
   displayName,
   orgName,
-  thisMonthStart,
-  lastMonthStart,
-  lastMonthEnd,
 }: {
   salesOrders: SalesOrder[]
   purchaseOrders: PurchaseOrder[]
@@ -105,15 +137,13 @@ export default function DashboardClient({
   locations: Location[]
   displayName: string
   orgName: string
-  thisMonthStart: string
-  lastMonthStart: string
-  lastMonthEnd: string
 }) {
   const router = useRouter()
   const [locFilter, setLocFilter] = useState('')
   const [locOpen, setLocOpen] = useState(false)
 
   const now = new Date()
+  const todayStr = ymd(now)
   const dateLabel = now.toLocaleDateString('en-NZ', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
 
   // Stock map
@@ -137,20 +167,18 @@ export default function DashboardClient({
     [salesOrders, locFilter]
   )
 
+  // Purchase orders follow the location filter too
+  const filteredPOs = useMemo(() =>
+    locFilter ? purchaseOrders.filter(p => p.location_id === locFilter) : purchaseOrders,
+    [purchaseOrders, locFilter]
+  )
+
   // KPIs
   const kpis = useMemo(() => {
-    const openSOs = filteredSOs.filter(s => !['delivered', 'cancelled', 'draft'].includes(s.status.toLowerCase()))
+    const openSOs = filteredSOs.filter(s => isLiveSO(s.status))
     const soVal = openSOs.reduce((sum, o) => sum + (o.total_amount ?? 0), 0)
 
-    const revThisMonth = filteredSOs
-      .filter(s => s.status.toLowerCase() === 'delivered' && s.order_date && s.order_date >= thisMonthStart)
-      .reduce((sum, o) => sum + (o.total_amount ?? 0), 0)
-    const revLastMonth = filteredSOs
-      .filter(s => s.status.toLowerCase() === 'delivered' && s.order_date && s.order_date >= lastMonthStart && s.order_date <= lastMonthEnd)
-      .reduce((sum, o) => sum + (o.total_amount ?? 0), 0)
-    const revDelta = revLastMonth > 0 ? ((revThisMonth - revLastMonth) / revLastMonth * 100).toFixed(1) : null
-
-    const openPOs = purchaseOrders.filter(p => ['open', 'partially received'].includes(p.status.toLowerCase()))
+    const openPOs = filteredPOs.filter(p => ['open', 'partially received'].includes(p.status.toLowerCase()))
     const incomingVal = openPOs.reduce((sum, p) => sum + (p.total_amount ?? 0), 0)
 
     const stockProds = products.filter(p => p.type === 'Stock' && p.track_stock)
@@ -159,27 +187,37 @@ export default function DashboardClient({
       return sum + oh * (p.avg_cost ?? p.cost_price ?? 0)
     }, 0)
 
-    const nonDraft = filteredSOs.filter(s => s.status.toLowerCase() !== 'draft')
-    const fillRate = nonDraft.length ? Math.round(filteredSOs.filter(s => s.status.toLowerCase() === 'delivered').length / nonDraft.length * 100) : 100
+    // Fulfilled rate = Closed orders ÷ all real orders (everything except Draft and Cancelled)
+    const closedCount = filteredSOs.filter(s => soGroup(s.status) === 'closed').length
+    const realCount = filteredSOs.filter(s => !['draft', 'cancelled'].includes(soGroup(s.status))).length
+    const fillRate = realCount ? Math.round(closedCount / realCount * 100) : null
 
-    return { openSOs, soVal, revThisMonth, revDelta, openPOs, incomingVal, invVal, fillRate }
-  }, [filteredSOs, purchaseOrders, products, stockMap, thisMonthStart, lastMonthStart, lastMonthEnd])
+    // Average time to fulfil = created → closed, over Closed orders that have both timestamps
+    const timed = filteredSOs
+      .filter(s => soGroup(s.status) === 'closed' && s.created_at && s.closed_at)
+      .map(s => new Date(s.closed_at as string).getTime() - new Date(s.created_at as string).getTime())
+      .filter(ms => Number.isFinite(ms) && ms >= 0)
+    const avgFulfilMs = timed.length ? timed.reduce((a, b) => a + b, 0) / timed.length : null
 
-  // 6-month sales trend
+    return { openSOs, soVal, openPOs, incomingVal, invVal, fillRate, closedCount, realCount, avgFulfilMs, timedCount: timed.length }
+  }, [filteredSOs, filteredPOs, products, stockMap])
+
+  // 6-month sales trend (all real orders — not Draft, not Cancelled — by order date)
   const salesTrend = useMemo(() => {
     const months = []
     for (let i = 5; i >= 0; i--) {
       const d = new Date(now.getFullYear(), now.getMonth() - i, 1)
       const nextD = new Date(now.getFullYear(), now.getMonth() - i + 1, 1)
-      const monthStart = d.toISOString().split('T')[0]
-      const monthEnd = nextD.toISOString().split('T')[0]
+      const monthStart = ymd(d)
+      const monthEnd = ymd(nextD)
       const label = d.toLocaleDateString('en-NZ', { month: 'short' })
-      const monthSOs = filteredSOs.filter(s => s.order_date && s.order_date >= monthStart && s.order_date < monthEnd && s.status.toLowerCase() !== 'cancelled')
+      const monthSOs = filteredSOs.filter(s => s.order_date && s.order_date.slice(0, 10) >= monthStart && s.order_date.slice(0, 10) < monthEnd && !['draft', 'cancelled'].includes(soGroup(s.status)))
       const val = monthSOs.reduce((sum, o) => sum + (o.total_amount ?? 0), 0)
       months.push({ label, val, isLast: i === 0 })
     }
     return months
-  }, [filteredSOs, now])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [filteredSOs])
 
   // Inventory health
   const invHealth = useMemo(() => {
@@ -210,8 +248,8 @@ export default function DashboardClient({
 
   // Recent POs
   const recentPOs = useMemo(() =>
-    [...purchaseOrders].slice(0, 6),
-    [purchaseOrders]
+    [...filteredPOs].slice(0, 6),
+    [filteredPOs]
   )
 
   // Chart dimensions
@@ -272,8 +310,8 @@ export default function DashboardClient({
         {[
           {
             label: 'Total Stock Value', val: fmt(kpis.invVal),
-            delta: kpis.revDelta != null ? `${Number(kpis.revDelta) >= 0 ? '↑' : '↓'} ${Math.abs(Number(kpis.revDelta))}% vs last month` : 'across all locations',
-            up: kpis.revDelta == null || Number(kpis.revDelta) >= 0, bg: '#0d9488',
+            delta: locFilter ? `at ${locName}` : 'across all locations',
+            up: true, bg: '#0d9488',
             icon: 'M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z',
           },
           {
@@ -289,16 +327,16 @@ export default function DashboardClient({
             icon: 'M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M17 8l-5-5-5 5M12 3v12',
           },
           {
-            label: 'Fill Rate', val: `${kpis.fillRate}%`,
-            delta: 'orders fulfilled',
-            up: kpis.fillRate >= 80, bg: '#10B981',
+            label: 'Fulfilled Rate', val: kpis.fillRate == null ? '—' : `${kpis.fillRate}%`,
+            delta: kpis.realCount ? `${kpis.closedCount} of ${kpis.realCount} orders closed` : 'no orders yet',
+            up: kpis.fillRate == null || kpis.fillRate >= 80, bg: '#10B981',
             icon: 'M22 11.08V12a10 10 0 1 1-5.93-9.14M22 4L12 14.01l-3-3',
           },
           {
-            label: 'Out of Stock SKUs', val: String(invHealth.outStock),
-            delta: `of ${invHealth.total} tracked SKUs`,
-            up: invHealth.outStock === 0, bg: '#EF4444',
-            icon: 'M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0zM12 9v4M12 17h.01',
+            label: 'Avg Time to Fulfil', val: kpis.avgFulfilMs == null ? '—' : fmtDuration(kpis.avgFulfilMs),
+            delta: kpis.timedCount ? `created → closed · ${kpis.timedCount} order${kpis.timedCount !== 1 ? 's' : ''}` : 'no closed orders yet',
+            up: true, bg: '#8B5CF6',
+            icon: 'M12 2a10 10 0 1 0 0 20 10 10 0 0 0 0-20zM12 6v6l4 2',
           },
         ].map((k, i) => (
           <div key={i} className="kpi-card" style={{ position: 'relative', overflow: 'hidden' }}>
@@ -488,7 +526,7 @@ export default function DashboardClient({
           ) : (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
               {noStockProds.map(p => (
-                <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 10, cursor: 'pointer' }} onClick={() => router.push('/products')}>
+                <div key={p.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 12px', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 10, cursor: 'pointer' }} onClick={() => router.push(`/products?open=${p.id}`)}>
                   <div>
                     <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--slate)' }}>{p.name}</div>
                     {p.sku && <div style={{ fontSize: 11, color: 'var(--gray-400)', fontFamily: 'monospace' }}>{p.sku}</div>}
@@ -506,7 +544,7 @@ export default function DashboardClient({
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {/* Overdue SOs */}
             {(() => {
-              const overdue = filteredSOs.filter(s => s.expected_date && new Date(s.expected_date) < now && !['delivered', 'cancelled'].includes(s.status.toLowerCase()))
+              const overdue = filteredSOs.filter(s => s.expected_date && s.expected_date.slice(0, 10) < todayStr && isLiveSO(s.status))
               return overdue.length > 0 ? (
                 <div style={{ padding: '10px 14px', background: '#FEF2F2', border: '1.5px solid #FECACA', borderRadius: 10 }}>
                   <div style={{ fontWeight: 700, color: '#991B1B', fontSize: 13 }}>⚠ {overdue.length} Overdue Sales Order{overdue.length > 1 ? 's' : ''}</div>
@@ -517,7 +555,7 @@ export default function DashboardClient({
             })()}
             {/* Overdue POs */}
             {(() => {
-              const overduePOs = purchaseOrders.filter(p => p.expected_date && new Date(p.expected_date) < now && ['open', 'partially received'].includes(p.status.toLowerCase()))
+              const overduePOs = filteredPOs.filter(p => p.expected_date && p.expected_date.slice(0, 10) < todayStr && ['open', 'partially received'].includes(p.status.toLowerCase()))
               return overduePOs.length > 0 ? (
                 <div style={{ padding: '10px 14px', background: '#FEF3C7', border: '1.5px solid #FDE68A', borderRadius: 10 }}>
                   <div style={{ fontWeight: 700, color: '#92400E', fontSize: 13 }}>⚠ {overduePOs.length} Overdue Purchase Order{overduePOs.length > 1 ? 's' : ''}</div>
@@ -535,8 +573,8 @@ export default function DashboardClient({
               </div>
             )}
             {/* All good */}
-            {filteredSOs.filter(s => s.expected_date && new Date(s.expected_date) < now && !['delivered', 'cancelled'].includes(s.status.toLowerCase())).length === 0 &&
-              purchaseOrders.filter(p => p.expected_date && new Date(p.expected_date) < now && ['open', 'partially received'].includes(p.status.toLowerCase())).length === 0 &&
+            {filteredSOs.filter(s => s.expected_date && s.expected_date.slice(0, 10) < todayStr && isLiveSO(s.status)).length === 0 &&
+              filteredPOs.filter(p => p.expected_date && p.expected_date.slice(0, 10) < todayStr && ['open', 'partially received'].includes(p.status.toLowerCase())).length === 0 &&
               invHealth.lowStock === 0 && (
                 <div style={{ textAlign: 'center', padding: '24px 0', color: 'var(--gray-400)', fontSize: 13 }}>
                   <div style={{ fontSize: 22, marginBottom: 8 }}>✓</div>

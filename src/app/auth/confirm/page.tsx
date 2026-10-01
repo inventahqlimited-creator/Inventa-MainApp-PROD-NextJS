@@ -13,6 +13,15 @@ export default function AuthConfirmPage() {
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     )
 
+    // Newer Supabase links arrive as ?code=… (PKCE) — exchange it for a session, then set the password
+    const code = new URLSearchParams(window.location.search).get('code')
+    if (code) {
+      supabase.auth.exchangeCodeForSession(code).then(({ error }) => {
+        router.replace(error ? '/login?error=session_failed' : '/auth/update-password')
+      })
+      return
+    }
+
     const hash = window.location.hash.substring(1)
     const params = new URLSearchParams(hash)
     const accessToken = params.get('access_token')

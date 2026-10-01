@@ -1,11 +1,9 @@
 'use client'
 // src/components/app/reports-home.tsx
-// The Reports landing page: every report grouped by section, with search and a "recently run" strip.
-import { useEffect, useMemo, useState } from 'react'
+// The Reports landing page: every report grouped by section, with search.
+import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import { REPORTS, SECTIONS, type ReportDef } from '@/lib/reports/registry'
-
-const RECENT_KEY = 'inv-reports-recent'
 
 function Icon({ d, size = 18 }: { d: string; size?: number }) {
   return (
@@ -17,15 +15,6 @@ function Icon({ d, size = 18 }: { d: string; size?: number }) {
 
 export default function ReportsHome() {
   const [q, setQ] = useState('')
-  const [recent, setRecent] = useState<string[]>([])
-
-  useEffect(() => {
-    try {
-      const raw = localStorage.getItem(RECENT_KEY)
-      const ids = raw ? (JSON.parse(raw) as string[]) : []
-      setRecent(ids.filter(id => REPORTS.some(r => r.id === id)).slice(0, 4))
-    } catch { /* storage unavailable — no recent strip */ }
-  }, [])
 
   const term = q.trim().toLowerCase()
   const matches = (r: ReportDef) => {
@@ -35,18 +24,14 @@ export default function ReportsHome() {
   }
   const sectionOf = (id: string) => SECTIONS.find(s => s.id === id)!
   const shown = useMemo(() => REPORTS.filter(matches), [term]) // eslint-disable-line react-hooks/exhaustive-deps
-  const recentDefs = recent.map(id => REPORTS.find(r => r.id === id)).filter((r): r is ReportDef => !!r)
 
   const Card = ({ r }: { r: ReportDef }) => {
     const s = sectionOf(r.section)
-    const nFilters = r.filters.filter(f => f.key !== 'q').length
     return (
       <Link href={`/reports/${r.id}`} className="rp-card" style={{ ['--c' as string]: s.color, ['--bg' as string]: s.bg }}>
-        <span className="rp-ico"><Icon d={s.icon} /></span>
         <span className="rp-body">
           <span className="rp-title">{r.title}</span>
           <span className="rp-desc">{r.desc}</span>
-          <span className="rp-meta">{nFilters} filters · CSV · Excel · PDF</span>
         </span>
         <span className="rp-arrow"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14M13 6l6 6-6 6" /></svg></span>
       </Link>
@@ -54,7 +39,7 @@ export default function ReportsHome() {
   }
 
   return (
-    <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 22 }}>
+    <div style={{ padding: 20, display: 'flex', flexDirection: 'column', gap: 44 }}>
       <style>{`
         .rp-hero{background:linear-gradient(135deg,var(--slate) 0%,var(--slate-mid) 60%,#0D9488 140%);border-radius:18px;padding:26px 28px;display:flex;align-items:center;justify-content:space-between;gap:20px;flex-wrap:wrap;color:#fff;box-shadow:var(--shadow-sm);}
         .rp-hero h1{font-family:var(--font-display);font-size:26px;font-weight:800;letter-spacing:-0.03em;margin:0;}
@@ -69,7 +54,7 @@ export default function ReportsHome() {
         .rp-sec-title{font-family:var(--font-display);font-size:16px;font-weight:800;color:var(--slate);letter-spacing:-0.02em;line-height:1.1;}
         .rp-sec-blurb{font-size:12px;color:var(--gray-400);margin-top:2px;}
         .rp-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:12px;}
-        .rp-card{position:relative;display:flex;gap:14px;align-items:flex-start;background:var(--white);border:1.5px solid var(--gray-100);border-radius:14px;padding:16px 44px 16px 16px;text-decoration:none;color:inherit;box-shadow:0 1px 2px rgba(0,0,0,0.03);transition:transform var(--transition),box-shadow var(--transition),border-color var(--transition);}
+        .rp-card{position:relative;display:flex;gap:14px;align-items:flex-start;background:var(--white);border:1.5px solid var(--gray-100);border-radius:14px;padding:18px 44px 18px 18px;text-decoration:none;color:inherit;box-shadow:0 1px 2px rgba(0,0,0,0.03);transition:transform var(--transition),box-shadow var(--transition),border-color var(--transition);}
         .rp-card:hover{transform:translateY(-2px);border-color:var(--c);box-shadow:0 10px 28px rgba(15,45,53,0.10);}
         .rp-ico{flex:none;width:38px;height:38px;border-radius:11px;display:flex;align-items:center;justify-content:center;background:var(--bg);color:var(--c);}
         .rp-body{display:flex;flex-direction:column;gap:3px;min-width:0;}
@@ -94,18 +79,6 @@ export default function ReportsHome() {
           <input value={q} onChange={e => setQ(e.target.value)} placeholder="Find a report…" aria-label="Find a report" />
         </div>
       </div>
-
-      {!term && recentDefs.length > 0 && (
-        <div>
-          <div className="rp-sec-blurb" style={{ marginBottom: 8, fontWeight: 600, letterSpacing: '0.08em', textTransform: 'uppercase', fontSize: 10.5 }}>Recently run</div>
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-            {recentDefs.map(r => {
-              const s = sectionOf(r.section)
-              return <Link key={r.id} href={`/reports/${r.id}`} className="rp-chip" style={{ ['--c' as string]: s.color, ['--bg' as string]: s.bg }}><i />{r.title}</Link>
-            })}
-          </div>
-        </div>
-      )}
 
       {SECTIONS.map(s => {
         const list = shown.filter(r => r.section === s.id)

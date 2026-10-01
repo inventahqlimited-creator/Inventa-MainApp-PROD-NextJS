@@ -36,7 +36,7 @@ export async function loadPickData(db: Db, orgId: string, ids: string[], allowed
   const onScreen = new Set(orders.map(o => o.id))
 
   const empty = Promise.resolve({ data: [] })
-  const [{ data: org }, { data: products }, { data: levels }, { data: groups }, { data: bins }, { data: picks }] = await Promise.all([
+  const [{ data: org }, { data: products }, { data: levels }, { data: groups }, { data: bins }, { data: picks }, { data: trPicks }] = await Promise.all([
     db.from('organisations').select('allow_over_picking, auto_picking, picking_rule, fulfilment_mode').eq('id', orgId).single(),
     productIds.length ? db.from('products').select('id, track_stock, type, batch_tracking, serial_tracking, expiry_tracking').in('id', productIds) : empty,
     productIds.length ? db.from('stock_levels').select('product_id, location_id, quantity').eq('org_id', orgId).in('location_id', locationIds).in('product_id', productIds) : empty,
@@ -44,6 +44,8 @@ export async function loadPickData(db: Db, orgId: string, ids: string[], allowed
       .eq('org_id', orgId).in('location_id', locationIds).in('product_id', productIds).gt('quantity', 0) : empty,
     db.from('bins').select('id, name').eq('org_id', orgId).in('location_id', locationIds),
     productIds.length ? db.from('sales_order_picks').select('so_id, so_line_id, product_id, location_id, stock_group_id, qty').eq('org_id', orgId).in('location_id', locationIds).in('product_id', productIds) : empty,
+    // stock reserved by transfer picks is not available to sales either
+    productIds.length ? db.from('transfer_order_picks').select('stock_group_id, product_id, location_id, qty').eq('org_id', orgId).in('location_id', locationIds).in('product_id', productIds) : empty,
   ])
 
   type P = { id: string; track_stock: boolean | null; type: string | null; batch_tracking: boolean | null; serial_tracking: boolean | null; expiry_tracking: boolean | null }
@@ -62,6 +64,14 @@ export async function loadPickData(db: Db, orgId: string, ids: string[], allowed
   const othersUntracked = new Map<string, number>()
   for (const k of allPicks) {
     if (onScreen.has(k.so_id)) continue
+    if (k.stock_group_id) othersOnGroup.set(k.stock_group_id, (othersOnGroup.get(k.stock_group_id) ?? 0) + Number(k.qty))
+    else {
+      const key = `${k.product_id}|${k.location_id}`
+      othersUntracked.set(key, (othersUntracked.get(key) ?? 0) + Number(k.qty))
+    }
+  }
+
+  for (const k of (trPicks ?? []) as { stock_group_id: string | null; product_id: string; location_id: string; qty: number }[]) {
     if (k.stock_group_id) othersOnGroup.set(k.stock_group_id, (othersOnGroup.get(k.stock_group_id) ?? 0) + Number(k.qty))
     else {
       const key = `${k.product_id}|${k.location_id}`

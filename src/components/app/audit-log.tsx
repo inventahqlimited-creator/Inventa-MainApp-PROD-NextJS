@@ -175,7 +175,7 @@ export default function AuditLog({ allowed }: { allowed: boolean }) {
               <th style={{ width: 150 }}>TIMESTAMP</th>
               <th style={{ width: 120 }}>CATEGORY</th>
               <th style={{ width: 180 }}>ACTION</th>
-              <th style={{ width: 130 }}>REFERENCE</th>
+              <th style={{ width: 170 }}>REFERENCE</th>
               <th>DETAIL</th>
               <th style={{ width: 160 }}>USER</th>
             </tr>
@@ -197,12 +197,12 @@ export default function AuditLog({ allowed }: { allowed: boolean }) {
                   <td style={{ padding: '10px 14px' }}>
                     <span style={{ background: bg, color, fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 20, whiteSpace: 'nowrap' }}>{e.category}</span>
                   </td>
-                  <td style={{ padding: '10px 14px', fontSize: 12.5, color: 'var(--gray-400)', wordBreak: 'break-word' }}>{e.action}</td>
-                  <td style={{ padding: '10px 14px', fontSize: 12.5, fontFamily: 'var(--font-display)', fontWeight: 700, color: 'var(--teal)', wordBreak: 'break-word' }}>
+                  <td style={{ padding: '10px 14px', fontSize: 12.5, color: 'var(--gray-400)', overflowWrap: 'anywhere' }}>{e.action}</td>
+                  <td style={{ padding: '10px 14px', fontSize: 12.5, fontFamily: 'var(--font-display)', fontWeight: 700, color: 'var(--teal)', overflowWrap: 'anywhere' }}>
                     {href ? <a href={href} onClick={ev => { ev.preventDefault(); router.push(href) }} style={{ color: 'inherit', textDecoration: 'none' }}>{e.ref}</a> : e.ref}
                   </td>
-                  <td style={{ padding: '10px 14px', fontSize: 12.5, color: 'var(--gray-400)', lineHeight: 1.5, wordBreak: 'break-word' }}>{e.detail}</td>
-                  <td style={{ padding: '10px 14px', fontSize: 12, fontWeight: 600, color: 'var(--slate)', wordBreak: 'break-word' }}>{e.user_name ?? '—'}</td>
+                  <td style={{ padding: '10px 14px', fontSize: 12.5, color: 'var(--gray-400)', lineHeight: 1.5, overflowWrap: 'anywhere' }}>{e.detail}</td>
+                  <td style={{ padding: '10px 14px', fontSize: 12, fontWeight: 600, color: 'var(--slate)', overflowWrap: 'anywhere' }}>{e.user_name ?? '—'}</td>
                 </tr>
               )
             })}

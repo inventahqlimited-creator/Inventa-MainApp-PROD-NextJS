@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import MemberModal from './member-modal'
 import ProfileModal from './profile-modal'
+import PickListTemplate from '@/components/app/pick-list-template'
+import { normalizePickListConfig, type PickListConfig } from '@/lib/pick-list/config'
 
 type Org = Record<string, unknown>
 type Location = {
@@ -1458,6 +1460,8 @@ export default function SettingsClient({
   const [savingSoNumbering, setSavingSoNumbering] = useState(false)
   const [savingShippingDefaults, setSavingShippingDefaults] = useState(false)
   const [savingSoDefaults, setSavingSoDefaults] = useState(false)
+  const [pickListCfg, setPickListCfg] = useState<PickListConfig>(() => normalizePickListConfig(org.pick_list_settings))
+  const [pickListOpen, setPickListOpen] = useState(false)
 
   async function saveFulfilment() {
     setSavingFulfilment(true)
@@ -2175,6 +2179,33 @@ export default function SettingsClient({
                 </Field>
               </div>
             </Card>
+            <Card title="Sales Documents" subtitle="Choose what appears on the documents you print from sales orders">
+              <div style={{ padding: '8px 12px' }}>
+                <button
+                  type="button"
+                  onClick={() => setPickListOpen(true)}
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 14, padding: '12px 10px', background: 'transparent', border: 'none', borderRadius: 10, cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--gray-50)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                >
+                  <span style={{ width: 36, height: 36, borderRadius: 10, background: 'var(--teal-surface)', color: 'var(--teal)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M9 13h6M9 17h6" /></svg>
+                  </span>
+                  <span style={{ flex: 1 }}>
+                    <span style={{ display: 'block', fontSize: 13.5, fontWeight: 600, color: 'var(--slate)', fontFamily: 'var(--font-display)' }}>Pick List</span>
+                    <span style={{ display: 'block', fontSize: 12.5, color: 'var(--gray-400)', marginTop: 2 }}>Columns, barcode, totals and signature lines on the printed pick list</span>
+                  </span>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--gray-300)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+                </button>
+              </div>
+            </Card>
+            {pickListOpen && (
+              <PickListTemplate
+                initial={pickListCfg}
+                onClose={() => setPickListOpen(false)}
+                onSaved={cfg => { setPickListCfg(cfg); setPickListOpen(false); showToast('success', 'Pick list template saved') }}
+              />
+            )}
           </>
         )}
 

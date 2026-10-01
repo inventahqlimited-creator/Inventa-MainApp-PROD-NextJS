@@ -2,6 +2,8 @@
 
 import { useState, useMemo, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import PickListMenu from '@/components/app/pick-list-menu'
+import { printPickList } from '@/lib/pick-list/print'
 
 type Order = {
   id: string
@@ -227,6 +229,8 @@ export default function SalesTable({
   const toPick = selectedOrders.filter(o => statusKey(o.status) === 'open')
   const toPack = selectedOrders.filter(o => statusKey(o.status) === 'picked')
   const toClose = selectedOrders.filter(o => statusKey(o.status) === 'packed')
+  // Orders a pick list can be printed for (anything that has been, or can be, picked)
+  const toPrint = selectedOrders.filter(o => ['open', 'picking', 'picked', 'packed'].includes(statusKey(o.status)))
   const pickEnabled = fulfilmentMode !== 'none'
   const packEnabled = fulfilmentMode === 'full'
 
@@ -434,6 +438,7 @@ export default function SalesTable({
               {!(pickEnabled && toPick.length > 0) && !(packEnabled && toPack.length > 0) && toClose.length === 0 && (
                 <span style={{ fontSize: 12.5, color: 'var(--gray-400)' }}>No selected order is ready to pick, pack or close.</span>
               )}
+              {toPrint.length > 0 && <PickListMenu ids={toPrint.map(o => o.id)} size="sm" onError={msg => flash(false, msg)} />}
               <button className="btn-sm btn-sm-ghost" style={{ marginLeft: 'auto' }} onClick={() => setSelected(new Set())}>✕ Clear</button>
             </div>
           ) : (
@@ -577,7 +582,13 @@ export default function SalesTable({
             {item('Print', () => setMenu(m => (m ? { ...m, printOpen: !m.printOpen } : m)), { icon: ic('M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6z'), chevron: true })}
             {menu.printOpen && (
               <div style={{ paddingLeft: 16 }}>
-                {item('Pick List', null, { soon: true })}
+                {['open', 'picking', 'picked', 'packed'].includes(k)
+                  ? item('Pick List', async () => {
+                      setMenu(null)
+                      const res = await printPickList([o.id], 'single')
+                      if (!res.ok) flash(false, `${o.so_number}: ${res.error}`)
+                    })
+                  : null}
                 {item('Packing List', null, { soon: true })}
                 {item('Invoice', null, { soon: true })}
               </div>

@@ -1,7 +1,7 @@
-import { createAdminClient } from '@/lib/supabase/server'
-import { createClient } from '@/lib/supabase/server'
+// src/app/(app)/transfers/new/page.tsx
+import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import NewTransfer from '@/components/app/new-transfer'
+import TransferForm from '@/components/app/transfer-form'
 
 export default async function NewTransferPage() {
   const supabase = await createClient()
@@ -9,38 +9,37 @@ export default async function NewTransferPage() {
   if (!user) redirect('/login')
 
   const adminClient = createAdminClient()
-
   const { data: membership } = await adminClient
     .from('org_members')
     .select('org_id, role')
     .eq('user_id', user.id)
     .eq('invite_status', 'accepted')
     .single()
-
   if (!membership) redirect('/login')
   const m = membership as { org_id: string; role: string }
 
-  const [{ data: locations }, { data: products }] = await Promise.all([
-    adminClient
-      .from('locations')
-      .select('id, name')
-      .eq('org_id', m.org_id)
-      .eq('active', true)
-      .order('name'),
-    adminClient
-      .from('products')
-      .select('id, name, sku, sell_uom, track_stock, type')
-      .eq('org_id', m.org_id)
-      .eq('is_active', true)
-      .eq('track_stock', true)
-      .order('name'),
+  const [{ data: locations }, { data: products }, { data: stockLevels }, { data: bins }, { data: org }] = await Promise.all([
+    adminClient.from('locations').select('id, name, address, city, country, phone, email').eq('org_id', m.org_id).eq('active', true).order('name'),
+    adminClient.from('products').select('id, name, sku, sell_uom, track_stock, type').eq('org_id', m.org_id).eq('is_active', true).eq('track_stock', true).eq('type', 'Stock').order('name'),
+    adminClient.from('stock_levels').select('product_id, location_id, quantity, committed').eq('org_id', m.org_id),
+    adminClient.from('bins').select('id, name, location_id').eq('org_id', m.org_id).order('name'),
+    adminClient.from('organisations').select('so_default_ship_from').eq('id', m.org_id).single(),
   ])
 
   return (
-    <NewTransfer
+    <TransferForm
       orgId={m.org_id}
-      locations={locations ?? []}
-      products={products ?? []}
+      transfer={null}
+      lines={[]}
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      locations={(locations ?? []) as any}
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      products={(products ?? []) as any}
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      stockLevels={(stockLevels ?? []) as any}
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      bins={(bins ?? []) as any}
+      defaultFromId={(org as { so_default_ship_from?: string | null } | null)?.so_default_ship_from ?? null}
     />
   )
 }

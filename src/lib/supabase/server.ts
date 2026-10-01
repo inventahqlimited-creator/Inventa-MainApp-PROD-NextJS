@@ -42,12 +42,39 @@ export async function createClient() {
 export function createAdminClient() {
   // Dynamic import to prevent accidental client-side bundling
   // eslint-disable-next-line @typescript-eslint/no-require-imports
-  // eslint-disable-next-line @typescript-eslint/no-require-imports
   const { createClient: createSupabaseClient } = require('@supabase/supabase-js')
+
+  // Audit log: every write carries the signed-in user's id (x-inventa-user header) so the database can
+  // record who did it. Looked up once per client, and only for writes — reads are untouched.
+  let uidPromise: Promise<string | null> | null = null
+  const currentUserId = () => {
+    if (!uidPromise) {
+      uidPromise = (async () => {
+        try {
+          const supabase = await createClient()
+          const { data: { session } } = await supabase.auth.getSession()
+          return session?.user?.id ?? null
+        } catch {
+          return null // outside a request (scripts, webhooks) — logged as System
+        }
+      })()
+    }
+    return uidPromise
+  }
+  const auditFetch = async (input: RequestInfo | URL, init?: RequestInit) => {
+    const method = (init?.method ?? (input instanceof Request ? input.method : 'GET')).toUpperCase()
+    if (method === 'GET' || method === 'HEAD') return fetch(input, init)
+    const uid = await currentUserId()
+    if (!uid) return fetch(input, init)
+    const headers = new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined))
+    headers.set('x-inventa-user', uid)
+    return fetch(input, { ...init, headers })
+  }
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   return createSupabaseClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.SUPABASE_SERVICE_ROLE_KEY!,
-    { auth: { autoRefreshToken: false, persistSession: false } }
+    { auth: { autoRefreshToken: false, persistSession: false }, global: { fetch: auditFetch } }
   )
 }

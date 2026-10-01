@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import PickListMenu from '@/components/app/pick-list-menu'
 import { printPickList } from '@/lib/pick-list/print'
+import { printPackingList } from '@/lib/packing-list/print'
 
 type Order = {
   id: string
@@ -231,6 +232,8 @@ export default function SalesTable({
   const toClose = selectedOrders.filter(o => statusKey(o.status) === 'packed')
   // Orders a pick list can be printed for (anything that has been, or can be, picked)
   const toPrint = selectedOrders.filter(o => ['open', 'picking', 'picked', 'packed'].includes(statusKey(o.status)))
+  // Orders a packing list can be printed for (something has been picked, up to and including closed)
+  const toPrintPacking = selectedOrders.filter(o => ['picking', 'picked', 'packed', 'closed'].includes(statusKey(o.status)))
   const pickEnabled = fulfilmentMode !== 'none'
   const packEnabled = fulfilmentMode === 'full'
 
@@ -438,7 +441,7 @@ export default function SalesTable({
               {!(pickEnabled && toPick.length > 0) && !(packEnabled && toPack.length > 0) && toClose.length === 0 && (
                 <span style={{ fontSize: 12.5, color: 'var(--gray-400)' }}>No selected order is ready to pick, pack or close.</span>
               )}
-              {toPrint.length > 0 && <PickListMenu ids={toPrint.map(o => o.id)} size="sm" onError={msg => flash(false, msg)} />}
+              {(toPrint.length > 0 || toPrintPacking.length > 0) && <PickListMenu ids={toPrint.map(o => o.id)} packIds={toPrintPacking.map(o => o.id)} size="sm" onError={msg => flash(false, msg)} />}
               <button className="btn-sm btn-sm-ghost" style={{ marginLeft: 'auto' }} onClick={() => setSelected(new Set())}>✕ Clear</button>
             </div>
           ) : (
@@ -589,7 +592,13 @@ export default function SalesTable({
                       if (!res.ok) flash(false, `${o.so_number}: ${res.error}`)
                     })
                   : null}
-                {item('Packing List', null, { soon: true })}
+                {['picking', 'picked', 'packed', 'closed'].includes(k)
+                  ? item('Packing List', async () => {
+                      setMenu(null)
+                      const res = await printPackingList([o.id])
+                      if (!res.ok) flash(false, `${o.so_number}: ${res.error}`)
+                    })
+                  : null}
                 {item('Invoice', null, { soon: true })}
               </div>
             )}

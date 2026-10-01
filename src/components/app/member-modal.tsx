@@ -38,6 +38,7 @@ export default function MemberModal({ member, onClose, onDone }: {
     email: member?.email ?? '', role: member?.role ?? 'staff',
   })
   const [roleOpen, setRoleOpen] = useState(false)
+  const [ddPos, setDdPos] = useState<{ left: number; top: number; width: number } | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [notice, setNotice] = useState<string | null>(null)
@@ -124,7 +125,7 @@ export default function MemberModal({ member, onClose, onDone }: {
           </button>
         </div>
 
-        <div className="modal-body">
+        <div className="modal-body" onScroll={() => setRoleOpen(false)}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
             <div style={{ width: 64, height: 64, borderRadius: '50%', flexShrink: 0, overflow: 'hidden', background: 'var(--grad)', color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 22 }}>
               {member?.avatar_url
@@ -164,12 +165,19 @@ export default function MemberModal({ member, onClose, onDone }: {
             <div className="modal-field" data-dropdown onClick={e => e.stopPropagation()}>
               <label className="modal-label">User level</label>
               <div style={{ position: 'relative' }}>
-                <button className="modal-dd-btn" type="button" onClick={() => setRoleOpen(o => !o)}>
+                <button className="modal-dd-btn" type="button" onClick={e => {
+                  if (roleOpen) { setRoleOpen(false); return }
+                  const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+                  const menuH = 4 * 36 + 40
+                  const top = window.innerHeight - r.bottom < menuH + 12 ? Math.max(8, r.top - menuH - 6) : r.bottom + 6
+                  setDdPos({ left: r.left, top, width: Math.max(r.width, 190) })
+                  setRoleOpen(true)
+                }}>
                   <span>{ROLE_LABELS[form.role] ?? form.role}</span>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg>
                 </button>
-                {roleOpen && (
-                  <div className="inv-dropdown filter-pick-dropdown" style={{ display: 'block', minWidth: 170 }}>
+                {roleOpen && ddPos && (
+                  <div className="inv-dropdown filter-pick-dropdown" style={{ display: 'block', position: 'fixed', left: ddPos.left, top: ddPos.top, right: 'auto', width: ddPos.width, zIndex: 1000 }}>
                     <div className="col-dropdown-title">User level</div>
                     {ROLE_OPTIONS.map(([k, label]) => (
                       <div key={k} className={`fp-item${form.role === k ? ' active' : ''}`} onClick={() => { set('role', k); setRoleOpen(false) }}>{label}</div>
@@ -192,14 +200,11 @@ export default function MemberModal({ member, onClose, onDone }: {
                 <button type="button" className="btn btn-outline" onClick={resendInvite} disabled={busy !== null}>{busy === 'resend' ? 'Sending…' : 'Resend invite'}</button>)}
               {!pending && !inactive && row('Password', "We'll email them a secure link to set a new password.",
                 <button type="button" className="btn btn-outline" onClick={resetPassword} disabled={busy !== null}>{busy === 'reset' ? 'Sending…' : 'Reset password'}</button>)}
-              {!pending && row('Access', inactive ? 'Inactive — they cannot sign in.' : 'Active — they can sign in.',
-                confirm === 'status'
-                  ? <>
-                      <button type="button" className="btn btn-outline" onClick={() => setConfirm(null)} disabled={busy !== null}>Keep as is</button>
-                      <button type="button" className="btn btn-primary" onClick={toggleStatus} disabled={busy !== null}
-                        style={inactive ? undefined : { background: 'var(--danger)', borderColor: 'var(--danger)' }}>{busy === 'status' ? 'Please wait…' : inactive ? 'Yes, make active' : 'Yes, make inactive'}</button>
-                    </>
-                  : <button type="button" className="btn btn-outline" onClick={() => setConfirm('status')} disabled={busy !== null}>{inactive ? 'Make active' : 'Make inactive'}</button>)}
+              {!pending && row('Access', inactive ? 'Inactive — signed out and blocked until you switch them back on.' : 'Active — they can sign in. Switch off to temporarily disable access.',
+                <button type="button" role="switch" aria-checked={!inactive} aria-label="Active" onClick={toggleStatus} disabled={busy !== null}
+                  style={{ position: 'relative', width: 46, height: 26, borderRadius: 999, border: 'none', padding: 0, cursor: busy ? 'wait' : 'pointer', background: inactive ? 'var(--gray-200)' : 'var(--teal)', transition: 'background 150ms', opacity: busy === 'status' ? 0.6 : 1 }}>
+                  <span style={{ position: 'absolute', top: 3, left: inactive ? 3 : 23, width: 20, height: 20, borderRadius: '50%', background: '#fff', boxShadow: '0 1px 3px rgba(0,0,0,0.25)', transition: 'left 150ms' }} />
+                </button>)}
               {row('Remove user', 'Takes them off your team completely.',
                 confirm === 'remove'
                   ? <>

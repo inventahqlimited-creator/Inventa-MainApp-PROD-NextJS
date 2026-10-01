@@ -48,21 +48,64 @@ export default function ProfileModal({
   const initials = ([form.first_name, form.last_name].filter(Boolean).join(' ') || profile?.email || '?')
     .split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2)
 
+  // Shrink any photo (phone pictures are often 3–10MB) to a 512px square-ish JPEG before uploading
+  async function shrink(file: File): Promise<Blob> {
+    const url = URL.createObjectURL(file)
+    try {
+      const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const i = new Image()
+        i.onload = () => resolve(i)
+        i.onerror = () => reject(new Error('decode'))
+        i.src = url
+      })
+      const max = 512
+      const scale = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight))
+      const w = Math.max(1, Math.round(img.naturalWidth * scale))
+      const h = Math.max(1, Math.round(img.naturalHeight * scale))
+      const canvas = document.createElement('canvas')
+      canvas.width = w; canvas.height = h
+      const ctx = canvas.getContext('2d')
+      if (!ctx) throw new Error('canvas')
+      ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, w, h)   // flatten transparent PNGs
+      ctx.drawImage(img, 0, 0, w, h)
+      return await new Promise<Blob>((resolve, reject) =>
+        canvas.toBlob(b => (b ? resolve(b) : reject(new Error('encode'))), 'image/jpeg', 0.86))
+    } finally {
+      URL.revokeObjectURL(url)
+    }
+  }
+
   async function pickPhoto(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     e.target.value = ''
     if (!file || !profile) return
     setError(null); setNotice(null)
-    if (!['image/jpeg', 'image/png', 'image/webp'].includes(file.type)) { setError('Only JPG, PNG or WebP images are allowed'); return }
-    if (file.size > 2 * 1024 * 1024) { setError('Photo must be under 2MB'); return }
+    if (!file.type.startsWith('image/')) { setError('Please choose an image file'); return }
     setUploading(true)
+    let blob: Blob
+    try {
+      blob = await shrink(file)
+    } catch {
+      setUploading(false)
+      setError("Couldn't read that image — try a JPG or PNG")
+      return
+    }
     const fd = new FormData()
-    fd.append('file', file)
-    const res = await fetch('/api/org/profile/avatar', { method: 'POST', body: fd })
-    const data = await res.json().catch(() => ({}))
+    fd.append('file', new File([blob], 'avatar.jpg', { type: 'image/jpeg' }))
+    let res: Response
+    try {
+      res = await fetch('/api/org/profile/avatar', { method: 'POST', body: fd })
+    } catch {
+      setUploading(false)
+      setError('Upload failed — check your connection and try again')
+      return
+    }
+    const raw = await res.text()
+    let data: { url?: string; error?: string } = {}
+    try { data = JSON.parse(raw) } catch { /* non-JSON error page */ }
     setUploading(false)
-    if (!res.ok) { setError(data.error ?? 'Upload failed'); return }
-    const next = { ...profile, avatar_url: data.url as string }
+    if (!res.ok || !data.url) { setError(data.error ?? `Upload failed (${res.status})`); return }
+    const next = { ...profile, avatar_url: data.url }
     setProfile(next)
     onSaved({ ...next, ...form })
   }
@@ -150,8 +193,8 @@ export default function ProfileModal({
                       <button type="button" className="btn btn-outline" disabled={uploading} onClick={removePhoto}>Remove</button>
                     )}
                   </div>
-                  <div style={{ fontSize: 11.5, color: 'var(--gray-400)', marginTop: 6 }}>JPG, PNG or WebP · max 2MB</div>
-                  <input ref={fileRef} type="file" accept="image/jpeg,image/png,image/webp" onChange={pickPhoto} style={{ display: 'none' }} />
+                  <div style={{ fontSize: 11.5, color: 'var(--gray-400)', marginTop: 6 }}>JPG, PNG or WebP · resized automatically</div>
+                  <input ref={fileRef} type="file" accept="image/*" onChange={pickPhoto} style={{ display: 'none' }} />
                 </div>
               </div>
 

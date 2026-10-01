@@ -5,6 +5,8 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { printPackingList } from '@/lib/packing-list/print'
+import type { PackOverrides } from '@/lib/packing-list/types'
 
 type Line = { id: string; name: string; sku: string; unit: string; picked: number }
 type Carton = { key: number; name: string; qty: Record<string, number> }
@@ -40,6 +42,7 @@ export default function PackSalesOrder({ packs }: { packs: OrderPack[] }) {
   const [open, setOpen] = useState<{ oid: string; id: 'carrier' | 'method' } | null>(null)
   const [confirm, setConfirm] = useState(false)
   const [saving, setSaving] = useState(false)
+  const [printing, setPrinting] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
   const upd = (oid: string, fn: (s: State) => State) => setStates(all => ({ ...all, [oid]: fn(all[oid]) }))
@@ -66,6 +69,22 @@ export default function PackSalesOrder({ packs }: { packs: OrderPack[] }) {
     if (states[oid].cartons.length === 1) { setError('At least one carton is required.'); return }
     setError(null)
     upd(oid, s => ({ ...s, cartons: s.cartons.filter((_, i) => i !== ci) }))
+  }
+
+  // Print what is on screen right now — cartons, carrier and tracking — even though none of it is saved yet
+  async function printPacking() {
+    setPrinting(true)
+    setError(null)
+    const overrides: PackOverrides = Object.fromEntries(packs.map(p => {
+      const s = states[p.order.id]
+      return [p.order.id, {
+        carrier: s.carrier, method: s.method, service: s.service, tracking: s.tracking,
+        cartons: s.cartons.map(c => ({ lines: Object.entries(c.qty).filter(([, q]) => q > 0).map(([line_id, qty]) => ({ line_id, qty })) })),
+      }]
+    }))
+    const res = await printPackingList(packs.map(p => p.order.id), overrides)
+    setPrinting(false)
+    if (!res.ok) setError(res.error)
   }
 
   async function submit() {
@@ -235,6 +254,10 @@ export default function PackSalesOrder({ packs }: { packs: OrderPack[] }) {
           <div style={{ fontSize: 13, color: 'var(--gray-400)' }}>{totalPacked} / {totalPicked} units in cartons</div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <button onClick={printPacking} className="btn btn-outline" style={{ height: 38 }} disabled={saving || printing} title="Print the packing list as it looks on screen">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6z"/></svg>
+            {printing ? 'Preparing…' : 'Print Packing List'}
+          </button>
           {single && (
             <button onClick={() => router.push(`/sales/${packs[0].order.id}/pick`)} className="btn btn-outline" style={{ height: 38 }} disabled={saving} title="Change what has been picked (unsaved carton changes are lost)">
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>

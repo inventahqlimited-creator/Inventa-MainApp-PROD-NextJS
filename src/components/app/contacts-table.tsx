@@ -253,6 +253,18 @@ export default function ContactsTable({
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [searchParams])
 
+  // Global search deep link: /contacts?open=<id> opens that contact's view popup
+  useEffect(() => {
+    const openId = searchParams.get('open')
+    if (!openId) return
+    const c = contacts.find(x => x.id === openId)
+    if (c) openView(c)
+    const url = new URL(window.location.href)
+    url.searchParams.delete('open')
+    window.history.replaceState({}, '', url.toString())
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams])
+
   function set(field: keyof ModalForm, value: string | boolean) {
     setForm(f => ({ ...f, [field]: value }))
   }

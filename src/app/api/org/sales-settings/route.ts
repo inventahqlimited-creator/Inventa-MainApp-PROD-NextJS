@@ -27,6 +27,7 @@ const ALLOWED_KEYS = [
   'pick_list_settings',
   'packing_list_settings',
   'invoice_settings',
+  'quotes_enabled',
 ]
 
 export async function PATCH(req: Request) {

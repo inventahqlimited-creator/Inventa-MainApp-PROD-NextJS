@@ -115,6 +115,19 @@ const SYSTEM_NAV = [
   },
 ]
 
+const INTEGRATION_NAV = [
+  {
+    href: '/xero',
+    label: 'Xero',
+    icon: (
+      <svg className="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
+        <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
+        <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
+      </svg>
+    ),
+  },
+]
+
 function NavLink({ href, label, icon }: { href: string; label: string; icon: React.ReactNode }) {
   const pathname = usePathname()
   const active = pathname === href || (href !== '/dashboard' && pathname.startsWith(href))
@@ -126,7 +139,7 @@ function NavLink({ href, label, icon }: { href: string; label: string; icon: Rea
   )
 }
 
-export default function AppSidebar({ permissions = {} }: { permissions?: SidebarPermissions }) {
+export default function AppSidebar({ permissions = {}, xeroEnabled = false }: { permissions?: SidebarPermissions; xeroEnabled?: boolean }) {
   // Admins (no permissions object set) get full access
   const canViewProducts = permissions.view_products !== false
 
@@ -164,6 +177,15 @@ export default function AppSidebar({ permissions = {} }: { permissions?: Sidebar
           <div className="nav-section-label">Modules</div>
           {visibleModules.map(item => <NavLink key={item.href} {...item} />)}
         </div>
+
+        {/* Integrations — only the ones installed for this organisation */}
+        {xeroEnabled && (
+          <div style={{ marginTop: 4 }}>
+            <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '8px 0 4px' }} />
+            <div className="nav-section-label">Integrations</div>
+            {INTEGRATION_NAV.map(item => <NavLink key={item.href} {...item} />)}
+          </div>
+        )}
 
         {/* Spacer pushes System to bottom */}
         <div style={{ flex: 1 }} />

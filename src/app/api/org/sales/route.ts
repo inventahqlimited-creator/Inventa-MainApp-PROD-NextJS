@@ -2,6 +2,7 @@
 import { NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { pickSO, lineRow, costLineRow, nextSoNumber } from './shared'
+import { ownsOrder } from '@/lib/related'
 
 export async function POST(request: Request) {
   const supabase = await createClient()
@@ -24,6 +25,9 @@ export async function POST(request: Request) {
   if (lines.length === 0) return NextResponse.json({ error: 'Add at least one line item.' }, { status: 400 })
 
   const soData = pickSO(body)
+  // Created from a purchase order? Remember the link so either order can open the other
+  const sourcePo = await ownsOrder(adminClient, orgId, 'purchase_orders', body.source_po_id)
+  if (sourcePo) soData.source_po_id = sourcePo
   // New orders can only start as a Draft, a Quote (when quotes are switched on in Settings) or Open
   if (soData.status === 'Quote') {
     const { data: org } = await adminClient.from('organisations').select('quotes_enabled').eq('id', orgId).single()

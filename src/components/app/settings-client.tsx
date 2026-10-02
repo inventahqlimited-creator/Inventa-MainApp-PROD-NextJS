@@ -10,6 +10,8 @@ import PackingListTemplate from '@/components/app/packing-list-template'
 import { normalizePackingListConfig, type PackingListConfig } from '@/lib/packing-list/config'
 import InvoiceTemplate from '@/components/app/invoice-template'
 import { normalizeInvoiceConfig, type InvoiceConfig } from '@/lib/invoice/config'
+import PurchaseOrderTemplate from '@/components/app/purchase-order-template'
+import { normalizePurchaseOrderConfig, type PurchaseOrderConfig } from '@/lib/purchase-order/config'
 import { normalizePickListConfig, type PickListConfig } from '@/lib/pick-list/config'
 
 type Org = Record<string, unknown>
@@ -1390,6 +1392,8 @@ export default function SettingsClient({
   const [poDefaultPaymentTerms, setPoDefaultPaymentTerms] = useState(String(org.po_default_payment_terms ?? 'Net 30'))
   const [poDefaultDeliverTo, setPoDefaultDeliverTo] = useState(String(org.po_default_deliver_to ?? ''))
   const [savingPoDefaults, setSavingPoDefaults] = useState(false)
+  const [poDocCfg, setPoDocCfg] = useState<PurchaseOrderConfig>(() => normalizePurchaseOrderConfig(org.purchase_order_settings))
+  const [poDocOpen, setPoDocOpen] = useState(false)
 
   async function savePoDefaults() {
     setSavingPoDefaults(true)
@@ -2085,6 +2089,33 @@ export default function SettingsClient({
                 </Field>
               </div>
             </Card>
+            <Card title="Purchase Documents" subtitle="Choose what appears on the documents you print from purchase orders">
+              <div style={{ padding: '8px 12px' }}>
+                <button
+                  type="button"
+                  onClick={() => setPoDocOpen(true)}
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 14, padding: '12px 10px', background: 'transparent', border: 'none', borderRadius: 10, cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--gray-50)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                >
+                  <span style={{ width: 36, height: 36, borderRadius: 10, background: 'var(--teal-surface)', color: 'var(--teal)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 13h8M8 17h5" /></svg>
+                  </span>
+                  <span style={{ flex: 1 }}>
+                    <span style={{ display: 'block', fontSize: 13.5, fontWeight: 600, color: 'var(--slate)', fontFamily: 'var(--font-display)' }}>Purchase Order</span>
+                    <span style={{ display: 'block', fontSize: 12.5, color: 'var(--gray-400)', marginTop: 2 }}>Logo, business details, addresses, columns and notes on the printed purchase order</span>
+                  </span>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--gray-300)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+                </button>
+              </div>
+            </Card>
+            {poDocOpen && (
+              <PurchaseOrderTemplate
+                initial={poDocCfg}
+                onClose={() => setPoDocOpen(false)}
+                onSaved={cfg => { setPoDocCfg(cfg); setPoDocOpen(false); showToast('success', 'Purchase order template saved') }}
+              />
+            )}
           </>
         )}
 

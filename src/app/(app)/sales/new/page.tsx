@@ -3,8 +3,8 @@ import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import SalesOrderForm from '@/components/app/sales-order-form'
 
-export default async function NewSalesOrderPage({ searchParams }: { searchParams: Promise<{ clone?: string }> }) {
-  const { clone } = await searchParams
+export default async function NewSalesOrderPage({ searchParams }: { searchParams: Promise<{ clone?: string; from_po?: string }> }) {
+  const { clone, from_po } = await searchParams
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
@@ -75,6 +75,42 @@ export default async function NewSalesOrderPage({ searchParams }: { searchParams
         id: '', so_number: null, status: 'Draft', order_date: null, total_amount: null,
         lines: [...(o.sales_order_lines ?? [])].sort(bySort),
         cost_lines: [...(o.sales_order_cost_lines ?? [])].sort(bySort),
+      }
+    }
+  }
+
+  // Create Sales Order from a purchase order — every line at its ordered quantity and the product's selling price,
+  // delivered from the purchase order's location. The customer is chosen on the new order.
+  if (from_po) {
+    const { data: src } = await adminClient
+      .from('purchase_orders')
+      .select('po_number, location_id, location_name, purchase_order_lines ( product_id, product_name, product_sku, unit, quantity_ordered, sort_order )')
+      .eq('id', from_po)
+      .eq('org_id', m.org_id)
+      .single()
+    if (src) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const s = src as any
+      const taxList = (taxRates ?? []) as { id: string; name: string; rate: number; is_default: boolean | null }[]
+      const prodById = new Map(((products ?? []) as { id: string; sell_uom: string | null; sell_price: number | null; tax_rate: string | number | null; sell_tax_rate_id: string | null }[]).map(p => [p.id, p]))
+      const bySort = (a: { sort_order: number | null }, b: { sort_order: number | null }) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const lines = [...(s.purchase_order_lines ?? [])].sort(bySort).flatMap((l: any, i: number) => {
+        const p = prodById.get(l.product_id)
+        if (!p) return []
+        const t = p.sell_tax_rate_id ? taxList.find(x => x.id === p.sell_tax_rate_id) : undefined
+        const rate = t ? Number(t.rate) || 0 : Number(p.tax_rate) || 0
+        return [{
+          product_id: l.product_id, product_name: l.product_name, product_sku: l.product_sku ?? '', unit: p.sell_uom ?? l.unit ?? 'Each',
+          quantity: Number(l.quantity_ordered) || 0, unit_price: Number(p.sell_price) || 0, discount: 0,
+          tax_rate: rate, tax_rate_id: t?.id ?? null, tax_name: t?.name ?? null, line_notes: '', sort_order: i,
+        }]
+      })
+      prefill = {
+        id: '', so_number: null, status: 'Draft', customer_id: null, customer_name: null,
+        location_id: s.location_id, location_name: s.location_name, order_date: null, expected_date: null, terms: null,
+        notes: `Created from purchase order ${s.po_number ?? ''}`.trim(), ref: null, currency: null, price_level_id: null, total_amount: null,
+        order_discount: null, order_discount_type: null, order_discount_amount: null, lines, cost_lines: [],
       }
     }
   }

@@ -2,8 +2,8 @@ import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import NewPurchaseOrder from '@/components/app/new-purchase-order'
 
-export default async function NewPurchaseOrderPage({ searchParams }: { searchParams: Promise<{ from_so?: string; scope?: string }> }) {
-  const { from_so, scope } = await searchParams
+export default async function NewPurchaseOrderPage({ searchParams }: { searchParams: Promise<{ from_so?: string; scope?: string; clone?: string }> }) {
+  const { from_so, scope, clone } = await searchParams
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
@@ -57,7 +57,8 @@ export default async function NewPurchaseOrderPage({ searchParams }: { searchPar
   ])
 
   // Create Purchase Order from a sales order: all stocked items, or only the ones the ship-from location can't cover
-  let prefill: { location_id: string | null; notes?: string; lines: { product_id: string; quantity: number }[] } | null = null
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  let prefill: any = null
   if (from_so) {
     const { data: so } = await adminClient
       .from('sales_orders')
@@ -82,6 +83,35 @@ export default async function NewPurchaseOrderPage({ searchParams }: { searchPar
         .filter(([pid, qty]) => qty > 0 && (scope === 'short' ? onHand(pid) < qty : true))
         .map(([product_id, quantity]) => ({ product_id, quantity }))
       prefill = { location_id: s.location_id, notes: `Created from sales order ${s.so_number ?? ''}`.trim(), lines }
+    }
+  }
+
+  // Clone Order — a new order pre-filled from an existing one (supplier, lines, costs, discount, terms, notes)
+  if (clone) {
+    const { data: src } = await adminClient
+      .from('purchase_orders')
+      .select(`
+        supplier_id, location_id, terms, ref, reference, notes, order_discount, order_discount_type,
+        purchase_order_lines ( product_id, unit, quantity_ordered, unit_cost, discount, tax_rate, tax_rate_id, tax_name, line_notes, sort_order ),
+        purchase_order_cost_lines ( product_id, product_name, product_sku, description, amount, tax_rate, tax_rate_id, tax_name, sort_order )
+      `)
+      .eq('id', clone)
+      .eq('org_id', m.org_id)
+      .single()
+    if (src) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const s = src as any
+      const bySort = (a: { sort_order: number | null }, b: { sort_order: number | null }) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
+      prefill = {
+        location_id: s.location_id, supplier_id: s.supplier_id, terms: s.terms, ref: s.ref ?? s.reference ?? null, notes: s.notes ?? '',
+        order_discount: s.order_discount, order_discount_type: s.order_discount_type,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        lines: [...(s.purchase_order_lines ?? [])].sort(bySort).map((l: any) => ({
+          product_id: l.product_id, quantity: Number(l.quantity_ordered) || 0, unit: l.unit, unit_cost: Number(l.unit_cost) || 0,
+          discount: Number(l.discount) || 0, tax_rate: Number(l.tax_rate) || 0, tax_rate_id: l.tax_rate_id, tax_name: l.tax_name, line_notes: l.line_notes,
+        })),
+        cost_lines: [...(s.purchase_order_cost_lines ?? [])].sort(bySort),
+      }
     }
   }
 

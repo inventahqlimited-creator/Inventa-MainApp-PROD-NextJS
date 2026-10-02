@@ -82,7 +82,7 @@ export default async function NewPurchaseOrderPage({ searchParams }: { searchPar
       const lines = [...need]
         .filter(([pid, qty]) => qty > 0 && (scope === 'short' ? onHand(pid) < qty : true))
         .map(([product_id, quantity]) => ({ product_id, quantity }))
-      prefill = { location_id: s.location_id, notes: `Created from sales order ${s.so_number ?? ''}`.trim(), lines }
+      prefill = { location_id: s.location_id, notes: `Created from sales order ${s.so_number ?? ''}`.trim(), lines, source_so_id: from_so }
     }
   }
 

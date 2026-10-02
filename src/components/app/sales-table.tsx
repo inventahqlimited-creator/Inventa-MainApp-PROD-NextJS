@@ -24,6 +24,7 @@ type Order = {
   terms: string | null
   currency: string | null
   stock_status?: 'in' | 'no' | null
+  related_po_id?: string | null // purchase order this order was created from / created from it
 }
 
 type Contact = { id: string; name: string }
@@ -588,6 +589,7 @@ export default function SalesTable({
             {fulfil && <>{fulfil}{sep('s1')}</>}
             {item('Clone Order', () => router.push(`/sales/new?clone=${o.id}`), { icon: ic('M9 9h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V11a2 2 0 0 1 2-2zM5 15H4a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v1') })}
             {k !== 'cancelled' && k !== 'quote' && item('Create Purchase Order', () => { setMenu(null); setPoScope('all'); setDialog({ kind: 'po', order: o }) }, { icon: ic('M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4zM3 6h18M16 10a4 4 0 0 1-8 0') })}
+            {o.related_po_id && item('Open Related Order', () => { setMenu(null); router.push(`/purchases/${o.related_po_id}`) }, { icon: ic('M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71') })}
             {sep('s2')}
             {item('Print', () => setMenu(m => (m ? { ...m, printOpen: !m.printOpen } : m)), { icon: ic('M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6z'), chevron: true })}
             {menu.printOpen && (

@@ -1192,6 +1192,8 @@ function RolesModal({ orgId, onClose }: { orgId: string; onClose: () => void }) 
 
 // ── Main Component ────────────────────────────────────────────────────
 
+import XeroSettings, { type XeroConnection, type XeroFlash } from '@/components/app/xero-settings'
+
 export default function SettingsClient({
   org,
   locations: initialLocations,
@@ -1202,6 +1204,9 @@ export default function SettingsClient({
   initialTab,
   hasTxns = false,
   members = [],
+  xeroConnection = null,
+  initialXero = false,
+  xeroFlash,
 }: {
   org: Org
   locations: Location[]
@@ -1212,9 +1217,14 @@ export default function SettingsClient({
   initialTab: string
   hasTxns?: boolean
   members?: Member[]
+  xeroConnection?: XeroConnection
+  initialXero?: boolean
+  xeroFlash?: XeroFlash
 }) {
   const router = useRouter()
   const [tab, setTab] = useState<Tab>((initialTab as Tab) ?? 'general')
+  const xeroInstalled = Boolean(org.xero_enabled)
+  const [xeroOpen, setXeroOpen] = useState(initialXero && Boolean(org.xero_enabled))
   const [showRolesModal, setShowRolesModal] = useState(false)
   const [memberModal, setMemberModal] = useState<{ member: Member | null } | null>(null)
   const [showProfile, setShowProfile] = useState(false)
@@ -2443,25 +2453,40 @@ export default function SettingsClient({
         )}
 
         {/* ── INTEGRATIONS ── */}
-        {tab === 'integrations' && (
+        {tab === 'integrations' && xeroInstalled && xeroOpen && (
+          <XeroSettings isAdmin={isAdmin} connection={xeroConnection} flash={xeroFlash} onBack={() => setXeroOpen(false)} />
+        )}
+        {tab === 'integrations' && !(xeroInstalled && xeroOpen) && (
           <Card title="Integrations" subtitle="Connect third-party apps and services">
             <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
               {[
-                { name: 'Xero', sub: 'Sync invoices, bills and contacts with Xero accounting', icon: '💼', status: 'Coming soon' },
+                { name: 'Xero', sub: 'Sync invoices, bills and contacts with Xero accounting', icon: '💼', status: xeroInstalled ? 'Installed' : 'Talk to sales' },
                 { name: 'Starshipit', sub: 'Generate shipping labels and track parcels', icon: '📦', status: 'Coming soon' },
                 { name: 'Shopify', sub: 'Sync orders and inventory with your Shopify store', icon: '🛒', status: 'Coming soon' },
-              ].map(int => (
-                <div key={int.name} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', background: 'var(--gray-50)', border: '1.5px solid var(--gray-200)', borderRadius: 10 }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                    <div style={{ width: 36, height: 36, borderRadius: 9, background: 'var(--white)', border: '1px solid var(--gray-200)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>{int.icon}</div>
-                    <div>
-                      <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--slate)', fontFamily: 'var(--font-display)' }}>{int.name}</div>
-                      <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 1 }}>{int.sub}</div>
+              ].map(int => {
+                const isXero = int.name === 'Xero'
+                const open = isXero && xeroInstalled
+                return (
+                  <div
+                    key={int.name}
+                    onClick={open ? () => setXeroOpen(true) : undefined}
+                    style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', background: 'var(--gray-50)', border: '1.5px solid var(--gray-200)', borderRadius: 10, cursor: open ? 'pointer' : 'default' }}
+                  >
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                      <div style={{ width: 36, height: 36, borderRadius: 9, background: 'var(--white)', border: '1px solid var(--gray-200)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>{int.icon}</div>
+                      <div>
+                        <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--slate)', fontFamily: 'var(--font-display)' }}>{int.name}</div>
+                        <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 1 }}>{int.sub}</div>
+                      </div>
                     </div>
+                    {isXero && !xeroInstalled
+                      ? <button className="btn btn-primary" style={{ height: 32, fontSize: 12.5 }}>Talk to sales</button>
+                      : open
+                        ? <span style={{ fontSize: 11.5, fontWeight: 600, color: '#047857', background: '#D1FAE5', padding: '3px 10px', borderRadius: 20 }}>Installed</span>
+                        : <span style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--gray-400)', background: 'var(--gray-100)', padding: '3px 10px', borderRadius: 20 }}>{int.status}</span>}
                   </div>
-                  <span style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--gray-400)', background: 'var(--gray-100)', padding: '3px 10px', borderRadius: 20 }}>{int.status}</span>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </Card>
         )}

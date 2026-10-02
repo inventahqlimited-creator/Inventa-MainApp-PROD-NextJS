@@ -44,7 +44,7 @@ function mast(o: InvoiceOrder, biz: InvoiceBusiness, cfg: InvoiceConfig): string
     cfg.header.businessDetails && contact.length ? `<div class="ba">${contact.map(esc).join('<br>')}</div>` : '',
   ].join('')
   // "Tax Invoice" is the wording required for businesses that are registered for tax
-  const title = biz.numbers.some(n => n.startsWith('Tax no.')) ? 'Tax Invoice' : 'Invoice'
+  const title = o.is_quote ? 'Quote' : biz.numbers.some(n => n.startsWith('Tax no.')) ? 'Tax Invoice' : 'Invoice'
   return `<header class="mast"><div class="biz">${left}</div><div class="doc"><h2>${title}</h2><div class="no">${esc(o.invoice_number)}</div></div></header>`
 }
 
@@ -57,8 +57,8 @@ function info(o: InvoiceOrder, cfg: InvoiceConfig, invoiceDate: string): string 
   const d = cfg.details
   const due = dueDate(o.terms, invoiceDate)
   const kv = [
-    d.invoiceDate ? ['Invoice date', fmtDate(invoiceDate)] : null,
-    d.dueDate ? ['Due date', due ? fmtDate(due) : dash] : null,
+    d.invoiceDate ? [o.is_quote ? 'Quote date' : 'Invoice date', fmtDate(invoiceDate)] : null,
+    d.dueDate && !o.is_quote ? ['Due date', due ? fmtDate(due) : dash] : null,
     d.terms ? ['Terms', o.terms ?? dash] : null,
     d.orderNumber ? ['Order #', o.so_number] : null,
     d.customerPo && o.customer_po ? ['Customer PO', o.customer_po] : null,
@@ -105,13 +105,13 @@ function totals(o: InvoiceOrder, money: (n: number) => string): string {
     ...(o.taxes.length ? o.taxes.map(t => row(t.label, money(t.amount), 'm')) : [row('Tax', money(0), 'm')]),
     row(`Total ${o.currency}`, money(o.total), 't'),
   ].join('')
-  return `<div><div class="tot">${parts}</div><div class="due"><span>Amount due</span><span>${esc(o.currency)} ${esc(money(o.total))}</span></div></div>`
+  return `<div><div class="tot">${parts}</div><div class="due"><span>${o.is_quote ? 'Quote total' : 'Amount due'}</span><span>${esc(o.currency)} ${esc(money(o.total))}</span></div></div>`
 }
 
 function left(o: InvoiceOrder, cfg: InvoiceConfig): string {
   const c = cfg.content
   const bank = [['Bank', c.bankName], ['Account name', c.accountName], ['Account number', c.accountNumber]].filter(([, v]) => v)
-  const pay = cfg.footer.paymentDetails && bank.length
+  const pay = cfg.footer.paymentDetails && bank.length && !o.is_quote
     ? `<div class="pay"><div class="lbl">Payment details</div><div class="kv">${[...bank, ['Reference', o.invoice_number]].map(([k, v]) => `<span>${esc(k)}</span><span>${esc(v)}</span>`).join('')}</div></div>`
     : ''
   const notes = [o.notes, c.notes].filter(Boolean).join('\n\n')
@@ -192,7 +192,7 @@ export type InvoiceRenderOptions = {
 
 export function renderInvoiceHtml(payload: InvoicePayload, opts: InvoiceRenderOptions = {}): string {
   const sheets = payload.orders.map(o => sheet(o, payload.business, payload.config, payload.decimals, payload.timezone, opts.now)).join('')
-  const title = payload.orders.length === 1 ? `Invoice ${payload.orders[0].invoice_number}` : `Invoices (${payload.orders.length} orders)`
+  const title = payload.orders.length === 1 ? `${payload.orders[0].is_quote ? 'Quote' : 'Invoice'} ${payload.orders[0].invoice_number}` : `Invoices (${payload.orders.length} orders)`
   const previewCss = `body{background:#E5E9EA;padding:20px 0}.sheet{width:794px;min-height:1123px;margin:0 auto 20px;padding:48px 48px 34px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.12),0 12px 32px rgba(0,0,0,.12);break-after:auto}.tail{margin-top:auto}.fb{display:flex;font:500 10px var(--mono);color:var(--mut);letter-spacing:.04em;border-top:1px solid var(--line);padding-top:9px}.fb .pg::before{content:"Page 1 of 1"}`
   // Print once the fonts and the logo have loaded
   const printJs = `<script>(function(){var done=false;function go(){if(done)return;done=true;setTimeout(function(){window.focus();window.print()},150)}var waits=[];if(document.fonts&&document.fonts.ready)waits.push(document.fonts.ready);Array.prototype.forEach.call(document.images,function(i){if(!i.complete)waits.push(new Promise(function(r){i.onload=r;i.onerror=r}))});Promise.all(waits).then(go);setTimeout(go,3500)})()</script>`

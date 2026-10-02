@@ -9,9 +9,9 @@ import type { InvoiceAddress, InvoiceBusiness, InvoiceCost, InvoiceLine, Invoice
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any
 
-/** Orders an invoice can be printed for: anything past Draft that isn't Cancelled. */
+/** Orders an invoice can be printed for: anything past Draft that isn't Cancelled (quotes print as "Quote"). */
 const OPEN_GROUP = ['open', 'no stock', 'stock available', 'partial stock']
-export const INVOICE_STATUSES = [...OPEN_GROUP, 'picking', 'partially picked', 'partially packed', 'picked', 'packed', 'closed', 'shipped', 'delivered']
+export const INVOICE_STATUSES = [...OPEN_GROUP, 'picking', 'partially picked', 'partially packed', 'picked', 'packed', 'closed', 'shipped', 'delivered', 'quote']
 
 type LineDb = {
   id: string; product_name: string | null; product_sku: string | null
@@ -122,7 +122,8 @@ export async function loadInvoicePayload(db: Db, orgId: string, ids: string[]): 
   const dp = Number.isFinite(Number(orgRow.decimal_places)) && Number(orgRow.decimal_places) >= 0 ? Math.min(Number(orgRow.decimal_places), 4) : 2
 
   const out: InvoiceOrder[] = orders.map(o => {
-    const nothingPickedYet = OPEN_GROUP.includes(String(o.status).toLowerCase())
+    const isQuote = String(o.status).toLowerCase() === 'quote'
+    const nothingPickedYet = isQuote || OPEN_GROUP.includes(String(o.status).toLowerCase())
     const lines: InvoiceLine[] = []
     for (const l of [...(o.sales_order_lines ?? [])].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))) {
       const picked = num(l.quantity_picked), packed = num(l.quantity_packed), sent = num(l.quantity_shipped)
@@ -161,8 +162,10 @@ export async function loadInvoicePayload(db: Db, orgId: string, ids: string[]): 
     return {
       id: o.id,
       so_number: soNumber,
-      invoice_number: invoiceNumber(soNumber, orgRow, config.content.numberPrefix),
-      invoice_date: o.shipped_date ?? (o.closed_at ? String(o.closed_at).slice(0, 10) : null),
+      is_quote: isQuote,
+      // a quote keeps the order number it will have as a sales order
+      invoice_number: isQuote ? soNumber : invoiceNumber(soNumber, orgRow, config.content.numberPrefix),
+      invoice_date: isQuote ? (o.order_date ? String(o.order_date).slice(0, 10) : null) : (o.shipped_date ?? (o.closed_at ? String(o.closed_at).slice(0, 10) : null)),
       terms: clean(o.terms) || null,
       customer_po: clean(o.ref) || null,
       notes: clean(o.notes) || null,

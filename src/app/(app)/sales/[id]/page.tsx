@@ -2,6 +2,7 @@
 import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import SalesOrderForm from '@/components/app/sales-order-form'
+import { relatedPurchaseOrders } from '@/lib/related'
 
 export default async function SalesOrderPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -38,6 +39,7 @@ export default async function SalesOrderPage({ params }: { params: Promise<{ id:
     .single()
 
   if (!order) redirect('/sales')
+  const relatedPoId = (await relatedPurchaseOrders(adminClient, m.org_id, [id])).get(id) ?? null
 
   const [
     { data: locations }, { data: customers }, { data: products }, { data: org },
@@ -90,6 +92,7 @@ export default async function SalesOrderPage({ params }: { params: Promise<{ id:
       key={`${o.id}-${o.status}-${o.total_amount}`}
       orgId={m.org_id}
       order={shaped}
+      relatedPoId={relatedPoId}
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       customers={(customers ?? []) as any}
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

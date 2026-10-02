@@ -19,6 +19,7 @@ type Order = {
   reference: string | null
   terms: string | null
   currency: string | null
+  related_so_id?: string | null // sales order this order was created from / created from it
 }
 
 type Contact = { id: string; name: string }
@@ -582,6 +583,7 @@ export default function PurchasesTable({
             {sep('s1')}
             {item('Clone Order', () => { setMenu(null); router.push(`/purchases/new?clone=${o.id}`) }, { icon: ic('M9 9h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V11a2 2 0 0 1 2-2zM5 15H4a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v1') })}
             {!cancelled && item('Create Sales Order', () => { setMenu(null); router.push(`/sales/new?from_po=${o.id}`) }, { icon: ic('M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4zM3 6h18M16 10a4 4 0 0 1-8 0') })}
+            {o.related_so_id && item('Open Related Order', () => { setMenu(null); router.push(`/sales/${o.related_so_id}`) }, { icon: ic('M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71') })}
             {canCancel && <>{sep('s2')}{item('Cancel Order', () => { setMenu(null); setDialog({ kind: 'cancel', order: o }) }, { danger: true, icon: ic('M18 6 6 18M6 6l12 12') })}</>}
           </div>
         )

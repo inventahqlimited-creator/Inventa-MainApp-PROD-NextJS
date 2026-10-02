@@ -135,6 +135,7 @@ export default function NewPurchaseOrder({
   prefill?: {
     location_id: string | null
     notes?: string
+    source_so_id?: string | null // created from this sales order
     supplier_id?: string | null
     terms?: string | null
     ref?: string | null
@@ -395,6 +396,7 @@ export default function NewPurchaseOrder({
       terms,
       notes: notes || null,
       currency: selectedSupplier.currency ?? 'NZD',
+      ...(prefill?.source_so_id ? { source_so_id: prefill.source_so_id } : {}),
       total_amount: total,
       order_discount: orderDiscount || null,
       order_discount_type: orderDiscount > 0 ? orderDiscountType : null,

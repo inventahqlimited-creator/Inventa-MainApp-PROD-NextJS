@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import { printPurchaseOrder } from '@/lib/purchase-order/print'
 
 type Order = {
   id: string
@@ -115,6 +116,16 @@ export default function PurchasesTable({
   const [page, setPage] = useState(1)
   const [perPage, setPerPage] = useState(25)
   const [visibleCols, setVisibleCols] = useState<Set<ColKey>>(new Set(DEFAULT_COLS))
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [menu, setMenu] = useState<{ id: string; x: number; y: number } | null>(null)
+  const [dialog, setDialog] = useState<{ kind: 'cancel'; order: Order } | { kind: 'auto-receive'; ids: string[] } | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null)
+
+  function flash(ok: boolean, text: string) {
+    setNotice({ ok, text })
+    setTimeout(() => setNotice(n => (n && n.text === text ? null : n)), 8000)
+  }
 
   // Load persisted column visibility on mount
   useEffect(() => {
@@ -137,6 +148,7 @@ export default function PurchasesTable({
     setSupplierOpen(false)
     setLocationOpen(false)
     setColOpen(false)
+    setMenu(null)
   }
 
   const filtered = useMemo(() => {
@@ -180,6 +192,62 @@ export default function PurchasesTable({
 
   // Ordered visible columns for rendering
   const activeCols = COLS.filter(c => visibleCols.has(c.key))
+
+  // ── Selection / bulk actions ──
+  const allPageSelected = paginated.length > 0 && paginated.every(o => selected.has(o.id))
+  function toggleAll(checked: boolean) {
+    setSelected(prev => { const n = new Set(prev); paginated.forEach(o => (checked ? n.add(o.id) : n.delete(o.id))); return n })
+  }
+  function toggleOne(id: string) {
+    setSelected(prev => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n })
+  }
+  const selectedOrders = orders.filter(o => selected.has(o.id))
+  const toPrint = selectedOrders.filter(o => o.status.toLowerCase() !== 'cancelled')
+  const toReceive = selectedOrders.filter(o => ['open', 'partially received'].includes(o.status.toLowerCase()))
+
+  async function print(ids: string[], label?: string) {
+    setMenu(null)
+    const res = await printPurchaseOrder(ids)
+    if (!res.ok) flash(false, label ? `${label}: ${res.error}` : res.error)
+  }
+
+  async function autoReceive(ids: string[]) {
+    setBusy(true)
+    try {
+      const res = await fetch('/api/org/purchases/auto-receive', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ids }) })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { flash(false, data.error ?? 'Could not receive these orders'); return }
+      const done = (data.received ?? []) as { po_number: string | null }[]
+      const failed = (data.failed ?? []) as { po_number: string | null; error: string }[]
+      flash(failed.length === 0, `${done.length} order${done.length !== 1 ? 's' : ''} received and closed` + (failed.length ? `. ${failed.length} failed — ${failed.map(f => `${f.po_number}: ${f.error}`).join('; ')}` : '.'))
+      setSelected(new Set())
+      router.refresh()
+    } catch { flash(false, 'Network error — please try again.') }
+    finally { setBusy(false); setDialog(null) }
+  }
+
+  async function cancelOne(o: Order) {
+    setBusy(true)
+    try {
+      const res = await fetch(`/api/org/purchases/${o.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'Cancelled' }) })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) flash(false, `${o.po_number}: ${data.error ?? 'Could not cancel this order'}`)
+      else { flash(true, `${o.po_number} cancelled.`); router.refresh() }
+    } catch { flash(false, 'Network error — please try again.') }
+    finally { setBusy(false); setDialog(null) }
+  }
+
+  const menuOrder = menu ? orders.find(o => o.id === menu.id) ?? null : null
+  function openMenu(e: React.MouseEvent, o: Order) {
+    e.stopPropagation()
+    if (menu?.id === o.id) { setMenu(null); return }
+    const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+    const width = 230
+    const x = Math.max(8, Math.min(r.right - width, window.innerWidth - width - 8))
+    // open upward when close to the bottom of the window
+    const y = r.bottom + 290 > window.innerHeight ? Math.max(8, r.top - 290) : r.bottom + 4
+    setMenu({ id: o.id, x, y })
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }} onClick={closeAll}>
@@ -331,23 +399,56 @@ export default function PurchasesTable({
         </div>
       </div>
 
+      {notice && (
+        <div style={{ margin: '0 0 10px', padding: '10px 14px', borderRadius: 10, fontSize: 13, background: notice.ok ? '#ECFDF5' : '#FEF2F2', border: `1px solid ${notice.ok ? '#A7F3D0' : '#FECACA'}`, color: notice.ok ? '#065F46' : '#B91C1C', display: 'flex', justifyContent: 'space-between', gap: 12 }} onClick={e => e.stopPropagation()}>
+          <span>{notice.text}</span>
+          <button onClick={() => setNotice(null)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', fontSize: 13 }}>✕</button>
+        </div>
+      )}
+
       {/* Table */}
       <div className="table-container">
+        <div className="table-toolbar" onClick={e => e.stopPropagation()}>
+          {selected.size > 0 ? (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, width: '100%' }}>
+              <span style={{ fontSize: 13, fontWeight: 600, color: 'var(--slate)' }}>{selected.size} selected</span>
+              <div style={{ width: 1, height: 18, background: 'var(--gray-200)', margin: '0 4px' }} />
+              {toReceive.length > 0 && (
+                <button className="btn-sm btn-sm-primary" disabled={busy} title={`${toReceive.length} order${toReceive.length !== 1 ? 's' : ''} will be received in full and closed`} onClick={() => setDialog({ kind: 'auto-receive', ids: toReceive.map(o => o.id) })}>Auto Receive</button>
+              )}
+              {toPrint.length > 0 && (
+                <button className="btn-sm btn-sm-ghost" style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }} onClick={() => print(toPrint.map(o => o.id))}>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6z" /></svg>
+                  {toPrint.length > 1 ? `Print Purchase Orders (${toPrint.length})` : 'Print Purchase Order'}
+                </button>
+              )}
+              {toPrint.length === 0 && toReceive.length === 0 && (
+                <span style={{ fontSize: 12.5, color: 'var(--gray-400)' }}>No selected order can be printed or received.</span>
+              )}
+              <button className="btn-sm btn-sm-ghost" style={{ marginLeft: 'auto' }} onClick={() => setSelected(new Set())}>✕ Clear</button>
+            </div>
+          ) : (
+            <span className="table-count"><strong>{filtered.length}</strong> orders</span>
+          )}
+        </div>
         <div className="table-wrap">
           <table>
             <thead>
               <tr>
+                <th style={{ width: 36 }}>
+                  <input type="checkbox" checked={allPageSelected} onChange={e => toggleAll(e.target.checked)} style={{ accentColor: 'var(--teal)', cursor: 'pointer' }} />
+                </th>
                 {activeCols.map(c => {
                   if (c.key === 'total_amount') return <th key={c.key} style={{ textAlign: 'right' }}>{c.label}</th>
                   return <th key={c.key}>{c.label}</th>
                 })}
-                <th style={{ width: 40 }}></th>
+                <th style={{ width: 76 }}></th>
               </tr>
             </thead>
             <tbody>
               {paginated.length === 0 && (
                 <tr>
-                  <td colSpan={activeCols.length + 1} style={{ textAlign: 'center', padding: '48px 0', color: 'var(--gray-400)', fontSize: 13 }}>
+                  <td colSpan={activeCols.length + 2} style={{ textAlign: 'center', padding: '48px 0', color: 'var(--gray-400)', fontSize: 13 }}>
                     {search ? 'No orders match your search.' : 'No purchase orders yet.'}
                   </td>
                 </tr>
@@ -356,6 +457,9 @@ export default function PurchasesTable({
                 const overdue = isOverdue(o.expected_date, o.status)
                 return (
                   <tr key={o.id} onClick={() => router.push(`/purchases/${o.id}`)}>
+                    <td onClick={e => e.stopPropagation()}>
+                      <input type="checkbox" checked={selected.has(o.id)} onChange={() => toggleOne(o.id)} style={{ accentColor: 'var(--teal)', cursor: 'pointer' }} />
+                    </td>
                     {activeCols.map(c => {
                       switch (c.key) {
                         case 'po_number':
@@ -404,8 +508,11 @@ export default function PurchasesTable({
                     })}
                     <td>
                       <div className="row-actions">
-                        <button className="row-action-btn" title="View">
+                        <button className="row-action-btn" onClick={e => { e.stopPropagation(); router.push(`/purchases/${o.id}`) }} title="View">
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
+                        </button>
+                        <button className="row-action-btn" onClick={e => openMenu(e, o)} title="More actions">
+                          <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor"><circle cx="12" cy="5" r="1.8"/><circle cx="12" cy="12" r="1.8"/><circle cx="12" cy="19" r="1.8"/></svg>
                         </button>
                       </div>
                     </td>
@@ -444,6 +551,68 @@ export default function PurchasesTable({
           </div>
         </div>
       </div>
+
+      {/* Row actions menu */}
+      {menu && menuOrder && (() => {
+        const o = menuOrder
+        const k = o.status.toLowerCase()
+        const cancelled = k === 'cancelled'
+        const editable = k === 'draft' || k === 'open'
+        const item = (label: string, onClick: (() => void) | null, opts: { danger?: boolean; soon?: boolean; icon?: React.ReactNode } = {}) => (
+          <div
+            key={label}
+            className="fp-item"
+            onClick={e => { e.stopPropagation(); if (!onClick || opts.soon) return; onClick() }}
+            style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: onClick && !opts.soon ? 'pointer' : 'default', opacity: opts.soon ? 0.5 : 1, color: opts.danger ? 'var(--danger)' : undefined }}
+          >
+            <span style={{ width: 16, display: 'inline-flex', justifyContent: 'center', flexShrink: 0 }}>{opts.icon}</span>
+            <span style={{ flex: 1 }}>{label}</span>
+            {opts.soon && <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--gray-400)', background: 'var(--gray-100)', borderRadius: 5, padding: '1px 6px' }}>Soon</span>}
+          </div>
+        )
+        const ic = (d: string) => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d={d}/></svg>
+        const sep = (key: string) => <div key={key} style={{ height: 1, background: 'var(--gray-100)', margin: '5px 0' }} />
+        // can't cancel once any stock has been received against the order
+        const canCancel = editable
+        return (
+          <div className="inv-dropdown" style={{ display: 'block', position: 'fixed', left: menu.x, top: menu.y, width: 230, padding: 6, zIndex: 400 }} onClick={e => e.stopPropagation()}>
+            {editable && item('Edit Order', () => { setMenu(null); router.push(`/purchases/${o.id}?edit=1`) }, { icon: ic('M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z') })}
+            {!cancelled && item('Print', () => print([o.id], o.po_number ?? undefined), { icon: ic('M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6z') })}
+            {item('Email', null, { soon: true, icon: ic('M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM22 6l-10 7L2 6') })}
+            {sep('s1')}
+            {item('Clone Order', () => { setMenu(null); router.push(`/purchases/new?clone=${o.id}`) }, { icon: ic('M9 9h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V11a2 2 0 0 1 2-2zM5 15H4a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v1') })}
+            {!cancelled && item('Create Sales Order', () => { setMenu(null); router.push(`/sales/new?from_po=${o.id}`) }, { icon: ic('M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4zM3 6h18M16 10a4 4 0 0 1-8 0') })}
+            {canCancel && <>{sep('s2')}{item('Cancel Order', () => { setMenu(null); setDialog({ kind: 'cancel', order: o }) }, { danger: true, icon: ic('M18 6 6 18M6 6l12 12') })}</>}
+          </div>
+        )
+      })()}
+
+      {/* Dialogs */}
+      {dialog && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', zIndex: 500, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={e => e.stopPropagation()}>
+          <div style={{ background: 'var(--white)', borderRadius: 16, padding: '24px 26px', width: 440, maxWidth: '92vw', boxShadow: '0 20px 60px rgba(0,0,0,0.25)' }}>
+            {dialog.kind === 'cancel' && (<>
+              <div style={{ fontFamily: 'var(--font-display)', fontSize: 17, fontWeight: 700, color: 'var(--slate)', marginBottom: 8 }}>Cancel {dialog.order.po_number}?</div>
+              <div style={{ fontSize: 13.5, color: 'var(--gray-400)', lineHeight: 1.5, marginBottom: 20 }}>The order moves to Cancelled and its quantities will no longer show as On Order. Are you sure?</div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                <button className="btn btn-outline" style={{ height: 38 }} onClick={() => setDialog(null)} disabled={busy}>Keep order</button>
+                <button className="btn btn-primary" style={{ height: 38, padding: '0 20px', background: 'var(--danger)', borderColor: 'var(--danger)' }} onClick={() => cancelOne(dialog.order)} disabled={busy}>{busy ? 'Please wait…' : 'Yes, cancel order'}</button>
+              </div>
+            </>)}
+            {dialog.kind === 'auto-receive' && (<>
+              <div style={{ fontFamily: 'var(--font-display)', fontSize: 17, fontWeight: 700, color: 'var(--slate)', marginBottom: 8 }}>Auto receive {dialog.ids.length} order{dialog.ids.length !== 1 ? 's' : ''}?</div>
+              <div style={{ fontSize: 13.5, color: 'var(--gray-400)', lineHeight: 1.5, marginBottom: 20 }}>
+                The full outstanding quantity of every line will be received into each order&apos;s delivery location (no bin) and the order{dialog.ids.length !== 1 ? 's' : ''} will be closed. This can&apos;t be undone.
+                {selected.size - dialog.ids.length > 0 ? ` ${selected.size - dialog.ids.length} selected order${selected.size - dialog.ids.length !== 1 ? 's are' : ' is'} not open and will be skipped.` : ''}
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                <button className="btn btn-outline" style={{ height: 38 }} onClick={() => setDialog(null)} disabled={busy}>Go back</button>
+                <button className="btn btn-primary" style={{ height: 38, padding: '0 20px' }} onClick={() => autoReceive(dialog.ids)} disabled={busy}>{busy ? 'Receiving…' : 'Yes, receive'}</button>
+              </div>
+            </>)}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

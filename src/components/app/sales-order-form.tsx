@@ -108,6 +108,7 @@ export type SalesOrder = {
   ref: string | null
   currency: string | null
   price_level_id: string | null
+  source_po_id?: string | null // set when the order was created from a purchase order
   total_amount: number | null
   order_discount: number | null
   order_discount_type: string | null
@@ -120,6 +121,7 @@ type Props = {
   orgId: string
   order?: SalesOrder | null
   prefill?: SalesOrder | null // Clone Order — a new order pre-filled from an existing one
+  relatedPoId?: string | null // the purchase order this order was created from / created from it (shows Open Related Order)
   customers: Customer[]
   locations: Location[]
   products: Product[]
@@ -236,8 +238,8 @@ function Dd({ label, value, options, onPick, open, setOpen, disabled, placeholde
 }
 
 // Actions dropdown in the header of a saved order (view mode)
-function ActionsMenu({ orderId, soNumber, statusLower, canEdit, canCancel, canPo, isQuote, onEdit, onCancel, onPo, onError }: {
-  orderId: string; soNumber: string; statusLower: string
+function ActionsMenu({ orderId, soNumber, statusLower, relatedPoId, canEdit, canCancel, canPo, isQuote, onEdit, onCancel, onPo, onError }: {
+  orderId: string; soNumber: string; statusLower: string; relatedPoId: string | null
   canEdit: boolean; canCancel: boolean; canPo: boolean; isQuote: boolean
   onEdit: () => void; onCancel: () => void; onPo: () => void
   onError: (message: string) => void
@@ -304,6 +306,7 @@ function ActionsMenu({ orderId, soNumber, statusLower, canEdit, canCancel, canPo
           {sep('s1')}
           {item('Clone Order', () => { shut(); router.push(`/sales/new?clone=${orderId}`) }, { icon: ic('M9 9h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V11a2 2 0 0 1 2-2zM5 15H4a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v1') })}
           {canPo && item('Create Purchase Order', () => { shut(); onPo() }, { icon: ic('M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4zM3 6h18M16 10a4 4 0 0 1-8 0') })}
+          {relatedPoId && item('Open Related Order', () => { shut(); router.push(`/purchases/${relatedPoId}`) }, { icon: ic('M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71') })}
           {canCancel && <>{sep('s2')}{item('Cancel Order', () => { shut(); onCancel() }, { danger: true, icon: ic('M18 6 6 18M6 6l12 12') })}</>}
         </div>
       )}
@@ -329,6 +332,7 @@ export default function SalesOrderForm(props: Props) {
 function SalesOrderFormInner({
   order,
   prefill,
+  relatedPoId,
   customers,
   locations,
   products,
@@ -663,6 +667,7 @@ function SalesOrderFormInner({
       currency,
       price_level_id: priceLevelId,
       price_level_name: priceLevelId ? levelName : null,
+      ...(isNew && prefill?.source_po_id ? { source_po_id: prefill.source_po_id } : {}),
       total_amount: total,
       order_discount: orderDiscount || null,
       order_discount_type: orderDiscount > 0 ? orderDiscountType : null,
@@ -805,6 +810,7 @@ function SalesOrderFormInner({
               orderId={order!.id}
               soNumber={order!.so_number ?? 'Order'}
               statusLower={statusLower}
+              relatedPoId={relatedPoId ?? null}
               canEdit={statusEditable}
               canCancel={statusEditable}
               canPo={statusLower !== 'cancelled' && !isQuote}

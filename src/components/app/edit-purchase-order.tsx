@@ -166,6 +166,7 @@ type Props = {
   taxRates?: TaxRate[]
   decimalPlaces?: number
   stockLevels?: StockLevel[]
+  relatedSoId?: string | null // sales order this was created from / created from it (shows Open Related Order)
   startInEdit?: boolean // opened with ?edit=1 (Edit Order in the Purchases list)
 }
 
@@ -199,8 +200,8 @@ function ConfirmModal({ title, message, confirmLabel, cancelLabel = 'Go back', o
 
 
 // Actions dropdown in the header of a saved purchase order (view mode)
-function ActionsMenu({ orderId, poNumber, status, canEdit, canCancel, onEdit, onCancel, onError }: {
-  orderId: string; poNumber: string; status: string
+function ActionsMenu({ orderId, poNumber, status, relatedSoId, canEdit, canCancel, onEdit, onCancel, onError }: {
+  orderId: string; poNumber: string; status: string; relatedSoId: string | null
   canEdit: boolean; canCancel: boolean
   onEdit: () => void; onCancel: () => void
   onError: (message: string) => void
@@ -249,6 +250,7 @@ function ActionsMenu({ orderId, poNumber, status, canEdit, canCancel, onEdit, on
           {item('Email', null, { soon: true, icon: ic('M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM22 6l-10 7L2 6') })}
           {sep('s1')}
           {item('Clone Order', () => { setOpen(false); router.push(`/purchases/new?clone=${orderId}`) }, { icon: ic('M9 9h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V11a2 2 0 0 1 2-2zM5 15H4a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v1') })}
+          {relatedSoId && item('Open Related Order', () => { setOpen(false); router.push(`/sales/${relatedSoId}`) }, { icon: ic('M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71') })}
           {!cancelled && item('Create Sales Order', () => { setOpen(false); router.push(`/sales/new?from_po=${orderId}`) }, { icon: ic('M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4zM3 6h18M16 10a4 4 0 0 1-8 0') })}
           {canCancel && <>{sep('s2')}{item('Cancel Order', () => { setOpen(false); onCancel() }, { danger: true, icon: ic('M18 6 6 18M6 6l12 12') })}</>}
         </div>
@@ -276,6 +278,7 @@ export default function EditPurchaseOrder(props: Props) {
 function PurchaseOrderForm({
   orgId,
   order,
+  relatedSoId,
   suppliers,
   locations,
   products,
@@ -628,6 +631,7 @@ function PurchaseOrderForm({
               orderId={order.id}
               poNumber={order.po_number ?? 'Order'}
               status={order.status}
+              relatedSoId={relatedSoId ?? null}
               canEdit={statusEditable}
               canCancel={statusEditable && !anyReceived}
               onEdit={() => { setError(null); setMode('edit') }}

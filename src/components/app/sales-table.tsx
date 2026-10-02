@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import PickListMenu from '@/components/app/pick-list-menu'
 import { printPickList } from '@/lib/pick-list/print'
 import { printPackingList } from '@/lib/packing-list/print'
+import { printInvoice } from '@/lib/invoice/print'
 
 type Order = {
   id: string
@@ -234,6 +235,8 @@ export default function SalesTable({
   const toPrint = selectedOrders.filter(o => ['open', 'picking', 'picked', 'packed'].includes(statusKey(o.status)))
   // Orders a packing list can be printed for (something has been picked, up to and including closed)
   const toPrintPacking = selectedOrders.filter(o => ['picking', 'picked', 'packed', 'closed'].includes(statusKey(o.status)))
+  // Orders an invoice can be printed for (everything except drafts and cancelled orders)
+  const toPrintInvoice = selectedOrders.filter(o => ['open', 'picking', 'picked', 'packed', 'closed'].includes(statusKey(o.status)))
   const pickEnabled = fulfilmentMode !== 'none'
   const packEnabled = fulfilmentMode === 'full'
 
@@ -441,7 +444,7 @@ export default function SalesTable({
               {!(pickEnabled && toPick.length > 0) && !(packEnabled && toPack.length > 0) && toClose.length === 0 && (
                 <span style={{ fontSize: 12.5, color: 'var(--gray-400)' }}>No selected order is ready to pick, pack or close.</span>
               )}
-              {(toPrint.length > 0 || toPrintPacking.length > 0) && <PickListMenu ids={toPrint.map(o => o.id)} packIds={toPrintPacking.map(o => o.id)} size="sm" onError={msg => flash(false, msg)} />}
+              {(toPrint.length > 0 || toPrintPacking.length > 0 || toPrintInvoice.length > 0) && <PickListMenu ids={toPrint.map(o => o.id)} packIds={toPrintPacking.map(o => o.id)} invoiceIds={toPrintInvoice.map(o => o.id)} size="sm" onError={msg => flash(false, msg)} />}
               <button className="btn-sm btn-sm-ghost" style={{ marginLeft: 'auto' }} onClick={() => setSelected(new Set())}>✕ Clear</button>
             </div>
           ) : (
@@ -599,7 +602,13 @@ export default function SalesTable({
                       if (!res.ok) flash(false, `${o.so_number}: ${res.error}`)
                     })
                   : null}
-                {item('Invoice', null, { soon: true })}
+                {['open', 'picking', 'picked', 'packed', 'closed'].includes(k)
+                  ? item('Invoice', async () => {
+                      setMenu(null)
+                      const res = await printInvoice([o.id])
+                      if (!res.ok) flash(false, `${o.so_number}: ${res.error}`)
+                    })
+                  : null}
               </div>
             )}
             {item('Email', null, { soon: true, icon: ic('M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM22 6l-10 7L2 6') })}

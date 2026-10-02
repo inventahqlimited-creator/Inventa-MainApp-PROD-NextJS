@@ -109,7 +109,7 @@ export default async function NewSalesOrderPage({ searchParams }: { searchParams
       prefill = {
         id: '', so_number: null, status: 'Draft', customer_id: null, customer_name: null,
         location_id: s.location_id, location_name: s.location_name, order_date: null, expected_date: null, terms: null,
-        notes: `Created from purchase order ${s.po_number ?? ''}`.trim(), ref: null, currency: null, price_level_id: null, total_amount: null,
+        notes: `Created from purchase order ${s.po_number ?? ''}`.trim(), ref: s.po_number ?? null, source_po_id: from_po, currency: null, price_level_id: null, total_amount: null,
         order_discount: null, order_discount_type: null, order_discount_amount: null, lines, cost_lines: [],
       }
     }

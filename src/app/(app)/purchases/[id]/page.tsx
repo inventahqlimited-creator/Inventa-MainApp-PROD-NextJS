@@ -2,8 +2,9 @@ import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import EditPurchaseOrder from '@/components/app/edit-purchase-order'
 
-export default async function EditPurchaseOrderPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function EditPurchaseOrderPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ edit?: string }> }) {
   const { id } = await params
+  const { edit } = await searchParams
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
@@ -71,6 +72,7 @@ export default async function EditPurchaseOrderPage({ params }: { params: Promis
       decimalPlaces={(org as any)?.decimal_places ?? 2}
       stockLevels={(stockLevels ?? []) as any}
       taxRates={(taxRates ?? []) as any}
+      startInEdit={edit === '1'}
     />
   )
 }

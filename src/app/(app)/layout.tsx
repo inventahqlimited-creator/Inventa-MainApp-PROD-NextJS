@@ -23,17 +23,18 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   const { data: org } = await adminClient
     .from('organisations')
-    .select('name')
+    .select('name, xero_enabled')
     .eq('id', m.org_id)
     .single()
 
   const displayName = [m.first_name, m.last_name].filter(Boolean).join(' ') || user.email || 'User'
   const initials = displayName.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2)
   const orgName = (org as { name: string } | null)?.name ?? 'inventaHQ'
+  const xeroEnabled = Boolean((org as { xero_enabled?: boolean | null } | null)?.xero_enabled)
 
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: '#ECEEED' }}>
-      <AppSidebar />
+      <AppSidebar xeroEnabled={xeroEnabled} />
       <div className="main">
         <AppTopbar
           displayName={displayName}

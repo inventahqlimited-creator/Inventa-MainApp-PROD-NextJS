@@ -45,7 +45,7 @@ const OPEN_GROUP = ['open', 'no stock', 'stock available', 'partial stock']
 const PICKING_GROUP = ['picking', 'partially picked', 'partially packed']
 const CLOSED_GROUP = ['closed', 'shipped', 'delivered']
 
-function statusKey(status: string): 'draft' | 'open' | 'picking' | 'picked' | 'packed' | 'closed' | 'cancelled' {
+function statusKey(status: string): 'draft' | 'quote' | 'open' | 'picking' | 'picked' | 'packed' | 'closed' | 'cancelled' {
   const s = status.toLowerCase()
   if (OPEN_GROUP.includes(s)) return 'open'
   if (PICKING_GROUP.includes(s)) return 'picking'
@@ -53,11 +53,13 @@ function statusKey(status: string): 'draft' | 'open' | 'picking' | 'picked' | 'p
   if (s === 'packed') return 'packed'
   if (CLOSED_GROUP.includes(s)) return 'closed'
   if (s === 'cancelled') return 'cancelled'
+  if (s === 'quote') return 'quote'
   return 'draft'
 }
 
 function statusBadge(status: string) {
   switch (statusKey(status)) {
+    case 'quote': return <span className="badge" style={{ background: '#FEF3C7', color: '#92400E' }}>Quote</span>
     case 'open': return <span className="badge badge-open">Open</span>
     case 'picking': return <span className="badge" style={{ background: '#EDE9FE', color: '#5B21B6' }}>Picking</span>
     case 'picked': return <span className="badge" style={{ background: '#DBEAFE', color: '#1D4ED8' }}>Picked</span>
@@ -71,6 +73,7 @@ function statusBadge(status: string) {
 const TABS = [
   { key: 'all', label: 'All' },
   { key: 'draft', label: 'Draft' },
+  { key: 'quote', label: 'Quote' },
   { key: 'open', label: 'Open' },
   { key: 'picking', label: 'Picking' },
   { key: 'picked', label: 'Picked' },
@@ -80,7 +83,7 @@ const TABS = [
 ] as const
 
 // These tabs only appear when at least one order has that status
-const HIDE_WHEN_EMPTY = new Set<string>(['draft', 'picking', 'picked', 'packed', 'cancelled'])
+const HIDE_WHEN_EMPTY = new Set<string>(['draft', 'quote', 'picking', 'picked', 'packed', 'cancelled'])
 
 type Tab = typeof TABS[number]['key']
 
@@ -203,6 +206,7 @@ export default function SalesTable({
   const counts = useMemo(() => ({
     all: orders.length,
     draft: orders.filter(o => statusKey(o.status) === 'draft').length,
+    quote: orders.filter(o => statusKey(o.status) === 'quote').length,
     open: orders.filter(o => statusKey(o.status) === 'open').length,
     picking: orders.filter(o => statusKey(o.status) === 'picking').length,
     picked: orders.filter(o => statusKey(o.status) === 'picked').length,
@@ -236,7 +240,7 @@ export default function SalesTable({
   // Orders a packing list can be printed for (something has been picked, up to and including closed)
   const toPrintPacking = selectedOrders.filter(o => ['picking', 'picked', 'packed', 'closed'].includes(statusKey(o.status)))
   // Orders an invoice can be printed for (everything except drafts and cancelled orders)
-  const toPrintInvoice = selectedOrders.filter(o => ['open', 'picking', 'picked', 'packed', 'closed'].includes(statusKey(o.status)))
+  const toPrintInvoice = selectedOrders.filter(o => ['quote', 'open', 'picking', 'picked', 'packed', 'closed'].includes(statusKey(o.status)))
   const pickEnabled = fulfilmentMode !== 'none'
   const packEnabled = fulfilmentMode === 'full'
 
@@ -583,7 +587,7 @@ export default function SalesTable({
           >
             {fulfil && <>{fulfil}{sep('s1')}</>}
             {item('Clone Order', () => router.push(`/sales/new?clone=${o.id}`), { icon: ic('M9 9h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V11a2 2 0 0 1 2-2zM5 15H4a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v1') })}
-            {k !== 'cancelled' && item('Create Purchase Order', () => { setMenu(null); setPoScope('all'); setDialog({ kind: 'po', order: o }) }, { icon: ic('M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4zM3 6h18M16 10a4 4 0 0 1-8 0') })}
+            {k !== 'cancelled' && k !== 'quote' && item('Create Purchase Order', () => { setMenu(null); setPoScope('all'); setDialog({ kind: 'po', order: o }) }, { icon: ic('M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4zM3 6h18M16 10a4 4 0 0 1-8 0') })}
             {sep('s2')}
             {item('Print', () => setMenu(m => (m ? { ...m, printOpen: !m.printOpen } : m)), { icon: ic('M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6z'), chevron: true })}
             {menu.printOpen && (
@@ -602,8 +606,8 @@ export default function SalesTable({
                       if (!res.ok) flash(false, `${o.so_number}: ${res.error}`)
                     })
                   : null}
-                {['open', 'picking', 'picked', 'packed', 'closed'].includes(k)
-                  ? item('Invoice', async () => {
+                {['quote', 'open', 'picking', 'picked', 'packed', 'closed'].includes(k)
+                  ? item(k === 'quote' ? 'Quote' : 'Invoice', async () => {
                       setMenu(null)
                       const res = await printInvoice([o.id])
                       if (!res.ok) flash(false, `${o.so_number}: ${res.error}`)
@@ -612,7 +616,7 @@ export default function SalesTable({
               </div>
             )}
             {item('Email', null, { soon: true, icon: ic('M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM22 6l-10 7L2 6') })}
-            {item('Create Credit Note', null, { soon: true, icon: ic('M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M9 15h6') })}
+            {k !== 'quote' && item('Create Credit Note', null, { soon: true, icon: ic('M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M9 15h6') })}
             {!closedLike && <>{sep('s3')}{item('Cancel Order', () => { setMenu(null); setDialog({ kind: 'cancel', order: o }) }, { danger: true, icon: ic('M18 6 6 18M6 6l12 12') })}</>}
           </div>
         )

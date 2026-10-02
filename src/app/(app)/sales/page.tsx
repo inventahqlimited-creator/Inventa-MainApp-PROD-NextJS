@@ -2,6 +2,7 @@
 import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import SalesTable from '@/components/app/sales-table'
+import { relatedPurchaseOrders } from '@/lib/related'
 
 type Line = { product_id: string | null; quantity: number | null }
 type Row = {
@@ -38,6 +39,8 @@ export default async function SalesPage() {
     adminClient.from('organisations').select('fulfilment_mode').eq('id', m.org_id).single(),
   ])
 
+  const relatedPo = await relatedPurchaseOrders(adminClient, m.org_id, ((orders ?? []) as { id: string }[]).map(o => o.id))
+
   // On hand per product per location, and per product overall
   const byLoc = new Map<string, number>()
   const byProduct = new Map<string, number>()
@@ -61,7 +64,7 @@ export default async function SalesPage() {
       const onHand = (pid: string) => o.location_id ? (byLoc.get(`${pid}|${o.location_id}`) ?? 0) : (byProduct.get(pid) ?? 0)
       stock_status = [...need].some(([pid, qty]) => onHand(pid) < qty) ? 'no' : 'in'
     }
-    return { ...rest, stock_status }
+    return { ...rest, stock_status, related_po_id: relatedPo.get(o.id) ?? null }
   })
 
   return (

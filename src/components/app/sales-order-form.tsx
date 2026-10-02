@@ -132,6 +132,7 @@ type Props = {
   decimalPlaces?: number
   stockLevels?: StockLevel[]
   fulfilmentMode?: string // 'full' | 'pick-only' | 'none' (Settings → Sales)
+  quotesEnabled?: boolean // Settings → Sales → Quotes: adds a Save Quote button
 }
 
 // Item picker columns: SKU | Product | Unit | Available | Committed | Price
@@ -166,6 +167,7 @@ function displayStatus(status: string) {
   if (s === 'picked') return 'Picked'
   if (s === 'packed') return 'Packed'
   if (s === 'draft') return 'Draft'
+  if (s === 'quote') return 'Quote'
   if (s === 'closed') return 'Closed'
   if (s === 'cancelled') return 'Cancelled'
   return status
@@ -234,9 +236,9 @@ function Dd({ label, value, options, onPick, open, setOpen, disabled, placeholde
 }
 
 // Actions dropdown in the header of a saved order (view mode)
-function ActionsMenu({ orderId, soNumber, statusLower, canEdit, canCancel, canPo, onEdit, onCancel, onPo, onError }: {
+function ActionsMenu({ orderId, soNumber, statusLower, canEdit, canCancel, canPo, isQuote, onEdit, onCancel, onPo, onError }: {
   orderId: string; soNumber: string; statusLower: string
-  canEdit: boolean; canCancel: boolean; canPo: boolean
+  canEdit: boolean; canCancel: boolean; canPo: boolean; isQuote: boolean
   onEdit: () => void; onCancel: () => void; onPo: () => void
   onError: (message: string) => void
 }) {
@@ -256,7 +258,7 @@ function ActionsMenu({ orderId, soNumber, statusLower, canEdit, canCancel, canPo
   const inPicking = PICKING_GROUP.includes(statusLower)
   const canPickList = inOpen || inPicking || ['picked', 'packed'].includes(statusLower)
   const canPackList = inPicking || ['picked', 'packed', 'closed', 'shipped', 'delivered'].includes(statusLower)
-  const canInvoice = inOpen || inPicking || ['picked', 'packed', 'closed', 'shipped', 'delivered'].includes(statusLower)
+  const canInvoice = isQuote || inOpen || inPicking || ['picked', 'packed', 'closed', 'shipped', 'delivered'].includes(statusLower)
 
   const shut = () => { setOpen(false); setPrintOpen(false) }
   const ic = (d: string) => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d={d} /></svg>
@@ -294,11 +296,11 @@ function ActionsMenu({ orderId, soNumber, statusLower, canEdit, canCancel, canPo
             <div style={{ paddingLeft: 16 }}>
               {canPickList && item('Pick List', () => run(() => printPickList([orderId], 'single')))}
               {canPackList && item('Packing List', () => run(() => printPackingList([orderId])))}
-              {canInvoice && item('Invoice', () => run(() => printInvoice([orderId])))}
+              {canInvoice && item(isQuote ? 'Quote' : 'Invoice', () => run(() => printInvoice([orderId])))}
             </div>
           )}
           {item('Email', null, { soon: true, icon: ic('M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM22 6l-10 7L2 6') })}
-          {item('Create Credit Note', null, { soon: true, icon: ic('M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M9 15h6') })}
+          {!isQuote && item('Create Credit Note', null, { soon: true, icon: ic('M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M9 15h6') })}
           {sep('s1')}
           {item('Clone Order', () => { shut(); router.push(`/sales/new?clone=${orderId}`) }, { icon: ic('M9 9h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V11a2 2 0 0 1 2-2zM5 15H4a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v1') })}
           {canPo && item('Create Purchase Order', () => { shut(); onPo() }, { icon: ic('M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4zM3 6h18M16 10a4 4 0 0 1-8 0') })}
@@ -339,6 +341,7 @@ function SalesOrderFormInner({
   decimalPlaces = 2,
   stockLevels = [],
   fulfilmentMode = 'full',
+  quotesEnabled = false,
   mode,
   setMode,
   onDiscard,
@@ -379,9 +382,10 @@ function SalesOrderFormInner({
   const anyPicked = (order?.lines ?? []).some(l => Number(l.quantity_picked) > 0)
   // Editable until closed / cancelled. Once picking starts, picked lines are protected (see _locked).
   const fulfilling = [...PICKING_GROUP, 'picked', 'packed'].includes(statusLower)
-  const statusEditable = isNew || ['draft', ...OPEN_GROUP, ...PICKING_GROUP, 'picked', 'packed'].includes(statusLower)
+  const statusEditable = isNew || ['draft', 'quote', ...OPEN_GROUP, ...PICKING_GROUP, 'picked', 'packed'].includes(statusLower)
   const editable = statusEditable && mode === 'edit'
   const isDraft = isNew || statusLower === 'draft'
+  const isQuote = statusLower === 'quote'
   const shownStatus = displayStatus(order?.status ?? 'Draft')
   const fallbackTerms = defaultTerms ?? 'Net 14'
 
@@ -432,6 +436,9 @@ function SalesOrderFormInner({
   const [confirmLeave, setConfirmLeave] = useState(false)
   const [confirmCancelOrder, setConfirmCancelOrder] = useState(false)
   const [poOpen, setPoOpen] = useState(false)
+  const [convertOpen, setConvertOpen] = useState(false)
+  const [convertMode, setConvertMode] = useState<'copy' | 'convert'>('copy')
+  const [converting, setConverting] = useState(false)
   const [poScope, setPoScope] = useState<'all' | 'short'>('all')
   const [confirmClose, setConfirmClose] = useState(false)
   const [closing, setClosing] = useState(false)
@@ -635,7 +642,7 @@ function SalesOrderFormInner({
     charges.reduce((sum, l) => sum + l.amount * discountFactor * (l.tax_rate / 100), 0)
   const total = discountedBase + taxTotal
 
-  async function save(status?: 'Draft' | 'Open') {
+  async function save(status?: 'Draft' | 'Open' | 'Quote') {
     if (!selectedCustomer) { setError('Please select a customer.'); return }
     if (!selectedLocation) { setError('Please select a ship-from location.'); return }
     if (lines.length === 0) { setError('Add at least one line item.'); return }
@@ -700,6 +707,27 @@ function SalesOrderFormInner({
       setError('Network error — please try again.')
     } finally {
       setClosing(false)
+    }
+  }
+
+  async function convertQuote() {
+    setConverting(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/org/sales/${order!.id}/convert-quote`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: convertMode }),
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { setConvertOpen(false); setError(data.error ?? 'Could not convert this quote'); return }
+      setConvertOpen(false)
+      if (convertMode === 'copy' && data.id) router.push(`/sales/${data.id}`)
+      else router.refresh()
+    } catch {
+      setConvertOpen(false)
+      setError('Network error — please try again.')
+    } finally {
+      setConverting(false)
     }
   }
 
@@ -771,7 +799,7 @@ function SalesOrderFormInner({
           {!isNew && mode === 'edit' && <span style={{ fontSize: 12, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)' }}>Editing</span>}
           {isNew
             ? <><span style={{ fontSize: 12, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)' }}>Draft</span><div style={{ width: 8, height: 8, borderRadius: '50%', background: '#F59E0B' }} /></>
-            : <span className={`badge ${statusClass(order!.status)}`} style={shownStatus === 'Packed' ? { background: '#CCFBF1', color: '#0F766E' } : shownStatus === 'Picked' ? { background: '#DBEAFE', color: '#1D4ED8' } : undefined}>{shownStatus}</span>}
+            : <span className={`badge ${statusClass(order!.status)}`} style={shownStatus === 'Quote' ? { background: '#FEF3C7', color: '#92400E' } : shownStatus === 'Packed' ? { background: '#CCFBF1', color: '#0F766E' } : shownStatus === 'Picked' ? { background: '#DBEAFE', color: '#1D4ED8' } : undefined}>{shownStatus}</span>}
           {!isNew && mode === 'view' && (
             <ActionsMenu
               orderId={order!.id}
@@ -779,7 +807,8 @@ function SalesOrderFormInner({
               statusLower={statusLower}
               canEdit={statusEditable}
               canCancel={statusEditable}
-              canPo={statusLower !== 'cancelled'}
+              canPo={statusLower !== 'cancelled' && !isQuote}
+              isQuote={isQuote}
               onEdit={() => { setError(null); setMode('edit') }}
               onCancel={() => setConfirmCancelOrder(true)}
               onPo={() => { setPoScope('all'); setPoOpen(true) }}
@@ -1266,6 +1295,12 @@ function SalesOrderFormInner({
         {/* View mode actions */}
         {!isNew && mode === 'view' && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            {isQuote && (
+              <button className="btn btn-primary" style={{ height: 38, padding: '0 20px', fontSize: 14 }} onClick={() => { setConvertMode('copy'); setConvertOpen(true) }}>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                Convert to Sales
+              </button>
+            )}
             {isDraft && (
               <button className="btn btn-primary" style={{ height: 38, padding: '0 20px', fontSize: 14 }} onClick={() => save('Open')} disabled={saving}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
@@ -1309,6 +1344,11 @@ function SalesOrderFormInner({
             <button className="btn btn-outline" style={{ height: 38 }} onClick={() => save('Draft')} disabled={saving}>
               {saving ? 'Saving…' : 'Save Draft'}
             </button>
+            {quotesEnabled && (
+              <button className="btn btn-outline" style={{ height: 38 }} onClick={() => save('Quote')} disabled={saving}>
+                {saving ? 'Saving…' : 'Save Quote'}
+              </button>
+            )}
             <button className="btn btn-primary" style={{ height: 38, padding: '0 20px', fontSize: 14 }} onClick={() => save('Open')} disabled={saving}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
               {saving ? 'Creating…' : isNew ? 'Create Sales Order' : 'Submit Order'}
@@ -1316,7 +1356,7 @@ function SalesOrderFormInner({
           </div>
         )}
         {mode === 'edit' && !isDraft && (
-          <button className="btn btn-primary" style={{ height: 38, padding: '0 20px', fontSize: 14 }} onClick={() => save(fulfilling ? undefined : 'Open')} disabled={saving}>
+          <button className="btn btn-primary" style={{ height: 38, padding: '0 20px', fontSize: 14 }} onClick={() => save(isQuote ? 'Quote' : fulfilling ? undefined : 'Open')} disabled={saving}>
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
             {saving ? 'Saving…' : 'Save Changes'}
           </button>
@@ -1347,6 +1387,29 @@ function SalesOrderFormInner({
           onConfirm={closeOrder}
           onCancel={() => setConfirmClose(false)}
         />
+      )}
+      {convertOpen && order && (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onMouseDown={() => { if (!converting) setConvertOpen(false) }}>
+          <div style={{ background: 'var(--white)', borderRadius: 16, padding: '28px 32px', maxWidth: 480, width: '90%', boxShadow: '0 20px 60px rgba(0,0,0,0.2)' }} onMouseDown={e => e.stopPropagation()}>
+            <div style={{ fontFamily: 'var(--font-display)', fontSize: 17, fontWeight: 700, color: 'var(--slate)', marginBottom: 8 }}>Convert to sales order</div>
+            <div style={{ fontSize: 13.5, color: 'var(--gray-400)', lineHeight: 1.5, marginBottom: 14 }}>
+              How should {order.so_number} become a sales order?
+            </div>
+            {([
+              ['copy', 'Keep the quote and create a new sales order', `The quote stays as it is. A new open sales order with its own number is created with all the details copied across, and a note referencing ${order.so_number}.`],
+              ['convert', 'Convert this quote into a sales order', `The quote becomes an open sales order and keeps the number ${order.so_number}. A note records the date it was converted.`],
+            ] as const).map(([v, label, hint]) => (
+              <label key={v} style={{ display: 'flex', alignItems: 'flex-start', gap: 10, padding: '10px 12px', border: `1.5px solid ${convertMode === v ? 'var(--teal)' : 'var(--gray-200)'}`, background: convertMode === v ? 'var(--teal-surface)' : 'var(--white)', borderRadius: 10, marginBottom: 8, cursor: 'pointer' }}>
+                <input type="radio" name="convert-mode" checked={convertMode === v} onChange={() => setConvertMode(v)} style={{ accentColor: 'var(--teal)', marginTop: 3 }} />
+                <span><span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--slate)' }}>{label}</span><br /><span style={{ fontSize: 12, color: 'var(--gray-400)' }}>{hint}</span></span>
+              </label>
+            ))}
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 16 }}>
+              <button className="btn btn-outline" style={{ height: 38 }} onClick={() => setConvertOpen(false)} disabled={converting}>Cancel</button>
+              <button className="btn btn-primary" style={{ height: 38, padding: '0 20px' }} onClick={convertQuote} disabled={converting}>{converting ? 'Please wait…' : 'Convert'}</button>
+            </div>
+          </div>
+        </div>
       )}
       {poOpen && order && (
         <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onMouseDown={() => setPoOpen(false)}>

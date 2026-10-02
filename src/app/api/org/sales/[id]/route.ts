@@ -21,7 +21,7 @@ async function getOrg() {
 
 // Everything except Closed / Cancelled can still be edited
 const EDITABLE = [
-  'draft', 'open', 'no stock', 'stock available', 'partial stock',
+  'draft', 'quote', 'open', 'no stock', 'stock available', 'partial stock',
   'picking', 'partially picked', 'picked', 'partially packed', 'packed',
 ]
 const FULFILLING = ['picking', 'partially picked', 'picked', 'partially packed', 'packed']
@@ -64,6 +64,13 @@ export async function PATCH(request: Request, { params }: Params) {
     if (fulfilling) {
       // Picking / Packed status is driven by the pick & pack screens — only Cancelled is accepted here
       if (s !== 'Cancelled') delete updates.status
+    } else if (currentStatus === 'quote') {
+      // A quote stays a quote (or is cancelled); turning it into a sale goes through Convert to Sales
+      if (!['Quote', 'Cancelled'].includes(s)) delete updates.status
+    } else if (s === 'Quote') {
+      // Only a draft can become a quote, and only while quotes are switched on
+      const { data: org } = await db.from('organisations').select('quotes_enabled').eq('id', ctx.org_id).single()
+      if (currentStatus !== 'draft' || !(org as { quotes_enabled?: boolean | null } | null)?.quotes_enabled) delete updates.status
     } else if (!['Draft', 'Open', 'Cancelled'].includes(s)) {
       delete updates.status
     }

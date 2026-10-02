@@ -156,12 +156,12 @@ export function customValues(cf: unknown, idToName: Map<string, string>): Record
 
 const statusKey = (s: unknown) => String(s ?? '').trim().toLowerCase()
 
-/** Status filter shared by the order reports. A picked status list wins; otherwise cancelled and draft are hidden unless asked for. */
+/** Status filter shared by the order reports. A picked status list wins; otherwise cancelled, draft and quote are hidden unless asked for. */
 export function statusOk(status: unknown, picked: string[], inclAll: boolean): boolean {
   const k = statusKey(status)
   if (picked.length) return picked.some(p => statusKey(p) === k)
   if (inclAll) return true
-  return k !== 'cancelled' && k !== 'draft'
+  return k !== 'cancelled' && k !== 'draft' && k !== 'quote'
 }
 
 export const badgeStatus = (s: unknown): string => String(s ?? '') || '—'

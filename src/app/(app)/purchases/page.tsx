@@ -1,6 +1,7 @@
 import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import PurchasesTable from '@/components/app/purchases-table'
+import { relatedSalesOrders } from '@/lib/related'
 
 export default async function PurchasesPage() {
   const supabase = await createClient()
@@ -40,10 +41,13 @@ export default async function PurchasesPage() {
       .order('name'),
   ])
 
+  const relatedSo = await relatedSalesOrders(adminClient, m.org_id, ((orders ?? []) as { id: string }[]).map(o => o.id))
+  const shaped = ((orders ?? []) as { id: string }[]).map(o => ({ ...o, related_so_id: relatedSo.get(o.id) ?? null }))
+
   return (
     <PurchasesTable
       orgId={m.org_id}
-      orders={(orders ?? []) as any}
+      orders={shaped as any}
       contacts={(contacts ?? []) as { id: string; name: string }[]}
       locations={(locations ?? []) as { id: string; name: string }[]}
     />

@@ -131,7 +131,22 @@ export default function NewPurchaseOrder({
   stockLevels = [],
   prefill = null,
 }: {
-  prefill?: { location_id: string | null; notes?: string; lines: { product_id: string; quantity: number }[] } | null
+  // Create Purchase Order from a sales order (product + quantity only), or Clone Order (everything on the order)
+  prefill?: {
+    location_id: string | null
+    notes?: string
+    supplier_id?: string | null
+    terms?: string | null
+    ref?: string | null
+    order_discount?: number | null
+    order_discount_type?: string | null
+    lines: {
+      product_id: string; quantity: number
+      unit?: string | null; unit_cost?: number; discount?: number
+      tax_rate?: number; tax_rate_id?: string | null; tax_name?: string | null; line_notes?: string | null
+    }[]
+    cost_lines?: { product_id: string | null; product_name: string | null; product_sku: string | null; description: string | null; amount: number; tax_rate: number; tax_rate_id?: string | null; tax_name?: string | null }[]
+  } | null
   orgId: string
   suppliers: Supplier[]
   locations: Location[]
@@ -173,40 +188,49 @@ export default function NewPurchaseOrder({
   // Payment terms priority: supplier → global org setting → 'Net 14'
   const fallbackTerms = defaultTerms ?? 'Net 14'
 
-  const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(null)
+  const [selectedSupplier, setSelectedSupplier] = useState<Supplier | null>(() => (prefill?.supplier_id ? suppliers.find(s => s.id === prefill.supplier_id) ?? null : null))
   const [supplierSearch, setSupplierSearch] = useState('')
   const [supplierDropOpen, setSupplierDropOpen] = useState(false)
-  const [supplierOrderNum, setSupplierOrderNum] = useState('')
+  const [supplierOrderNum, setSupplierOrderNum] = useState(prefill?.ref ?? '')
   const [selectedLocation, setSelectedLocation] = useState<Location | null>(() => (prefill?.location_id ? locations.find(l => l.id === prefill.location_id) ?? null : null))
   const [locationOpen, setLocationOpen] = useState(false)
   const [orderDate, setOrderDate] = useState(new Date().toISOString().split('T')[0])
   const [expectedDate, setExpectedDate] = useState('')
-  const [terms, setTerms] = useState(fallbackTerms)
+  const [terms, setTerms] = useState(prefill?.terms ?? fallbackTerms)
   const [termsOpen, setTermsOpen] = useState(false)
   const [notes, setNotes] = useState(prefill?.notes ?? '')
   const [lines, setLines] = useState<LineItem[]>(() =>
     (prefill?.lines ?? []).flatMap(pl => {
       const p = products.find(x => x.id === pl.product_id)
       if (!p) return []
+      // Clone: keep the cost, discount and tax exactly as they were on the original order
+      const kept = pl.unit_cost !== undefined
       return [{
         product_id: p.id,
         product_name: p.name,
         product_sku: p.sku ?? '',
-        unit: p.buy_uom ?? 'Each',
+        unit: pl.unit ?? p.buy_uom ?? 'Each',
         quantity_ordered: pl.quantity,
-        unit_cost: Number(p.cost_price) || 0,
-        discount: 0,
-        ...buyTaxFor(p),
-        line_notes: '',
+        unit_cost: kept ? Number(pl.unit_cost) || 0 : Number(p.cost_price) || 0,
+        discount: kept ? Number(pl.discount) || 0 : 0,
+        ...(kept
+          ? withTaxName({ tax_rate: Number(pl.tax_rate) || 0, tax_rate_id: pl.tax_rate_id ?? null, tax_name: pl.tax_name ?? null })
+          : buyTaxFor(p)),
+        line_notes: pl.line_notes ?? '',
       }]
     }))
-  const [costLines, setCostLines] = useState<CostLine[]>([])
+  const [costLines, setCostLines] = useState<CostLine[]>(() =>
+    (prefill?.cost_lines ?? []).map(c => withTaxName({
+      product_id: c.product_id ?? '', product_name: c.product_name ?? '', product_sku: c.product_sku ?? '',
+      description: c.description ?? '', amount: Number(c.amount) || 0, tax_rate: Number(c.tax_rate) || 0,
+      tax_rate_id: c.tax_rate_id ?? null, tax_name: c.tax_name ?? null,
+    })))
   const [itemSearch, setItemSearch] = useState('')
   const [itemDropOpen, setItemDropOpen] = useState(false)
   const [costSearch, setCostSearch] = useState('')
   const [costDropOpen, setCostDropOpen] = useState(false)
-  const [orderDiscountType, setOrderDiscountType] = useState<'%' | '$'>('%')
-  const [orderDiscount, setOrderDiscount] = useState<number>(0)
+  const [orderDiscountType, setOrderDiscountType] = useState<'%' | '$'>(prefill?.order_discount_type === '$' ? '$' : '%')
+  const [orderDiscount, setOrderDiscount] = useState<number>(Number(prefill?.order_discount) || 0)
   const [supplierPriceLevelId, setSupplierPriceLevelId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)

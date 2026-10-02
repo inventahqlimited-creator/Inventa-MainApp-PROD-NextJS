@@ -2460,10 +2460,10 @@ export default function SettingsClient({
           <Card title="Integrations" subtitle="Connect third-party apps and services">
             <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
               {[
-                { name: 'Xero', sub: 'Sync invoices, bills and contacts with Xero accounting', icon: '💼', status: xeroInstalled ? 'Installed' : 'Talk to sales' },
+                { name: 'Xero', sub: 'Sync invoices, bills and contacts with Xero accounting', icon: '💼', logo: '/integrations/xero.png', status: xeroInstalled ? 'Installed' : 'Talk to sales' },
                 { name: 'Starshipit', sub: 'Generate shipping labels and track parcels', icon: '📦', status: 'Coming soon' },
                 { name: 'Shopify', sub: 'Sync orders and inventory with your Shopify store', icon: '🛒', status: 'Coming soon' },
-              ].map(int => {
+              ].map((int: { name: string; sub: string; icon: string; logo?: string; status: string }) => {
                 const isXero = int.name === 'Xero'
                 const open = isXero && xeroInstalled
                 return (
@@ -2473,7 +2473,10 @@ export default function SettingsClient({
                     style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', background: 'var(--gray-50)', border: '1.5px solid var(--gray-200)', borderRadius: 10, cursor: open ? 'pointer' : 'default' }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-                      <div style={{ width: 36, height: 36, borderRadius: 9, background: 'var(--white)', border: '1px solid var(--gray-200)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>{int.icon}</div>
+                      {int.logo
+                        // eslint-disable-next-line @next/next/no-img-element
+                        ? <img src={int.logo} alt={`${int.name} logo`} width={36} height={36} style={{ width: 36, height: 36, borderRadius: 9, display: 'block', flexShrink: 0 }} />
+                        : <div style={{ width: 36, height: 36, borderRadius: 9, background: 'var(--white)', border: '1px solid var(--gray-200)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 18 }}>{int.icon}</div>}
                       <div>
                         <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--slate)', fontFamily: 'var(--font-display)' }}>{int.name}</div>
                         <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 1 }}>{int.sub}</div>

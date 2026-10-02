@@ -23,6 +23,8 @@ export type InvoiceOrder = {
   id: string
   so_number: string
   invoice_number: string
+  /** A quote (order status Quote): printed as "Quote" with the order number and no payment details */
+  is_quote?: boolean
   /** YYYY-MM-DD. null until the order has shipped — the day it is printed is used until then. */
   invoice_date: string | null
   terms: string | null

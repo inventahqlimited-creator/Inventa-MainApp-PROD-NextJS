@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import NumInput from '@/components/app/num-input'
 import TaxSelect from '@/components/app/tax-select'
+import { printPurchaseOrder } from '@/lib/purchase-order/print'
 
 type Supplier = {
   id: string
@@ -165,6 +166,7 @@ type Props = {
   taxRates?: TaxRate[]
   decimalPlaces?: number
   stockLevels?: StockLevel[]
+  startInEdit?: boolean // opened with ?edit=1 (Edit Order in the Purchases list)
 }
 
 // Same classes as the purchase order list, so the status tag looks identical everywhere
@@ -195,10 +197,70 @@ function ConfirmModal({ title, message, confirmLabel, cancelLabel = 'Go back', o
   )
 }
 
-// Opens in view mode; the Edit button switches to edit mode.
+
+// Actions dropdown in the header of a saved purchase order (view mode)
+function ActionsMenu({ orderId, poNumber, status, canEdit, canCancel, onEdit, onCancel, onError }: {
+  orderId: string; poNumber: string; status: string
+  canEdit: boolean; canCancel: boolean
+  onEdit: () => void; onCancel: () => void
+  onError: (message: string) => void
+}) {
+  const router = useRouter()
+  const [open, setOpen] = useState(false)
+  const box = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const close = (e: MouseEvent) => { if (box.current && !box.current.contains(e.target as Node)) setOpen(false) }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [open])
+
+  const cancelled = status.toLowerCase() === 'cancelled'
+  const ic = (d: string) => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d={d} /></svg>
+  const item = (label: string, onClick: (() => void) | null, opts: { danger?: boolean; soon?: boolean; icon?: React.ReactNode } = {}) => (
+    <div
+      key={label}
+      className="fp-item"
+      onClick={() => { if (!onClick || opts.soon) return; onClick() }}
+      style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: onClick && !opts.soon ? 'pointer' : 'default', opacity: opts.soon ? 0.5 : 1, color: opts.danger ? 'var(--danger)' : undefined }}
+    >
+      <span style={{ width: 16, display: 'inline-flex', justifyContent: 'center', flexShrink: 0 }}>{opts.icon}</span>
+      <span style={{ flex: 1 }}>{label}</span>
+      {opts.soon && <span style={{ fontSize: 10, fontWeight: 600, color: 'var(--gray-400)', background: 'var(--gray-100)', borderRadius: 5, padding: '1px 6px' }}>Soon</span>}
+    </div>
+  )
+  const sep = (key: string) => <div key={key} style={{ height: 1, background: 'var(--gray-100)', margin: '5px 0' }} />
+
+  return (
+    <div ref={box} style={{ position: 'relative', display: 'inline-block' }}>
+      <button className="btn btn-outline" style={{ height: 34, marginLeft: 4 }} onClick={() => setOpen(o => !o)} aria-haspopup="menu" aria-expanded={open}>
+        Actions
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
+      </button>
+      {open && (
+        <div className="inv-dropdown" role="menu" style={{ display: 'block', position: 'absolute', right: 0, top: 'calc(100% + 6px)', width: 230, padding: 6, zIndex: 60 }}>
+          {canEdit && item('Edit Order', () => { setOpen(false); onEdit() }, { icon: ic('M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z') })}
+          {!cancelled && item('Print', async () => {
+            setOpen(false)
+            const res = await printPurchaseOrder([orderId])
+            if (!res.ok) onError(`${poNumber}: ${res.error}`)
+          }, { icon: ic('M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6z') })}
+          {item('Email', null, { soon: true, icon: ic('M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM22 6l-10 7L2 6') })}
+          {sep('s1')}
+          {item('Clone Order', () => { setOpen(false); router.push(`/purchases/new?clone=${orderId}`) }, { icon: ic('M9 9h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V11a2 2 0 0 1 2-2zM5 15H4a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v1') })}
+          {!cancelled && item('Create Sales Order', () => { setOpen(false); router.push(`/sales/new?from_po=${orderId}`) }, { icon: ic('M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4zM3 6h18M16 10a4 4 0 0 1-8 0') })}
+          {canCancel && <>{sep('s2')}{item('Cancel Order', () => { setOpen(false); onCancel() }, { danger: true, icon: ic('M18 6 6 18M6 6l12 12') })}</>}
+        </div>
+      )}
+    </div>
+  )
+}
+
+// Opens in view mode (or straight into edit mode from the Purchases list); Edit Order in the Actions menu switches to edit mode.
 // "Cancel" while editing discards changes by remounting the form with the saved order.
 export default function EditPurchaseOrder(props: Props) {
-  const [mode, setMode] = useState<'view' | 'edit'>('view')
+  const [mode, setMode] = useState<'view' | 'edit'>(props.startInEdit && isEditable(props.order.status) ? 'edit' : 'view')
   const [formKey, setFormKey] = useState(0)
   return (
     <PurchaseOrderForm
@@ -561,11 +623,17 @@ function PurchaseOrderForm({
             <span style={{ fontSize: 12, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)' }}>Editing</span>
           )}
           <span className={`badge ${statusClass(order.status)}`}>{order.status}</span>
-          {mode === 'view' && statusEditable && (
-            <button className="btn btn-outline" style={{ height: 34, marginLeft: 4 }} onClick={() => { setError(null); setMode('edit') }}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-              Edit
-            </button>
+          {mode === 'view' && (
+            <ActionsMenu
+              orderId={order.id}
+              poNumber={order.po_number ?? 'Order'}
+              status={order.status}
+              canEdit={statusEditable}
+              canCancel={statusEditable && !anyReceived}
+              onEdit={() => { setError(null); setMode('edit') }}
+              onCancel={() => setConfirmCancelOrder(true)}
+              onError={setError}
+            />
           )}
         </div>
       </div>
@@ -1112,11 +1180,6 @@ function PurchaseOrderForm({
         {/* View mode actions */}
         {mode === 'view' && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            {statusEditable && !anyReceived && (
-              <button className="btn btn-outline" style={{ height: 38, color: 'var(--danger)', borderColor: '#FECACA' }} onClick={() => setConfirmCancelOrder(true)}>
-                Cancel Order
-              </button>
-            )}
             {isDraft && (
               <button className="btn btn-primary" style={{ height: 38, padding: '0 20px', fontSize: 14 }} onClick={() => save('Open')} disabled={saving}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>

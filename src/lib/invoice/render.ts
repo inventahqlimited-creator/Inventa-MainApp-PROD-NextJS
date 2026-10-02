@@ -44,7 +44,7 @@ function mast(o: InvoiceOrder, biz: InvoiceBusiness, cfg: InvoiceConfig): string
     cfg.header.businessDetails && contact.length ? `<div class="ba">${contact.map(esc).join('<br>')}</div>` : '',
   ].join('')
   // "Tax Invoice" is the wording required for businesses that are registered for tax
-  const title = o.is_quote ? 'Quote' : biz.numbers.some(n => n.startsWith('Tax no.')) ? 'Tax Invoice' : 'Invoice'
+  const title = o.kind === 'purchase' ? 'Purchase Order' : o.is_quote ? 'Quote' : biz.numbers.some(n => n.startsWith('Tax no.')) ? 'Tax Invoice' : 'Invoice'
   return `<header class="mast"><div class="biz">${left}</div><div class="doc"><h2>${title}</h2><div class="no">${esc(o.invoice_number)}</div></div></header>`
 }
 
@@ -56,17 +56,20 @@ function addrBlock(label: string, a: InvoiceAddress | null): string {
 function info(o: InvoiceOrder, cfg: InvoiceConfig, invoiceDate: string): string {
   const d = cfg.details
   const due = dueDate(o.terms, invoiceDate)
+  const po = o.kind === 'purchase'
   const kv = [
-    d.invoiceDate ? [o.is_quote ? 'Quote date' : 'Invoice date', fmtDate(invoiceDate)] : null,
-    d.dueDate && !o.is_quote ? ['Due date', due ? fmtDate(due) : dash] : null,
+    d.invoiceDate ? [po ? 'Order date' : o.is_quote ? 'Quote date' : 'Invoice date', fmtDate(invoiceDate)] : null,
+    po
+      ? (d.dueDate ? ['Expected delivery', o.due_date ? fmtDate(o.due_date) : dash] : null)
+      : (d.dueDate && !o.is_quote ? ['Due date', due ? fmtDate(due) : dash] : null),
     d.terms ? ['Terms', o.terms ?? dash] : null,
     d.orderNumber ? ['Order #', o.so_number] : null,
-    d.customerPo && o.customer_po ? ['Customer PO', o.customer_po] : null,
+    d.customerPo && o.customer_po ? [po ? 'Supplier ref' : 'Customer PO', o.customer_po] : null,
   ].filter((x): x is string[] => !!x)
   const blocks = [
-    cfg.addresses.billTo ? { w: '1fr', html: addrBlock('Bill to', o.bill_to) } : null,
-    cfg.addresses.shipTo ? { w: '1fr', html: addrBlock('Ship to', o.ship_to) } : null,
-    kv.length ? { w: '1.05fr', html: `<div><div class="lbl">Invoice details</div><div class="kv">${kv.map(([k, v]) => `<span>${esc(k)}</span><span>${esc(v)}</span>`).join('')}</div></div>` } : null,
+    cfg.addresses.billTo ? { w: '1fr', html: addrBlock(po ? 'Supplier' : 'Bill to', o.bill_to) } : null,
+    cfg.addresses.shipTo ? { w: '1fr', html: addrBlock(po ? 'Deliver to' : 'Ship to', o.ship_to) } : null,
+    kv.length ? { w: '1.05fr', html: `<div><div class="lbl">${po ? 'Order details' : 'Invoice details'}</div><div class="kv">${kv.map(([k, v]) => `<span>${esc(k)}</span><span>${esc(v)}</span>`).join('')}</div></div>` } : null,
   ].filter((x): x is { w: string; html: string } => !!x)
   if (!blocks.length) return ''
   return `<div class="info" style="grid-template-columns:${blocks.map(b => b.w).join(' ')}">${blocks.map(b => b.html).join('')}</div>`
@@ -80,7 +83,7 @@ const COLS: Col[] = [
 ]
 
 function table(o: InvoiceOrder, cfg: InvoiceConfig, money: (n: number) => string): string {
-  const cols = COLS.filter(c => cfg.columns[c.key])
+  const cols = COLS.filter(c => cfg.columns[c.key]).map(c => (o.kind === 'purchase' && c.key === 'unitPrice' ? { ...c, label: 'Unit cost' } : c))
   const head = `<thead><tr><th>Description</th><th class="r" style="width:50px">Qty</th>${cols.map(c => `<th class="r" style="width:${c.w}px">${c.label}</th>`).join('')}<th class="r" style="width:100px">Amount</th></tr></thead>`
   const desc = (name: string, sub: string) => `<td><div class="pn">${esc(name)}</div>${sub ? `<div class="sku">${esc(sub)}</div>` : ''}</td>`
   const rows = o.lines.map(l => {
@@ -105,13 +108,13 @@ function totals(o: InvoiceOrder, money: (n: number) => string): string {
     ...(o.taxes.length ? o.taxes.map(t => row(t.label, money(t.amount), 'm')) : [row('Tax', money(0), 'm')]),
     row(`Total ${o.currency}`, money(o.total), 't'),
   ].join('')
-  return `<div><div class="tot">${parts}</div><div class="due"><span>${o.is_quote ? 'Quote total' : 'Amount due'}</span><span>${esc(o.currency)} ${esc(money(o.total))}</span></div></div>`
+  return `<div><div class="tot">${parts}</div><div class="due"><span>${o.kind === 'purchase' ? 'Total' : o.is_quote ? 'Quote total' : 'Amount due'}</span><span>${esc(o.currency)} ${esc(money(o.total))}</span></div></div>`
 }
 
 function left(o: InvoiceOrder, cfg: InvoiceConfig): string {
   const c = cfg.content
   const bank = [['Bank', c.bankName], ['Account name', c.accountName], ['Account number', c.accountNumber]].filter(([, v]) => v)
-  const pay = cfg.footer.paymentDetails && bank.length && !o.is_quote
+  const pay = cfg.footer.paymentDetails && bank.length && !o.is_quote && !o.kind
     ? `<div class="pay"><div class="lbl">Payment details</div><div class="kv">${[...bank, ['Reference', o.invoice_number]].map(([k, v]) => `<span>${esc(k)}</span><span>${esc(v)}</span>`).join('')}</div></div>`
     : ''
   const notes = [o.notes, c.notes].filter(Boolean).join('\n\n')
@@ -192,7 +195,7 @@ export type InvoiceRenderOptions = {
 
 export function renderInvoiceHtml(payload: InvoicePayload, opts: InvoiceRenderOptions = {}): string {
   const sheets = payload.orders.map(o => sheet(o, payload.business, payload.config, payload.decimals, payload.timezone, opts.now)).join('')
-  const title = payload.orders.length === 1 ? `${payload.orders[0].is_quote ? 'Quote' : 'Invoice'} ${payload.orders[0].invoice_number}` : `Invoices (${payload.orders.length} orders)`
+  const title = payload.orders.length === 1 ? `${payload.orders[0].kind === 'purchase' ? 'Purchase Order' : payload.orders[0].is_quote ? 'Quote' : 'Invoice'} ${payload.orders[0].invoice_number}` : `${payload.orders[0].kind === 'purchase' ? 'Purchase orders' : 'Invoices'} (${payload.orders.length} orders)`
   const previewCss = `body{background:#E5E9EA;padding:20px 0}.sheet{width:794px;min-height:1123px;margin:0 auto 20px;padding:48px 48px 34px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.12),0 12px 32px rgba(0,0,0,.12);break-after:auto}.tail{margin-top:auto}.fb{display:flex;font:500 10px var(--mono);color:var(--mut);letter-spacing:.04em;border-top:1px solid var(--line);padding-top:9px}.fb .pg::before{content:"Page 1 of 1"}`
   // Print once the fonts and the logo have loaded
   const printJs = `<script>(function(){var done=false;function go(){if(done)return;done=true;setTimeout(function(){window.focus();window.print()},150)}var waits=[];if(document.fonts&&document.fonts.ready)waits.push(document.fonts.ready);Array.prototype.forEach.call(document.images,function(i){if(!i.complete)waits.push(new Promise(function(r){i.onload=r;i.onerror=r}))});Promise.all(waits).then(go);setTimeout(go,3500)})()</script>`

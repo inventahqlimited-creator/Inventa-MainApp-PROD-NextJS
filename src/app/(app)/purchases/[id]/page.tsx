@@ -1,6 +1,7 @@
 import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import EditPurchaseOrder from '@/components/app/edit-purchase-order'
+import { relatedSalesOrders } from '@/lib/related'
 
 export default async function EditPurchaseOrderPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ edit?: string }> }) {
   const { id } = await params
@@ -43,6 +44,7 @@ export default async function EditPurchaseOrderPage({ params, searchParams }: { 
     .single()
 
   if (!order) redirect('/purchases')
+  const relatedSoId = (await relatedSalesOrders(adminClient, m.org_id, [id])).get(id) ?? null
 
   const [{ data: locations }, { data: contacts }, { data: products }, { data: org }, { data: taxRates }, { data: stockLevels }] = await Promise.all([
     adminClient.from('locations').select('id, name, address, city, country, phone, email').eq('org_id', m.org_id).eq('active', true).order('name'),
@@ -65,6 +67,7 @@ export default async function EditPurchaseOrderPage({ params, searchParams }: { 
     <EditPurchaseOrder
       orgId={m.org_id}
       order={shaped}
+      relatedSoId={relatedSoId}
       suppliers={(contacts ?? []) as any}
       locations={(locations ?? []) as any}
       products={(products ?? []) as any}

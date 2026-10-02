@@ -51,7 +51,7 @@ export default async function SalesOrderPage({ params }: { params: Promise<{ id:
     adminClient.from('products')
       .select('id, name, sku, sell_uom, sell_price, tax_rate, sell_tax_rate_id, description, track_stock, type')
       .eq('org_id', m.org_id).eq('is_active', true).order('name'),
-    adminClient.from('organisations').select('so_default_payment_terms, so_default_ship_from, decimal_places, fulfilment_mode').eq('id', m.org_id).single(),
+    adminClient.from('organisations').select('so_default_payment_terms, so_default_ship_from, decimal_places, fulfilment_mode, quotes_enabled').eq('id', m.org_id).single(),
     adminClient.from('tax_rates').select('id, name, rate, is_default').eq('org_id', m.org_id).order('name'),
     adminClient.from('stock_levels').select('product_id, location_id, quantity, committed').eq('org_id', m.org_id),
     adminClient.from('price_levels').select('id, name, is_default').eq('org_id', m.org_id).order('name'),
@@ -73,7 +73,7 @@ export default async function SalesOrderPage({ params }: { params: Promise<{ id:
   const productsWithPrices = ((products ?? []) as { id: string }[]).map(p => ({ ...p, price_levels: byProduct.get(p.id) ?? [] }))
 
   const curs = (currencies ?? []) as { code: string; is_base: boolean | null }[]
-  const orgData = (org ?? {}) as { so_default_payment_terms?: string | null; so_default_ship_from?: string | null; decimal_places?: number | null; fulfilment_mode?: string | null }
+  const orgData = (org ?? {}) as { so_default_payment_terms?: string | null; so_default_ship_from?: string | null; decimal_places?: number | null; fulfilment_mode?: string | null; quotes_enabled?: boolean | null }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const o = order as any
@@ -107,6 +107,7 @@ export default async function SalesOrderPage({ params }: { params: Promise<{ id:
       defaultTerms={orgData.so_default_payment_terms ?? null}
       decimalPlaces={orgData.decimal_places ?? 2}
       fulfilmentMode={orgData.fulfilment_mode ?? 'full'}
+      quotesEnabled={Boolean(orgData.quotes_enabled)}
     />
   )
 }

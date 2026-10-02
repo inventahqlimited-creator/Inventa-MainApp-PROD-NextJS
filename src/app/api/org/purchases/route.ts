@@ -2,6 +2,7 @@
 import { NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { pickPO, lineRow, costLineRow, nextPoNumber } from './shared'
+import { ownsOrder } from '@/lib/related'
 
 export async function POST(request: Request) {
   const supabase = await createClient()
@@ -26,6 +27,9 @@ export async function POST(request: Request) {
 
   // Only known purchase_orders columns go into the insert (lines/cost_lines live in their own tables)
   const poData = pickPO(body)
+  // Created from a sales order? Remember the link so either order can open the other
+  const sourceSo = await ownsOrder(adminClient, orgId, 'sales_orders', body.source_so_id)
+  if (sourceSo) poData.source_so_id = sourceSo
 
   // Assign PO number from org settings (prefix / digits / suffix / start)
   let poNumber: string

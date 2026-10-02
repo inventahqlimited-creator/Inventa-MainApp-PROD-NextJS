@@ -26,6 +26,7 @@ const ALLOWED_KEYS = [
   'so_default_ship_from',
   'pick_list_settings',
   'packing_list_settings',
+  'invoice_settings',
 ]
 
 export async function PATCH(req: Request) {

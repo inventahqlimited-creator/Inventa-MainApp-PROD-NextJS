@@ -26,6 +26,7 @@ export async function POST(_req: Request, { params }: Params) {
   const { data: org } = await db.from('organisations').select('fulfilment_mode').eq('id', orgId).single()
   const { data: so } = await db.from('sales_orders').select('status').eq('id', id).eq('org_id', orgId).single()
   const status = String((so as { status?: string } | null)?.status ?? '').toLowerCase()
+  if (status === 'quote') return NextResponse.json({ error: 'A quote can\'t be closed. Convert it to a sales order first.' }, { status: 400 })
   const picking = ['picking', 'partially picked', 'picked', 'packed'].includes(status)
   const mode = (org as { fulfilment_mode?: string | null } | null)?.fulfilment_mode ?? 'full'
   if (!picking && mode !== 'none') {

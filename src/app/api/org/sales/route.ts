@@ -24,8 +24,16 @@ export async function POST(request: Request) {
   if (lines.length === 0) return NextResponse.json({ error: 'Add at least one line item.' }, { status: 400 })
 
   const soData = pickSO(body)
-  // New orders can only start as a Draft or Open
-  soData.status = soData.status === 'Draft' ? 'Draft' : 'Open'
+  // New orders can only start as a Draft, a Quote (when quotes are switched on in Settings) or Open
+  if (soData.status === 'Quote') {
+    const { data: org } = await adminClient.from('organisations').select('quotes_enabled').eq('id', orgId).single()
+    if (!(org as { quotes_enabled?: boolean | null } | null)?.quotes_enabled) {
+      return NextResponse.json({ error: 'Quotes are switched off. Turn them on in Settings → Sales.' }, { status: 400 })
+    }
+    soData.status = 'Quote'
+  } else {
+    soData.status = soData.status === 'Draft' ? 'Draft' : 'Open'
+  }
 
   // Number from Settings → Sales (prefix / digits / suffix / start); retry if someone took the same one
   let so: { id: string; so_number: string } | null = null

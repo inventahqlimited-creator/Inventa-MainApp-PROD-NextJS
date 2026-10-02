@@ -1464,6 +1464,8 @@ export default function SettingsClient({
   const [savingSoNumbering, setSavingSoNumbering] = useState(false)
   const [savingShippingDefaults, setSavingShippingDefaults] = useState(false)
   const [savingSoDefaults, setSavingSoDefaults] = useState(false)
+  const [quotesEnabled, setQuotesEnabled] = useState(Boolean(org.quotes_enabled))
+  const [savingQuotes, setSavingQuotes] = useState(false)
   const [pickListCfg, setPickListCfg] = useState<PickListConfig>(() => normalizePickListConfig(org.pick_list_settings))
   const [pickListOpen, setPickListOpen] = useState(false)
   const [packingCfg, setPackingCfg] = useState<PackingListConfig>(() => normalizePackingListConfig(org.packing_list_settings))
@@ -1512,6 +1514,17 @@ export default function SettingsClient({
     })
     setSavingShippingDefaults(false)
     if (res.ok) showToast('success', 'Shipping defaults saved')
+    else showToast('error', 'Failed to save')
+  }
+
+  async function saveQuotes() {
+    setSavingQuotes(true)
+    const res = await fetch('/api/org/sales-settings', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ quotes_enabled: quotesEnabled }),
+    })
+    setSavingQuotes(false)
+    if (res.ok) showToast('success', 'Quote setting saved')
     else showToast('error', 'Failed to save')
   }
 
@@ -2175,6 +2188,16 @@ export default function SettingsClient({
                 <Field label="Default Ship From">
                   <Select value={soDefaultShipFrom} onChange={setSoDefaultShipFrom} options={[{ value: '', label: '— None —' }, ...locations.filter(l => l.active).map(l => ({ value: l.id, label: l.name }))]} />
                 </Field>
+              </div>
+            </Card>
+            <Card title="Quotes" subtitle="Let your team save a sales order as a quote before it becomes a sale" action={<SaveBtn onClick={saveQuotes} saving={savingQuotes} />}>
+              <div style={{ padding: '18px 20px' }}>
+                <ToggleRow
+                  label="Enable quotes"
+                  sub="Adds a Save Quote button to new sales orders. Quotes don't reserve stock and can't be picked, packed or closed — convert them to a sales order first."
+                  active={quotesEnabled}
+                  onChange={setQuotesEnabled}
+                />
               </div>
             </Card>
             <Card title="Shipping Defaults" subtitle="Default carrier and method for new shipments" action={<SaveBtn onClick={saveShippingDefaults} saving={savingShippingDefaults} />}>

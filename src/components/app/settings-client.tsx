@@ -8,6 +8,8 @@ import ProfileModal from './profile-modal'
 import PickListTemplate from '@/components/app/pick-list-template'
 import PackingListTemplate from '@/components/app/packing-list-template'
 import { normalizePackingListConfig, type PackingListConfig } from '@/lib/packing-list/config'
+import InvoiceTemplate from '@/components/app/invoice-template'
+import { normalizeInvoiceConfig, type InvoiceConfig } from '@/lib/invoice/config'
 import { normalizePickListConfig, type PickListConfig } from '@/lib/pick-list/config'
 
 type Org = Record<string, unknown>
@@ -1466,6 +1468,8 @@ export default function SettingsClient({
   const [pickListOpen, setPickListOpen] = useState(false)
   const [packingCfg, setPackingCfg] = useState<PackingListConfig>(() => normalizePackingListConfig(org.packing_list_settings))
   const [packingOpen, setPackingOpen] = useState(false)
+  const [invoiceCfg, setInvoiceCfg] = useState<InvoiceConfig>(() => normalizeInvoiceConfig(org.invoice_settings))
+  const [invoiceOpen, setInvoiceOpen] = useState(false)
 
   async function saveFulfilment() {
     setSavingFulfilment(true)
@@ -2217,8 +2221,31 @@ export default function SettingsClient({
                   </span>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--gray-300)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setInvoiceOpen(true)}
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 14, padding: '12px 10px', background: 'transparent', border: 'none', borderRadius: 10, cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--gray-50)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                >
+                  <span style={{ width: 36, height: 36, borderRadius: 10, background: 'var(--teal-surface)', color: 'var(--teal)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M8 13h8M8 17h5" /></svg>
+                  </span>
+                  <span style={{ flex: 1 }}>
+                    <span style={{ display: 'block', fontSize: 13.5, fontWeight: 600, color: 'var(--slate)', fontFamily: 'var(--font-display)' }}>Invoice</span>
+                    <span style={{ display: 'block', fontSize: 12.5, color: 'var(--gray-400)', marginTop: 2 }}>Logo, business details, columns, payment details and notes on the printed invoice</span>
+                  </span>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--gray-300)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+                </button>
               </div>
             </Card>
+            {invoiceOpen && (
+              <InvoiceTemplate
+                initial={invoiceCfg}
+                onClose={() => setInvoiceOpen(false)}
+                onSaved={cfg => { setInvoiceCfg(cfg); setInvoiceOpen(false); showToast('success', 'Invoice template saved') }}
+              />
+            )}
             {packingOpen && (
               <PackingListTemplate
                 initial={packingCfg}

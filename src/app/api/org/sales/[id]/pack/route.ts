@@ -16,6 +16,11 @@ export async function POST(req: Request, { params }: Params) {
   if (!m) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   const orgId = (m as { org_id: string }).org_id
 
+  const { data: cur } = await db.from('sales_orders').select('status').eq('id', id).eq('org_id', orgId).single()
+  if (String((cur as { status?: string } | null)?.status ?? '').toLowerCase() === 'quote') {
+    return NextResponse.json({ error: 'A quote can\'t be picked or packed. Convert it to a sales order first.' }, { status: 400 })
+  }
+
   const body = await req.json().catch(() => ({}))
   const { data, error } = await db.rpc('pack_sales_order', {
     p_so: id,

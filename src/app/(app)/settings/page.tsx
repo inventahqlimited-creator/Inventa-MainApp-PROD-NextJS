@@ -3,8 +3,8 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import SettingsClient from '@/components/app/settings-client'
 
-export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ tab?: string }> }) {
-  const { tab } = await searchParams
+export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ tab?: string; xero?: string; xero_ok?: string; xero_error?: string }> }) {
+  const { tab, xero, xero_ok, xero_error } = await searchParams
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
@@ -32,6 +32,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
     { count: purchaseCount },
     { count: transferCount },
     { count: adjustmentCount },
+    { data: xeroRow },
   ] = await Promise.all([
     adminClient.from('organisations').select('*').eq('id', m.org_id).single(),
     adminClient.from('locations').select('*').eq('org_id', m.org_id).order('name'),
@@ -43,6 +44,8 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
     adminClient.from('purchase_orders').select('*', { count: 'exact', head: true }).eq('org_id', m.org_id).limit(1),
     adminClient.from('stock_transfers').select('*', { count: 'exact', head: true }).eq('org_id', m.org_id).limit(1),
     adminClient.from('stock_adjustments').select('*', { count: 'exact', head: true }).eq('org_id', m.org_id).limit(1),
+    // Never selects the tokens — only what the Xero settings screen shows
+    adminClient.from('xero_connections').select('status, tenant_name, connected_at, pending_tenants').eq('org_id', m.org_id).maybeSingle(),
   ])
 
   // Fetch last_sign_in_at from auth.users for accepted members
@@ -92,6 +95,9 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       initialTab={tab ?? 'general'}
       hasTxns={hasTxns}
       members={members}
+      xeroConnection={(xeroRow as never) ?? null}
+      initialXero={xero === '1'}
+      xeroFlash={{ ok: xero_ok, error: xero_error }}
     />
   )
 }

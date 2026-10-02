@@ -7,7 +7,9 @@ type Props = {
   tenantName: string | null
 }
 
-const card: React.CSSProperties = { background: 'var(--white)', border: '1px solid var(--gray-100)', borderRadius: 14, boxShadow: '0 1px 4px rgba(0,0,0,0.05)', padding: 28, maxWidth: 640 }
+// Sits directly under the page header card: same side margins, joined edge, rounded bottom corners.
+const body: React.CSSProperties = { margin: '0 20px 20px', background: 'var(--white)', borderRadius: '0 0 16px 16px', boxShadow: 'var(--shadow-sm)', padding: '8px 22px 28px', borderTop: '1px solid var(--gray-100)' }
+const inner: React.CSSProperties = { maxWidth: 640, paddingTop: 20 }
 const SETTINGS = '/settings?tab=integrations&xero=1'
 
 export default function XeroHome({ status, tenantName }: Props) {
@@ -23,9 +25,9 @@ export default function XeroHome({ status, tenantName }: Props) {
         </div>
       </div>
 
-      <div style={{ padding: '20px 4px' }}>
+      <div style={body}>
         {!connected && (
-          <div style={card}>
+          <div style={inner}>
             <div style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 700, color: 'var(--slate)', letterSpacing: '-0.01em', marginBottom: 6 }}>
               {status === 'needs_reconnect' ? 'Reconnect your Xero integration' : 'Finish setting up your Xero integration'}
             </div>
@@ -44,7 +46,7 @@ export default function XeroHome({ status, tenantName }: Props) {
         )}
 
         {connected && (
-          <div style={card}>
+          <div style={inner}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
               <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#10B981' }} />
               <div style={{ fontFamily: 'var(--font-display)', fontSize: 16, fontWeight: 700, color: 'var(--slate)' }}>Connected to {tenantName}</div>

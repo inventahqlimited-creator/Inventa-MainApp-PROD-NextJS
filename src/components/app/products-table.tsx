@@ -3,6 +3,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { PostToXeroButton, XeroColumnHeader, XeroPostNotice, XeroStatusBadge, usePostToXero, type XeroTableInfo } from '@/components/app/xero-sync-ui'
 
 type Product = {
   id: string
@@ -694,7 +695,9 @@ export default function ProductsTable({
   customFields = [],
   customLists = [],
   permissions = {},
+  xero,
 }: {
+  xero?: XeroTableInfo
   products: Product[]
   stockLevels: StockLevel[]
   locations: Location[]
@@ -754,6 +757,8 @@ export default function ProductsTable({
   ]
 
   const [products, setProducts] = useState(initialProducts)
+  const [xeroRecords, setXeroRecords] = useState(xero?.records ?? {})
+  const xeroPost = usePostToXero('product', (id, info) => setXeroRecords(r => ({ ...r, [id]: info })))
   const [search, setSearch] = useState('')
   const [typeFilter, setTypeFilter] = useState('')
   const [tab, setTab] = useState<'all' | 'instock' | 'nostock'>('all')
@@ -1294,6 +1299,8 @@ export default function ProductsTable({
         </div>
       )}
 
+      <XeroPostNotice message={xeroPost.message} onClose={xeroPost.clearMessage} />
+
       <div className="table-container">
         <div className="table-toolbar">
           {selectedIds.size > 0 ? (
@@ -1326,6 +1333,7 @@ export default function ProductsTable({
                 {v.has('on_order') && <th style={{ textAlign: 'right' }}>On Order</th>}
                 {v.has('committed') && <th style={{ textAlign: 'right' }}>Committed</th>}
                 {v.has('available') && <th style={{ textAlign: 'right' }}>Available</th>}
+                {xero?.show && <XeroColumnHeader />}
                 <th style={{ width: 40 }} />
               </tr>
             </thead>
@@ -1358,12 +1366,16 @@ export default function ProductsTable({
                     {v.has('on_order') && <td style={{ textAlign: 'right' }} className="td-muted">{p.track_stock ? stock.onOrder : '—'}</td>}
                     {v.has('committed') && <td style={{ textAlign: 'right' }} className="td-muted">{p.track_stock ? stock.committed : '—'}</td>}
                     {v.has('available') && <td style={{ textAlign: 'right' }}>{p.track_stock ? <span style={{ fontWeight: 600, color: stock.available <= 0 ? 'var(--danger)' : '#059669' }}>{stock.available}</span> : <span className="td-muted">—</span>}</td>}
-                    {canEdit && (
+                    {xero?.show && <td><XeroStatusBadge info={xeroRecords[p.id]} /></td>}
+                    {(canEdit || (xero?.show && xero.canPost)) && (
                     <td>
                       <div className="row-actions">
-                        <button className="row-action-btn" onClick={e => { e.stopPropagation(); openEdit(p) }} title="Edit">
+                        {xero?.show && xero.canPost && xeroRecords[p.id]?.status !== 'synced' && (
+                          <PostToXeroButton busy={xeroPost.busyId === p.id} onClick={() => void xeroPost.post(p.id)} />
+                        )}
+                        {canEdit && <button className="row-action-btn" onClick={e => { e.stopPropagation(); openEdit(p) }} title="Edit">
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
-                        </button>
+                        </button>}
                       </div>
                     </td>
                     )}

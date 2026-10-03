@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import ContactsTable from '@/components/app/contacts-table'
+import { loadXeroTableInfo } from '@/lib/xero/table-info'
 
 const FULL_PERMISSIONS = {
   create_contacts: true,
@@ -61,6 +62,7 @@ export default async function ContactsPage() {
     { data: customFields },
     { data: customLists },
     { data: customListOptions },
+    xero,
   ] = await Promise.all([
     adminClient.from('contacts').select('*').eq('org_id', m.org_id).order('name'),
     adminClient.from('organisations').select('base_currency').eq('id', m.org_id).single(),
@@ -71,6 +73,7 @@ export default async function ContactsPage() {
     adminClient.from('contact_custom_fields').select('id, name, field_type').eq('org_id', m.org_id).order('sort_order').order('created_at'),
     adminClient.from('contact_custom_lists').select('id, name').eq('org_id', m.org_id).order('sort_order').order('created_at'),
     adminClient.from('contact_custom_list_options').select('id, list_id, value').eq('org_id', m.org_id).order('sort_order').order('created_at'),
+    loadXeroTableInfo(adminClient, m.org_id, 'contact', m.role === 'admin'),
   ])
 
   // Attach options to their lists
@@ -94,6 +97,7 @@ export default async function ContactsPage() {
       locations={(locations ?? []) as { id: string; name: string; active: boolean }[]}
       customFields={(customFields ?? []) as { id: string; name: string; field_type: string }[]}
       customLists={customListsWithOptions}
+      xero={xero}
     />
   )
 }

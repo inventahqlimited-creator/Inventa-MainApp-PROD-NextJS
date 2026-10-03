@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import ProductsTable from '@/components/app/products-table'
+import { loadXeroTableInfo } from '@/lib/xero/table-info'
 
 export default async function ProductsPage() {
   const supabase = await createClient()
@@ -33,6 +34,7 @@ export default async function ProductsPage() {
     { data: customLists },
     { data: customListOptions },
     { data: org },
+    xero,
   ] = await Promise.all([
     adminClient.from('products').select('*').eq('org_id', m.org_id).order('name'),
     adminClient.from('stock_levels').select('*').eq('org_id', m.org_id),
@@ -45,6 +47,7 @@ export default async function ProductsPage() {
     adminClient.from('product_custom_lists').select('id, name').eq('org_id', m.org_id).order('sort_order').order('created_at'),
     adminClient.from('product_custom_list_options').select('id, list_id, value').eq('org_id', m.org_id).order('sort_order').order('created_at'),
     adminClient.from('organisations').select('decimal_places, serial_tracking, batch_tracking, expiry_tracking').eq('id', m.org_id).single(),
+    loadXeroTableInfo(adminClient, m.org_id, 'product', m.role === 'admin'),
   ])
 
   const customListsWithOptions = (customLists ?? []).map((l: Record<string, unknown>) => ({
@@ -75,6 +78,7 @@ export default async function ProductsPage() {
       }}
       customFields={(customFields ?? []) as { id: string; name: string; field_type: string }[]}
       customLists={customListsWithOptions}
+      xero={xero}
     />
   )
 }

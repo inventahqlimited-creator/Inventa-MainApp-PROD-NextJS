@@ -1,10 +1,12 @@
 // src/components/app/xero-home.tsx
 // The Xero page in the left menu: set-up steps until connected, then the connection at a glance.
 import Link from 'next/link'
+import XeroDashboard from '@/components/app/xero-dashboard'
 
 type Props = {
   status: 'pending' | 'connected' | 'needs_reconnect' | null
   tenantName: string | null
+  isAdmin: boolean
 }
 
 // Sits directly under the page header card: same side margins, joined edge, rounded bottom corners.
@@ -12,7 +14,7 @@ const body: React.CSSProperties = { margin: '0 20px 20px', background: 'var(--wh
 const inner: React.CSSProperties = { maxWidth: 640, paddingTop: 20 }
 const SETTINGS = '/settings?tab=integrations&xero=1'
 
-export default function XeroHome({ status, tenantName }: Props) {
+export default function XeroHome({ status, tenantName, isAdmin }: Props) {
   const connected = status === 'connected'
   return (
     <div>
@@ -45,16 +47,7 @@ export default function XeroHome({ status, tenantName }: Props) {
           </div>
         )}
 
-        {connected && (
-          <div style={inner}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 14 }}>
-              <span style={{ width: 10, height: 10, borderRadius: '50%', background: '#10B981' }} />
-              <div style={{ fontFamily: 'var(--font-display)', fontSize: 16, fontWeight: 700, color: 'var(--slate)' }}>Connected to {tenantName}</div>
-            </div>
-            <div style={{ fontSize: 13.5, color: 'var(--gray-500)', marginBottom: 20 }}>No sync activity yet.</div>
-            <Link href={SETTINGS} className="btn btn-outline" style={{ height: 36, display: 'inline-flex', alignItems: 'center', textDecoration: 'none' }}>Xero settings</Link>
-          </div>
-        )}
+        {connected && <div style={{ paddingTop: 20 }}><XeroDashboard isAdmin={isAdmin} /></div>}
       </div>
     </div>
   )

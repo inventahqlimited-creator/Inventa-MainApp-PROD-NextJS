@@ -11,5 +11,5 @@ export default async function XeroPage() {
   const { data } = await auth.db.from('xero_connections').select('status, tenant_name').eq('org_id', auth.orgId).maybeSingle()
   const c = data as { status: 'pending' | 'connected' | 'needs_reconnect'; tenant_name: string | null } | null
 
-  return <XeroHome status={c?.status ?? null} tenantName={c?.tenant_name ?? null} />
+  return <XeroHome status={c?.status ?? null} tenantName={c?.tenant_name ?? null} isAdmin={auth.isAdmin} />
 }

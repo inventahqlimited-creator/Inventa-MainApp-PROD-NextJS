@@ -3,6 +3,7 @@
 // Settings → Integrations → Xero. Connect, choose the Xero organisation, disconnect.
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import XeroMapping from '@/components/app/xero-mapping'
 
 export type XeroConnection = {
   status: 'pending' | 'connected' | 'needs_reconnect'
@@ -186,9 +187,11 @@ export default function XeroSettings({ isAdmin, connection, flash, onBack }: {
         )}
       </Section>
 
+      {status === 'connected' && <XeroMapping />}
+
       {status !== 'connected' && (
         <div style={{ fontSize: 12.5, color: 'var(--gray-400)', padding: '0 4px' }}>
-          Account mapping, tax mapping and import unlock once Xero is connected.
+          Accounts, tax rates and import unlock once Xero is connected.
         </div>
       )}
     </div>

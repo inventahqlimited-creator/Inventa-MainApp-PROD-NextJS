@@ -7,6 +7,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import PickListMenu from '@/components/app/pick-list-menu'
+import { toast } from '@/components/app/toast'
 
 type Part = { group_id: string | null; available: number }
 type Stock = {
@@ -63,7 +64,8 @@ export default function PickSalesOrder({
   const [panelLine, setPanelLine] = useState<string | null>(null)
   const [panelQty, setPanelQty] = useState<Record<string, number>>({})
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setErrorRaw] = useState<string | null>(null)
+  const setError = (m: string | null) => { setErrorRaw(m); if (m) toast.error(m) }
   const [confirm, setConfirm] = useState(false)
 
   const pickedOf = (l: Line) => (dirty.has(l.id) || l.picks.length ? sum(allocs[l.id] ?? []) : l.legacyPicked)
@@ -243,6 +245,7 @@ export default function PickSalesOrder({
         saved.add(o.id)
         last = data
       }
+      toast.later('success', saved.size > 1 ? `${saved.size} ${isTr ? 'transfers' : 'orders'} picked` : `${isTr ? 'Transfer' : 'Order'} pick saved`)
       if (single) {
         // Full mode: a freshly fully-picked order goes on to the Pack screen (a Packed order goes back to its page)
         if (!isTr && last.all_picked && last.new_status === 'Picked' && fulfilmentMode === 'full') { router.push(`/sales/${orders[0].id}/pack`); return }

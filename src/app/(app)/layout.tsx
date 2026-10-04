@@ -2,6 +2,7 @@ import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import AppSidebar from '@/components/app/app-sidebar'
 import AppTopbar from '@/components/app/app-topbar'
+import ToastProvider from '@/components/app/toast'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()
@@ -48,6 +49,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           {children}
         </div>
       </div>
+      <ToastProvider />
     </div>
   )
 }

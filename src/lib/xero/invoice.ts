@@ -201,7 +201,7 @@ export async function postInvoice(db: Db, orgId: string, soId: string, settings:
 
   const xeroTotal = r2(n(out.Total))
   const diff = r2(xeroTotal - inv.total)
-  const warning = Math.abs(diff) > 0.01 ? `Xero’s total is ${money(xeroTotal)} but the Inventa invoice total is ${money(inv.total)} (difference ${money(Math.abs(diff))}). Check the invoice in Xero.` : null
+  const warning = Math.abs(diff) > 0.01 ? `Xero’s total is ${money(xeroTotal)} but the InventaHQ invoice total is ${money(inv.total)} (difference ${money(Math.abs(diff))}). Check the invoice in Xero.` : null
   const number = clean(out.InvoiceNumber) || inv.invoice_number
   await saveRecord(db, orgId, soId, {
     xero_id: out.InvoiceID, status: 'synced', error: warning,
@@ -246,6 +246,7 @@ export async function postEligibleInvoices(db: Db, orgId: string, settings: Xero
 export type InvoiceOverview = {
   eligible: number; posted: number; notPosted: number; failed: number
   failures: { id: string; name: string; error: string | null }[]
+  waiting: { id: string; name: string }[]
   recent: { id: string; number: string; customer: string; total: number; postedAt: string; url: string; warning: string | null }[]
   lastPostedAt: string | null
 }
@@ -268,6 +269,7 @@ export async function invoiceOverview(db: Db, orgId: string): Promise<InvoiceOve
     notPosted: eligible.filter(id => !postedIds.has(id) && !failedRecs.some(f => f.entity_id === id)).length,
     failed: failedRecs.filter(f => !postedIds.has(f.entity_id)).length,
     failures: failedRecs.filter(f => !postedIds.has(f.entity_id)).slice(0, 100).map(f => ({ id: f.entity_id, name: orders.get(f.entity_id)?.so_number ?? 'Order', error: f.error })),
+    waiting: eligible.filter(id => !postedIds.has(id) && !failedRecs.some(f => f.entity_id === id)).slice(0, 100).map(id => ({ id, name: orders.get(id)?.so_number ?? 'Order' })),
     recent: posted.slice(0, 5).map(r => ({
       id: r.entity_id, number: r.meta?.number ?? '', customer: r.meta?.customer ?? '', total: Number(r.meta?.total ?? 0),
       postedAt: r.synced_at, url: r.xero_id ? xeroInvoiceUrl(r.xero_id) : '', warning: r.error,

@@ -34,8 +34,9 @@ async function xeroRequest<T>(db: SupabaseClient, orgId: string, method: 'GET' |
   if (!res.ok) {
     let detail = ''
     try {
-      const j = (await res.json()) as { Message?: string; Detail?: string }
-      detail = j.Message ?? j.Detail ?? ''
+      const j = (await res.json()) as { Message?: string; Detail?: string; Elements?: { ValidationErrors?: { Message?: string }[] }[] }
+      const reasons = (j.Elements ?? []).flatMap(e => (e.ValidationErrors ?? []).map(v => v.Message)).filter(Boolean)
+      detail = reasons.length ? [...new Set(reasons)].join(' ') : (j.Message ?? j.Detail ?? '')
     } catch { /* no body */ }
     return { ok: false, status: res.status, error: detail ? `Xero said: ${detail}` : `Xero returned an error (${res.status}).` }
   }

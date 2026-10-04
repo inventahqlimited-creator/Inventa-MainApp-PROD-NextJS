@@ -1,6 +1,6 @@
 // src/lib/xero/bill.ts
 // Purchase orders → bills in Xero (Draft or Approved, as chosen in Settings). Xero has no purchase-order step here: only the bill is posted.
-//   • Only a Closed order whose every line is fully received can be posted, and only once. It posts what was received.
+//   • Only a Closed order with something received can be posted, and only once. It posts what was received (a short delivery is billed as received).
 //   • The order discount is spread across every line (Xero has no order-level discount).
 //   • Each line's tax rate must be mapped (purchases side) in Settings → Xero → Accounts and tax, or the post stops with a clear message.
 //   • The supplier is posted to Xero first if it isn't there yet. Products already in Xero are linked by item code.
@@ -22,10 +22,9 @@ export const xeroBillUrl = (xeroId: string) => `https://go.xero.com/AccountsPaya
 
 const day = (v: unknown) => (v ? String(v).slice(0, 10) : '')
 
-/** Fully received = every line with a quantity ordered has received at least that much. */
-function fullyReceived(lines: Row[]): boolean {
-  const real = lines.filter(l => n(l.quantity_ordered) > 0)
-  return real.length > 0 && real.every(l => n(l.quantity_received) + 1e-9 >= n(l.quantity_ordered))
+/** Something has been received on the order. A closed order is finished, so it is billed for what actually arrived (even if short). */
+export function hasReceived(lines: Row[]): boolean {
+  return lines.some(l => n(l.quantity_received) > 0)
 }
 
 export async function postBill(db: Db, orgId: string, poId: string, settings: XeroSettings, prefs: XeroPrefs): Promise<PostResult> {
@@ -52,7 +51,7 @@ export async function postBill(db: Db, orgId: string, poId: string, settings: Xe
   }
 
   const lines = [...(order.purchase_order_lines ?? [])].sort((a, b) => n(a.sort_order) - n(b.sort_order))
-  if (!fullyReceived(lines)) return fail(409, 'This order isn’t fully received yet. A bill can only be posted once everything has been received.')
+  if (!hasReceived(lines)) return fail(409, 'Nothing has been received on this order, so there is nothing to bill.')
 
   const supplierId = clean(order.supplier_id)
   if (!supplierId) return fail(409, 'This order has no supplier.')
@@ -170,7 +169,7 @@ export async function postBill(db: Db, orgId: string, poId: string, settings: Xe
 
   const xeroTotal = r2(n(out.Total))
   const diff = r2(xeroTotal - expectedTotal)
-  const warning = Math.abs(diff) > 0.01 ? `Xero’s total is ${money(xeroTotal)} but the received total on the Inventa order is ${money(expectedTotal)} (difference ${money(Math.abs(diff))}). Check the bill in Xero.` : null
+  const warning = Math.abs(diff) > 0.01 ? `Xero’s total is ${money(xeroTotal)} but the received total on the InventaHQ order is ${money(expectedTotal)} (difference ${money(Math.abs(diff))}). Check the bill in Xero.` : null
   await saveRecord(db, orgId, poId, {
     xero_id: out.InvoiceID, status: 'synced', error: warning,
     meta: { number: poNumber, total: expectedTotal, xero_total: xeroTotal, supplier: clean(order.supplier_name), date, status: prefs.bill_status },
@@ -180,13 +179,13 @@ export async function postBill(db: Db, orgId: string, poId: string, settings: Xe
 
 // ── Several at once ─────────────────────────────────────────────────────────
 
-/** Closed purchase orders that are fully received. */
+/** Closed purchase orders with something received. */
 async function loadEligible(db: Db, orgId: string): Promise<{ id: string; po_number: string | null }[]> {
   const { data } = await db.from('purchase_orders')
     .select('id, po_number, purchase_order_lines ( quantity_ordered, quantity_received )')
     .eq('org_id', orgId).ilike('status', 'closed').order('created_at', { ascending: true })
   return ((data ?? []) as { id: string; po_number: string | null; purchase_order_lines: Row[] | null }[])
-    .filter(o => fullyReceived(o.purchase_order_lines ?? []))
+    .filter(o => hasReceived(o.purchase_order_lines ?? []))
     .map(o => ({ id: o.id, po_number: o.po_number }))
 }
 
@@ -221,6 +220,7 @@ export async function postEligibleBills(db: Db, orgId: string, settings: XeroSet
 export type BillOverview = {
   eligible: number; posted: number; notPosted: number; failed: number
   failures: { id: string; name: string; error: string | null }[]
+  waiting: { id: string; name: string }[]
   recent: { id: string; number: string; supplier: string; total: number; postedAt: string; url: string; warning: string | null }[]
   lastPostedAt: string | null
 }
@@ -245,8 +245,9 @@ export async function billOverview(db: Db, orgId: string): Promise<BillOverview>
     notPosted: [...ids].filter(id => !postedIds.has(id) && !failedIds.has(id)).length,
     failed: failedRecs.length,
     failures: failedRecs.slice(0, 100).map(f => ({ id: f.entity_id, name: nameOf.get(f.entity_id) ?? 'Order', error: f.error })),
+    waiting: [...ids].filter(id => !postedIds.has(id) && !failedIds.has(id)).slice(0, 100).map(id => ({ id, name: nameOf.get(id) ?? 'Order' })),
     recent: posted.slice(0, 5).map(r => ({
-      id: r.entity_id, number: r.meta?.number ?? '', supplier: r.meta?.supplier ?? '', total: Number(r.meta?.total ?? 0),
+      id: r.entity_id, number: r.meta?.number || nameOf.get(r.entity_id) || '', supplier: r.meta?.supplier ?? '', total: Number(r.meta?.total ?? 0),
       postedAt: r.synced_at, url: r.xero_id ? xeroBillUrl(r.xero_id) : '', warning: r.error,
     })),
     lastPostedAt: posted[0]?.synced_at ?? null,

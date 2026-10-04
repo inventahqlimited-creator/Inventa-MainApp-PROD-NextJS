@@ -2,7 +2,7 @@
 // src/components/app/xero-sync-ui.tsx
 // Shared pieces for the Contacts and Products tables: the Xero status badge, the "Post to Xero" button,
 // and the hook that sends one record. Only used when Xero is switched on and connected.
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 
 export type XeroRowInfo = { status: 'synced' | 'failed'; error?: string | null; url?: string | null }
 export type XeroMessage = { kind: 'ok' | 'err'; text: string; href?: string | null }
@@ -80,6 +80,30 @@ export function XeroPostNotice({ message, onClose, flush }: { message: XeroMessa
       background: message.kind === 'ok' ? '#ECFDF5' : '#FEF2F2', color: message.kind === 'ok' ? '#047857' : '#B91C1C', border: `1px solid ${message.kind === 'ok' ? '#A7F3D0' : '#FECACA'}` }}>
       <span>{message.text}{message.href && <> <a href={message.href} target="_blank" rel="noreferrer" style={{ color: 'inherit', fontWeight: 700 }}>Open in Xero →</a></>}</span>
       <button onClick={onClose} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'inherit', fontSize: 16, lineHeight: 1 }} aria-label="Dismiss">×</button>
+    </div>
+  )
+}
+
+/** Show/hide the Xero column in a list. Remembered in the browser; shown by default. */
+export function useXeroColumn(key: string) {
+  const [on, setOn] = useState(true)
+  useEffect(() => { try { if (localStorage.getItem(key) === 'off') setOn(false) } catch { /* ignore */ } }, [key])
+  const toggle = () => setOn(v => {
+    const next = !v
+    try { localStorage.setItem(key, next ? 'on' : 'off') } catch { /* ignore */ }
+    return next
+  })
+  return { on, toggle }
+}
+
+/** The "Xero" entry in a table's Columns menu. */
+export function XeroColumnMenuItem({ on, onToggle }: { on: boolean; onToggle: () => void }) {
+  return (
+    <div className="fp-item" style={{ display: 'flex', alignItems: 'center', gap: 8, cursor: 'pointer' }} onClick={onToggle}>
+      <div style={{ width: 16, height: 16, borderRadius: 4, border: `1.5px solid ${on ? 'var(--teal)' : 'var(--gray-300)'}`, background: on ? 'var(--teal)' : 'transparent', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+        {on && <svg width="9" height="9" viewBox="0 0 24 24" fill="none" stroke="white" strokeWidth="3.5"><polyline points="20 6 9 17 4 12" /></svg>}
+      </div>
+      <span style={{ fontSize: 13, color: 'var(--slate)' }}>Xero</span>
     </div>
   )
 }

@@ -6,6 +6,7 @@ import PickListMenu from '@/components/app/pick-list-menu'
 import { printPickList } from '@/lib/pick-list/print'
 import { printPackingList } from '@/lib/packing-list/print'
 import { printInvoice } from '@/lib/invoice/print'
+import { XeroPostNotice, XeroStatusBadge, usePostToXero, type XeroTableInfo } from '@/components/app/xero-sync-ui'
 
 type Order = {
   id: string
@@ -133,7 +134,9 @@ export default function SalesTable({
   locations,
   orgId,
   fulfilmentMode = 'full',
+  xero,
 }: {
+  xero?: XeroTableInfo
   orders: Order[]
   contacts: Contact[]
   locations: Location[]
@@ -141,6 +144,8 @@ export default function SalesTable({
   fulfilmentMode?: string
 }) {
   const router = useRouter()
+  const [xeroRecords, setXeroRecords] = useState(xero?.records ?? {})
+  const xeroPost = usePostToXero('invoice', (id, info) => setXeroRecords(r => ({ ...r, [id]: info })))
   const [search, setSearch] = useState('')
   const [tab, setTab] = useState<Tab>('all')
   const [customerFilter, setCustomerFilter] = useState('')
@@ -431,6 +436,8 @@ export default function SalesTable({
       )}
 
       {/* Table */}
+      <XeroPostNotice message={xeroPost.message} onClose={xeroPost.clearMessage} />
+
       <div className="table-container">
         <div className="table-toolbar">
           {selected.size > 0 ? (
@@ -466,13 +473,14 @@ export default function SalesTable({
                 {activeCols.map(c => (
                   <th key={c.key} style={c.key === 'total_amount' ? { textAlign: 'right' } : undefined}>{c.label}</th>
                 ))}
+                {xero?.show && <th>Xero</th>}
                 <th style={{ width: 76 }} />
               </tr>
             </thead>
             <tbody>
               {paginated.length === 0 && (
                 <tr>
-                  <td colSpan={activeCols.length + 2} style={{ textAlign: 'center', padding: '48px 0', color: 'var(--gray-400)', fontSize: 13 }}>
+                  <td colSpan={activeCols.length + 2 + (xero?.show ? 1 : 0)} style={{ textAlign: 'center', padding: '48px 0', color: 'var(--gray-400)', fontSize: 13 }}>
                     {search ? 'No orders match your search.' : 'No sales orders yet.'}
                   </td>
                 </tr>
@@ -507,6 +515,11 @@ export default function SalesTable({
                       case 'total_amount': return <td key={c.key} style={{ textAlign: 'right', fontWeight: 600, color: 'var(--slate)' }}>{fmtMoney(o.total_amount)}</td>
                     }
                   })}
+                  {xero?.show && (
+                    <td>{o.status.toLowerCase() === 'closed'
+                      ? <XeroStatusBadge info={xeroRecords[o.id]} />
+                      : <span className="td-muted" title="Only closed orders can be posted to Xero">—</span>}</td>
+                  )}
                   <td>
                     <div className="row-actions">
                       <button className="row-action-btn" onClick={e => { e.stopPropagation(); router.push(`/sales/${o.id}`) }} title="View">
@@ -590,6 +603,8 @@ export default function SalesTable({
             {item('Clone Order', () => router.push(`/sales/new?clone=${o.id}`), { icon: ic('M9 9h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V11a2 2 0 0 1 2-2zM5 15H4a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v1') })}
             {k !== 'cancelled' && k !== 'quote' && item('Create Purchase Order', () => { setMenu(null); setPoScope('all'); setDialog({ kind: 'po', order: o }) }, { icon: ic('M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4zM3 6h18M16 10a4 4 0 0 1-8 0') })}
             {o.related_po_id && item('Open Related Order', () => { setMenu(null); router.push(`/purchases/${o.related_po_id}`) }, { icon: ic('M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71') })}
+            {xero?.show && xero.canPost && o.status.toLowerCase() === 'closed' && xeroRecords[o.id]?.status !== 'synced' && item('Post to Xero', () => { setMenu(null); void xeroPost.post(o.id) }, { icon: ic('M16 16l-4-4-4 4M12 12v9M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3') })}
+            {xero?.show && xeroRecords[o.id]?.status === 'synced' && xeroRecords[o.id]?.url && item('Open in Xero', () => { setMenu(null); window.open(xeroRecords[o.id]?.url ?? '', '_blank', 'noopener') }, { icon: ic('M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3') })}
             {sep('s2')}
             {item('Print', () => setMenu(m => (m ? { ...m, printOpen: !m.printOpen } : m)), { icon: ic('M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6z'), chevron: true })}
             {menu.printOpen && (

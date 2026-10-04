@@ -7,6 +7,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import NumInput from './num-input'
+import { toast } from '@/components/app/toast'
 
 type Loc = { id: string; name: string; address?: string | null; city?: string | null; country?: string | null; phone?: string | null; email?: string | null }
 type Product = { id: string; name: string; sku: string | null; sell_uom: string | null; track_stock: boolean | null; type: string | null }
@@ -143,7 +144,8 @@ export default function TransferForm({ transfer, lines: dbLines, locations, prod
   const [itemDropOpen, setItemDropOpen] = useState(false)
   const [saving, setSaving] = useState(false)
   const [busy, setBusy] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setErrorRaw] = useState<string | null>(null)
+  const setError = (m: string | null) => { setErrorRaw(m); if (m) toast.error(m) }
   const [confirmLeave, setConfirmLeave] = useState(false)
   const [confirmCancel, setConfirmCancel] = useState(false)
   const [confirmComplete, setConfirmComplete] = useState(false)
@@ -242,31 +244,33 @@ export default function TransferForm({ transfer, lines: dbLines, locations, prod
       })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) { setError(data.error ?? 'Could not save this transfer.'); return }
-      if (isNew) { router.push(`/transfers/${data.id}`); router.refresh(); return }
+      if (isNew) { toast.later('success', 'Transfer created'); router.push(`/transfers/${data.id}`); router.refresh(); return }
+      toast.success('Transfer saved')
       setMode('view')
       router.refresh()
     } catch { setError('Network error — please try again.') }
     finally { setSaving(false) }
   }
 
-  async function act(url: string, init: RequestInit, fail: string) {
+  async function act(url: string, init: RequestInit, fail: string, done?: string) {
     setBusy(true); setError(null)
     try {
       const res = await fetch(url, init)
       const data = await res.json().catch(() => ({}))
       if (!res.ok) { setError(data.error ?? fail); return false }
+      if (done) toast.success(done)
       router.refresh()
       return true
     } catch { setError('Network error — please try again.'); return false }
     finally { setBusy(false) }
   }
   async function cancelTransfer() {
-    const ok = await act(`/api/org/transfers/${transfer!.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'Cancelled' }) }, 'Could not cancel this transfer.')
+    const ok = await act(`/api/org/transfers/${transfer!.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status: 'Cancelled' }) }, 'Could not cancel this transfer.', 'Transfer cancelled')
     setConfirmCancel(false)
     if (ok) setMode('view')
   }
   async function completeTransfer() {
-    await act(`/api/org/transfers/${transfer!.id}/complete`, { method: 'POST' }, 'Could not complete this transfer.')
+    await act(`/api/org/transfers/${transfer!.id}/complete`, { method: 'POST' }, 'Could not complete this transfer.', 'Transfer completed')
     setConfirmComplete(false)
   }
 

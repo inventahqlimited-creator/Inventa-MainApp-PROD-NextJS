@@ -3,6 +3,7 @@
 import { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
+import { toast } from '@/components/app/toast'
 
 type Location = { id: string; name: string; bins?: { id: string; name: string }[] }
 type Product = {
@@ -272,7 +273,8 @@ export default function EditAdjustment({
   const [itemSearch, setItemSearch] = useState('')
   const [itemDropOpen, setItemDropOpen] = useState(false)
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setErrorRaw] = useState<string | null>(null)
+  const setError = (m: string | null) => { setErrorRaw(m); if (m) toast.error(m) }
   const [lineErrors, setLineErrors] = useState<Record<number, Record<string, string>>>({})
   const [confirmComplete, setConfirmComplete] = useState(false)
 
@@ -505,6 +507,7 @@ export default function EditAdjustment({
     }
 
     setSaving(false)
+    toast.later('success', status === 'Completed' ? 'Stock adjustment completed' : 'Stock adjustment saved')
     router.push(`/products/adjustments/${adjId}`)
   }
 

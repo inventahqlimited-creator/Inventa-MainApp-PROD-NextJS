@@ -2,6 +2,7 @@ import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import EditPurchaseOrder from '@/components/app/edit-purchase-order'
 import { relatedSalesOrders } from '@/lib/related'
+import { loadXeroTableInfo } from '@/lib/xero/table-info'
 
 export default async function EditPurchaseOrderPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ edit?: string }> }) {
   const { id } = await params
@@ -63,6 +64,10 @@ export default async function EditPurchaseOrderPage({ params, searchParams }: { 
     cost_lines: (o.purchase_order_cost_lines ?? []).sort((a: any, b: any) => a.sort_order - b.sort_order),
   }
 
+  const xero = await loadXeroTableInfo(adminClient, m.org_id, 'bill', m.role === 'admin')
+  const realLines = (shaped.lines as { quantity_ordered: number | null; quantity_received: number | null }[]).filter(l => Number(l.quantity_ordered) > 0)
+  const billReady = String(o.status).toLowerCase() === 'closed' && realLines.length > 0 && realLines.every(l => Number(l.quantity_received ?? 0) + 1e-9 >= Number(l.quantity_ordered))
+
   return (
     <EditPurchaseOrder
       orgId={m.org_id}
@@ -75,6 +80,7 @@ export default async function EditPurchaseOrderPage({ params, searchParams }: { 
       decimalPlaces={(org as any)?.decimal_places ?? 2}
       stockLevels={(stockLevels ?? []) as any}
       taxRates={(taxRates ?? []) as any}
+      xeroBill={{ show: xero.show, canPost: xero.canPost, ready: billReady, info: xero.records[id] ?? null }}
       startInEdit={edit === '1'}
     />
   )

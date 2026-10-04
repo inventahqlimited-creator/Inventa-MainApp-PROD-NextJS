@@ -3,6 +3,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { printPurchaseOrder } from '@/lib/purchase-order/print'
+import { XeroPostNotice, XeroStatusBadge, usePostToXero, type XeroTableInfo } from '@/components/app/xero-sync-ui'
 
 type Order = {
   id: string
@@ -100,13 +101,20 @@ export default function PurchasesTable({
   contacts,
   locations,
   orgId,
+  xero,
+  billReady = [],
 }: {
+  xero?: XeroTableInfo
+  billReady?: string[] // closed orders that are fully received, so a bill can be posted
   orders: Order[]
   contacts: Contact[]
   locations: Location[]
   orgId: string
 }) {
   const router = useRouter()
+  const [xeroRecords, setXeroRecords] = useState(xero?.records ?? {})
+  const xeroPost = usePostToXero('bill', (id, info) => setXeroRecords(r => ({ ...r, [id]: info })))
+  const readyToBill = useMemo(() => new Set(billReady), [billReady])
   const [search, setSearch] = useState('')
   const [tab, setTab] = useState<Tab>('all')
   const [supplierFilter, setSupplierFilter] = useState('')
@@ -408,6 +416,8 @@ export default function PurchasesTable({
       )}
 
       {/* Table */}
+      <XeroPostNotice message={xeroPost.message} onClose={xeroPost.clearMessage} />
+
       <div className="table-container">
         <div className="table-toolbar" onClick={e => e.stopPropagation()}>
           {selected.size > 0 ? (
@@ -443,13 +453,14 @@ export default function PurchasesTable({
                   if (c.key === 'total_amount') return <th key={c.key} style={{ textAlign: 'right' }}>{c.label}</th>
                   return <th key={c.key}>{c.label}</th>
                 })}
+                {xero?.show && <th>Xero</th>}
                 <th style={{ width: 76 }}></th>
               </tr>
             </thead>
             <tbody>
               {paginated.length === 0 && (
                 <tr>
-                  <td colSpan={activeCols.length + 2} style={{ textAlign: 'center', padding: '48px 0', color: 'var(--gray-400)', fontSize: 13 }}>
+                  <td colSpan={activeCols.length + 2 + (xero?.show ? 1 : 0)} style={{ textAlign: 'center', padding: '48px 0', color: 'var(--gray-400)', fontSize: 13 }}>
                     {search ? 'No orders match your search.' : 'No purchase orders yet.'}
                   </td>
                 </tr>
@@ -507,6 +518,11 @@ export default function PurchasesTable({
                           return <td key={(c as any).key}>—</td>
                       }
                     })}
+                    {xero?.show && (
+                      <td>{readyToBill.has(o.id) || xeroRecords[o.id]
+                        ? <XeroStatusBadge info={xeroRecords[o.id]} />
+                        : <span className="td-muted" title="A bill can be posted once the order is fully received and closed">—</span>}</td>
+                    )}
                     <td>
                       <div className="row-actions">
                         <button className="row-action-btn" onClick={e => { e.stopPropagation(); router.push(`/purchases/${o.id}`) }} title="View">
@@ -579,6 +595,8 @@ export default function PurchasesTable({
           <div className="inv-dropdown" style={{ display: 'block', position: 'fixed', left: menu.x, top: menu.y, width: 230, padding: 6, zIndex: 400 }} onClick={e => e.stopPropagation()}>
             {editable && item('Edit Order', () => { setMenu(null); router.push(`/purchases/${o.id}?edit=1`) }, { icon: ic('M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z') })}
             {!cancelled && item('Print', () => print([o.id], o.po_number ?? undefined), { icon: ic('M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6z') })}
+            {xero?.show && xero.canPost && readyToBill.has(o.id) && xeroRecords[o.id]?.status !== 'synced' && item('Post bill to Xero', () => { setMenu(null); void xeroPost.post(o.id) }, { icon: ic('M16 16l-4-4-4 4M12 12v9M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3') })}
+            {xero?.show && xeroRecords[o.id]?.status === 'synced' && xeroRecords[o.id]?.url && item('Open bill in Xero', () => { setMenu(null); window.open(xeroRecords[o.id]?.url ?? '', '_blank', 'noopener') }, { icon: ic('M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3') })}
             {item('Email', null, { soon: true, icon: ic('M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM22 6l-10 7L2 6') })}
             {sep('s1')}
             {item('Clone Order', () => { setMenu(null); router.push(`/purchases/new?clone=${o.id}`) }, { icon: ic('M9 9h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V11a2 2 0 0 1 2-2zM5 15H4a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v1') })}

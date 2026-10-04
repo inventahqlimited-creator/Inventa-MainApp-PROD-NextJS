@@ -3,6 +3,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { PostToXeroButton, XeroColumnHeader, XeroPostNotice, XeroStatusBadge, usePostToXero, type XeroTableInfo } from '@/components/app/xero-sync-ui'
+import { toast } from '@/components/app/toast'
 
 type Contact = {
   id: string
@@ -221,7 +222,8 @@ export default function ContactsTable({
   const [form, setForm] = useState<ModalForm>(EMPTY_FORM)
   const [modalTab, setModalTab] = useState<'details' | 'address' | 'custom' | 'orders'>('details')
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setErrorRaw] = useState<string | null>(null)
+  const setError = (m: string | null) => { setErrorRaw(m); if (m) toast.error(m) }
   const [sameAddress, setSameAddress] = useState(false)
   const [additionalAddresses, setAdditionalAddresses] = useState<AdditionalAddress[]>([])
   const [orders, setOrders] = useState<Record<string, unknown>[]>([])
@@ -441,6 +443,7 @@ export default function ContactsTable({
       }
     }
 
+    toast.success(isEdit ? 'Contact updated' : 'Contact created')
     if (isEdit) {
       openView(updatedContact)
     } else {
@@ -460,6 +463,7 @@ export default function ContactsTable({
     setContacts(prev => prev.map(c =>
       selectedIds.has(c.id) ? { ...c, is_active: action === 'active', status: action } : c
     ))
+    toast.success(`${ids.length} contact${ids.length !== 1 ? 's' : ''} marked ${action}`)
     setSelectedIds(new Set())
   }
 
@@ -1487,6 +1491,8 @@ function ImportModal({
     }
 
     onImported(newContacts as Parameters<typeof onImported>[0])
+    if (imported > 0) toast.success(`${imported} contact${imported !== 1 ? 's' : ''} imported${skipped ? `, ${skipped} skipped` : ''}`)
+    else toast.error('No contacts were imported')
     setResult({ imported, skipped })
     setImporting(false)
   }

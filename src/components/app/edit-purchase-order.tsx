@@ -5,7 +5,8 @@ import { useRouter } from 'next/navigation'
 import NumInput from '@/components/app/num-input'
 import TaxSelect from '@/components/app/tax-select'
 import { printPurchaseOrder } from '@/lib/purchase-order/print'
-import { XeroPostNotice, usePostToXero, type XeroRowInfo } from '@/components/app/xero-sync-ui'
+import { XeroPostNotice, XeroStatusBadge, usePostToXero, type XeroRowInfo } from '@/components/app/xero-sync-ui'
+import { toast } from '@/components/app/toast'
 
 type Supplier = {
   id: string
@@ -168,7 +169,7 @@ type Props = {
   decimalPlaces?: number
   stockLevels?: StockLevel[]
   relatedSoId?: string | null // sales order this was created from / created from it (shows Open Related Order)
-  xeroBill?: { show: boolean; canPost: boolean; ready: boolean; info: XeroRowInfo | null } // Xero state of this order's bill (closed + fully received = ready)
+  xeroBill?: { show: boolean; canPost: boolean; ready: boolean; info: XeroRowInfo | null } // Xero state of this order's bill (closed + something received = ready)
   startInEdit?: boolean // opened with ?edit=1 (Edit Order in the Purchases list)
 }
 
@@ -372,7 +373,8 @@ function PurchaseOrderForm({
     initialSupplier?.price_level_id ?? null
   )
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setErrorRaw] = useState<string | null>(null)
+  const setError = (m: string | null) => { setErrorRaw(m); if (m) toast.error(m) }
   const [confirmCancelOrder, setConfirmCancelOrder] = useState(false)
   const [confirmDiscard, setConfirmDiscard] = useState(false)
   const [cancelling, setCancelling] = useState(false)
@@ -389,6 +391,7 @@ function PurchaseOrderForm({
       const data = await res.json().catch(() => ({}))
       if (!res.ok) { setError(data.error ?? 'Could not cancel this order'); return }
       setConfirmCancelOrder(false)
+      toast.success('Purchase order cancelled')
       router.refresh()
     } catch {
       setError('Network error — please try again.')
@@ -571,6 +574,7 @@ function PurchaseOrderForm({
       const data = await res.json()
       setSaving(false)
       if (!res.ok) { setError(data.error ?? 'Something went wrong'); return }
+      toast.success('Purchase order saved')
       setMode('view')
       router.refresh()
     } catch {
@@ -634,6 +638,9 @@ function PurchaseOrderForm({
             <span style={{ fontSize: 12, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)' }}>Editing</span>
           )}
           <span className={`badge ${statusClass(order.status)}`}>{order.status}</span>
+          {xeroInfo?.status === 'synced' && (xeroInfo.url
+            ? <a href={xeroInfo.url} target="_blank" rel="noreferrer" title="Open bill in Xero" style={{ textDecoration: 'none' }}><XeroStatusBadge info={xeroInfo} /></a>
+            : <XeroStatusBadge info={xeroInfo} />)}
           {mode === 'view' && (
             <ActionsMenu
               orderId={order.id}

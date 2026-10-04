@@ -6,7 +6,7 @@ import PickListMenu from '@/components/app/pick-list-menu'
 import { printPickList } from '@/lib/pick-list/print'
 import { printPackingList } from '@/lib/packing-list/print'
 import { printInvoice } from '@/lib/invoice/print'
-import { XeroPostNotice, XeroStatusBadge, usePostToXero, type XeroTableInfo } from '@/components/app/xero-sync-ui'
+import { XeroColumnMenuItem, XeroPostNotice, XeroStatusBadge, useXeroColumn, usePostToXero, type XeroTableInfo } from '@/components/app/xero-sync-ui'
 
 type Order = {
   id: string
@@ -145,6 +145,8 @@ export default function SalesTable({
 }) {
   const router = useRouter()
   const [xeroRecords, setXeroRecords] = useState(xero?.records ?? {})
+  const xeroCol = useXeroColumn('sales_xero_col')
+  const showXero = Boolean(xero?.show) && xeroCol.on
   const xeroPost = usePostToXero('invoice', (id, info) => setXeroRecords(r => ({ ...r, [id]: info })))
   const [search, setSearch] = useState('')
   const [tab, setTab] = useState<Tab>('all')
@@ -423,6 +425,7 @@ export default function SalesTable({
                   <span style={{ fontSize: 13, color: 'var(--slate)' }}>{c.label}</span>
                 </div>
               ))}
+              {xero?.show && <XeroColumnMenuItem on={xeroCol.on} onToggle={xeroCol.toggle} />}
             </div>
           )}
         </div>
@@ -473,14 +476,14 @@ export default function SalesTable({
                 {activeCols.map(c => (
                   <th key={c.key} style={c.key === 'total_amount' ? { textAlign: 'right' } : undefined}>{c.label}</th>
                 ))}
-                {xero?.show && <th>Xero</th>}
+                {showXero && <th>Xero</th>}
                 <th style={{ width: 76 }} />
               </tr>
             </thead>
             <tbody>
               {paginated.length === 0 && (
                 <tr>
-                  <td colSpan={activeCols.length + 2 + (xero?.show ? 1 : 0)} style={{ textAlign: 'center', padding: '48px 0', color: 'var(--gray-400)', fontSize: 13 }}>
+                  <td colSpan={activeCols.length + 2 + (showXero ? 1 : 0)} style={{ textAlign: 'center', padding: '48px 0', color: 'var(--gray-400)', fontSize: 13 }}>
                     {search ? 'No orders match your search.' : 'No sales orders yet.'}
                   </td>
                 </tr>
@@ -515,11 +518,7 @@ export default function SalesTable({
                       case 'total_amount': return <td key={c.key} style={{ textAlign: 'right', fontWeight: 600, color: 'var(--slate)' }}>{fmtMoney(o.total_amount)}</td>
                     }
                   })}
-                  {xero?.show && (
-                    <td>{o.status.toLowerCase() === 'closed'
-                      ? <XeroStatusBadge info={xeroRecords[o.id]} />
-                      : <span className="td-muted" title="Only closed orders can be posted to Xero">—</span>}</td>
-                  )}
+                  {showXero && <td>{xeroRecords[o.id] ? <XeroStatusBadge info={xeroRecords[o.id]} /> : null}</td>}
                   <td>
                     <div className="row-actions">
                       <button className="row-action-btn" onClick={e => { e.stopPropagation(); router.push(`/sales/${o.id}`) }} title="View">

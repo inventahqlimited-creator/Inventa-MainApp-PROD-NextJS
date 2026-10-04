@@ -3,6 +3,7 @@ import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import SalesTable from '@/components/app/sales-table'
 import { relatedPurchaseOrders } from '@/lib/related'
+import { loadXeroTableInfo } from '@/lib/xero/table-info'
 
 type Line = { product_id: string | null; quantity: number | null }
 type Row = {
@@ -40,6 +41,7 @@ export default async function SalesPage() {
   ])
 
   const relatedPo = await relatedPurchaseOrders(adminClient, m.org_id, ((orders ?? []) as { id: string }[]).map(o => o.id))
+  const xero = await loadXeroTableInfo(adminClient, m.org_id, 'invoice', m.role === 'admin')
 
   // On hand per product per location, and per product overall
   const byLoc = new Map<string, number>()
@@ -75,6 +77,7 @@ export default async function SalesPage() {
       orders={shaped as any}
       contacts={(contacts ?? []) as { id: string; name: string }[]}
       locations={(locations ?? []) as { id: string; name: string }[]}
+      xero={xero}
     />
   )
 }

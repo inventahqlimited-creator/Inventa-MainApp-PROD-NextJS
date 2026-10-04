@@ -4,6 +4,7 @@
 // with counts, what failed, what exists in only one system, and a button to sync that section.
 import { useCallback, useEffect, useState } from 'react'
 import type { Overview } from '@/lib/xero/sync'
+import type { InvoiceOverview } from '@/lib/xero/invoice'
 
 type Entity = 'contact' | 'product'
 type SyncSummary = { linked: number; created: number; failed: number; unchanged: number; failures: { id: string; name: string; error: string }[] }
@@ -206,6 +207,112 @@ function Section({ entity, isAdmin, reloadKey, onChanged }: { entity: Entity; is
   )
 }
 
+type BulkSummary = { posted: number; failed: number; remaining: number; failures: { id: string; name: string; error: string }[]; stopped?: string }
+
+/** Posts Closed orders in batches of 20 until none are left (or Xero asks us to slow down). */
+async function runInvoices(): Promise<{ ok: true; posted: number; failed: number; failures: BulkSummary['failures'] } | { ok: false; error: string }> {
+  let posted = 0, failed = 0
+  const failures: BulkSummary['failures'] = []
+  for (let round = 0; round < 15; round++) {
+    let body: BulkSummary & { error?: string }
+    try {
+      const res = await fetch('/api/integrations/xero/invoice', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ all: true }) })
+      body = await res.json().catch(() => ({}))
+      if (!res.ok) return { ok: false, error: body.error ?? 'Posting invoices failed.' }
+    } catch {
+      return { ok: false, error: 'Network error — please try again.' }
+    }
+    posted += body.posted; failed += body.failed; failures.push(...body.failures)
+    if (body.stopped) return { ok: false, error: `${body.stopped} ${posted} posted so far.` }
+    if (body.remaining <= 0 || body.posted + body.failed === 0) break
+  }
+  return { ok: true, posted, failed, failures }
+}
+
+const invoiceText = (r: { posted: number; failed: number }) =>
+  r.posted === 0 && r.failed === 0 ? 'Invoices: nothing new to post.' : `Invoices: ${r.posted} posted as drafts${r.failed ? `, ${r.failed} failed` : ''}.`
+
+function InvoiceSection({ isAdmin, reloadKey }: { isAdmin: boolean; reloadKey: number }) {
+  const [data, setData] = useState<InvoiceOverview | null>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const [notice, setNotice] = useState<Notice>(null)
+
+  const load = useCallback(async () => {
+    setError(null)
+    try {
+      const res = await fetch('/api/integrations/xero/overview?entity=invoice', { cache: 'no-store' })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) { setError(body.error ?? 'Could not load invoices.'); return }
+      setData(body as InvoiceOverview)
+    } catch {
+      setError('Network error — please try again.')
+    }
+  }, [])
+  useEffect(() => { void load() }, [load, reloadKey])
+
+  async function sync() {
+    setBusy(true); setNotice(null)
+    const r = await runInvoices()
+    setBusy(false)
+    setNotice(r.ok ? { kind: r.failed ? 'err' : 'ok', text: invoiceText(r) } : { kind: 'err', text: r.error })
+    await load()
+  }
+
+  return (
+    <div style={{ paddingTop: 22, marginTop: 22, borderTop: '1px solid var(--gray-100)' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
+        <div>
+          <div style={{ fontFamily: 'var(--font-display)', fontSize: 16, fontWeight: 700, color: 'var(--slate)' }}>Invoices</div>
+          <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>Closed sales orders post to Xero as draft invoices. Last posted: {data ? when(data.lastPostedAt) : '…'}</div>
+        </div>
+        {isAdmin && <button className="btn btn-primary" style={{ height: 34 }} disabled={busy} onClick={() => void sync()}>{busy ? 'Posting…' : 'Sync invoices'}</button>}
+      </div>
+
+      {notice && <div style={{ ...noticeStyle(notice), marginBottom: 14 }}>{notice.text}</div>}
+      {error && <div style={{ fontSize: 13, color: '#B91C1C' }}>{error}</div>}
+      {!error && !data && <div style={{ fontSize: 13, color: 'var(--gray-400)' }}>Loading…</div>}
+
+      {data && (
+        <>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+            <Tile label="Closed orders" value={data.eligible} />
+            <Tile label="Posted" value={data.posted} tone="good" />
+            <Tile label="Not posted" value={data.notPosted} />
+            <Tile label="Failed" value={data.failed} tone="bad" />
+          </div>
+
+          {data.failures.length > 0 && (
+            <ListBlock title={`Failed (${data.failures.length})`} hint="Fix the reason, then post again from the order or with Sync invoices.">
+              {data.failures.map(f => (
+                <div key={f.id} style={{ ...rowStyle, alignItems: 'flex-start', flexDirection: 'column', gap: 2 }}>
+                  <a href={`/sales/${f.id}`} style={{ fontWeight: 600, color: 'var(--slate)' }}>{f.name}</a>
+                  <span style={{ fontSize: 12, color: '#B91C1C' }}>{f.error}</span>
+                </div>
+              ))}
+            </ListBlock>
+          )}
+
+          {data.recent.length > 0 && (
+            <ListBlock title="Recently posted">
+              {data.recent.map(r => (
+                <div key={r.id} style={rowStyle}>
+                  <span style={{ fontWeight: 600, minWidth: 90 }}>{r.url ? <a href={r.url} target="_blank" rel="noreferrer" style={{ color: 'var(--slate)' }}>{r.number}</a> : r.number}</span>
+                  <span style={{ flex: 1, minWidth: 0, color: 'var(--gray-500)' }}>{r.customer}</span>
+                  <span style={{ fontVariantNumeric: 'tabular-nums' }}>${r.total.toFixed(2)}</span>
+                  <span style={{ fontSize: 11.5, color: 'var(--gray-400)', minWidth: 90, textAlign: 'right' }}>{when(r.postedAt)}</span>
+                </div>
+              ))}
+            </ListBlock>
+          )}
+
+          {data.eligible === 0 && <div style={{ fontSize: 13, color: 'var(--gray-400)', marginTop: 14 }}>No closed sales orders yet. Close an order, then post it here or from its Actions menu.</div>}
+        </>
+      )}
+    </div>
+  )
+}
+
 export default function XeroDashboard({ isAdmin }: { isAdmin: boolean }) {
   const [reloadKey, setReloadKey] = useState(0)
   const [busy, setBusy] = useState(false)
@@ -215,11 +322,16 @@ export default function XeroDashboard({ isAdmin }: { isAdmin: boolean }) {
     setBusy(true); setNotice(null)
     const lines: string[] = []
     let bad = false
+    let stop = false
     for (const entity of ['contact', 'product'] as Entity[]) {
       const r = await runSync(entity)
-      if (!r.ok) { lines.push(`${LABEL[entity].many}: ${r.error}`); bad = true; if (/busy|rate/i.test(r.error)) break; continue }
+      if (!r.ok) { lines.push(`${LABEL[entity].many}: ${r.error}`); bad = true; if (/busy|rate/i.test(r.error)) { stop = true; break } continue }
       lines.push(summaryText(entity, r.summary))
       if (r.summary.failed) bad = true
+    }
+    if (!stop) {
+      const r = await runInvoices()
+      if (r.ok) { lines.push(invoiceText(r)); if (r.failed) bad = true } else { lines.push(`Invoices: ${r.error}`); bad = true }
     }
     setBusy(false)
     setNotice({ kind: bad ? 'err' : 'ok', text: lines.join(' ') })
@@ -231,7 +343,7 @@ export default function XeroDashboard({ isAdmin }: { isAdmin: boolean }) {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap', padding: '14px 16px', background: 'var(--gray-50)', border: '1px solid var(--gray-100)', borderRadius: 12 }}>
         <div>
           <div style={{ fontFamily: 'var(--font-display)', fontSize: 14.5, fontWeight: 700, color: 'var(--slate)' }}>Sync everything</div>
-          <div style={{ fontSize: 12.5, color: 'var(--gray-400)' }}>Sends new contacts, then products, to Xero. Invoices and bills are posted from their own pages.</div>
+          <div style={{ fontSize: 12.5, color: 'var(--gray-400)' }}>Sends new contacts, then products, then closed sales orders (as draft invoices) to Xero.</div>
         </div>
         {isAdmin
           ? <button className="btn btn-primary" style={{ height: 38 }} disabled={busy} onClick={() => void syncAll()}>{busy ? 'Syncing…' : 'Sync now'}</button>
@@ -241,6 +353,7 @@ export default function XeroDashboard({ isAdmin }: { isAdmin: boolean }) {
 
       <Section entity="contact" isAdmin={isAdmin} reloadKey={reloadKey} onChanged={() => undefined} />
       <Section entity="product" isAdmin={isAdmin} reloadKey={reloadKey} onChanged={() => undefined} />
+      <InvoiceSection isAdmin={isAdmin} reloadKey={reloadKey} />
     </div>
   )
 }

@@ -3,7 +3,7 @@
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { printPurchaseOrder } from '@/lib/purchase-order/print'
-import { XeroPostNotice, XeroStatusBadge, usePostToXero, type XeroTableInfo } from '@/components/app/xero-sync-ui'
+import { XeroColumnMenuItem, XeroPostNotice, XeroStatusBadge, useXeroColumn, usePostToXero, type XeroTableInfo } from '@/components/app/xero-sync-ui'
 
 type Order = {
   id: string
@@ -105,7 +105,7 @@ export default function PurchasesTable({
   billReady = [],
 }: {
   xero?: XeroTableInfo
-  billReady?: string[] // closed orders that are fully received, so a bill can be posted
+  billReady?: string[] // closed orders with something received, so a bill can be posted
   orders: Order[]
   contacts: Contact[]
   locations: Location[]
@@ -113,6 +113,8 @@ export default function PurchasesTable({
 }) {
   const router = useRouter()
   const [xeroRecords, setXeroRecords] = useState(xero?.records ?? {})
+  const xeroCol = useXeroColumn('purchases_xero_col')
+  const showXero = Boolean(xero?.show) && xeroCol.on
   const xeroPost = usePostToXero('bill', (id, info) => setXeroRecords(r => ({ ...r, [id]: info })))
   const readyToBill = useMemo(() => new Set(billReady), [billReady])
   const [search, setSearch] = useState('')
@@ -403,6 +405,7 @@ export default function PurchasesTable({
                   <span style={{ fontSize: 13, color: 'var(--slate)' }}>{c.label}</span>
                 </div>
               ))}
+              {xero?.show && <XeroColumnMenuItem on={xeroCol.on} onToggle={xeroCol.toggle} />}
             </div>
           )}
         </div>
@@ -453,14 +456,14 @@ export default function PurchasesTable({
                   if (c.key === 'total_amount') return <th key={c.key} style={{ textAlign: 'right' }}>{c.label}</th>
                   return <th key={c.key}>{c.label}</th>
                 })}
-                {xero?.show && <th>Xero</th>}
+                {showXero && <th>Xero</th>}
                 <th style={{ width: 76 }}></th>
               </tr>
             </thead>
             <tbody>
               {paginated.length === 0 && (
                 <tr>
-                  <td colSpan={activeCols.length + 2 + (xero?.show ? 1 : 0)} style={{ textAlign: 'center', padding: '48px 0', color: 'var(--gray-400)', fontSize: 13 }}>
+                  <td colSpan={activeCols.length + 2 + (showXero ? 1 : 0)} style={{ textAlign: 'center', padding: '48px 0', color: 'var(--gray-400)', fontSize: 13 }}>
                     {search ? 'No orders match your search.' : 'No purchase orders yet.'}
                   </td>
                 </tr>
@@ -518,11 +521,7 @@ export default function PurchasesTable({
                           return <td key={(c as any).key}>—</td>
                       }
                     })}
-                    {xero?.show && (
-                      <td>{readyToBill.has(o.id) || xeroRecords[o.id]
-                        ? <XeroStatusBadge info={xeroRecords[o.id]} />
-                        : <span className="td-muted" title="A bill can be posted once the order is fully received and closed">—</span>}</td>
-                    )}
+                    {showXero && <td>{xeroRecords[o.id] ? <XeroStatusBadge info={xeroRecords[o.id]} /> : null}</td>}
                     <td>
                       <div className="row-actions">
                         <button className="row-action-btn" onClick={e => { e.stopPropagation(); router.push(`/purchases/${o.id}`) }} title="View">

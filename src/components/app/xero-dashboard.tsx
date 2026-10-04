@@ -55,25 +55,25 @@ const noticeStyle = (n: NonNullable<Notice>): React.CSSProperties => ({
 
 function Tile({ label, value, tone }: { label: string; value: number | string; tone?: 'bad' | 'good' }) {
   return (
-    <div style={{ flex: '1 1 110px', minWidth: 0, padding: '12px 14px', border: '1px solid var(--gray-100)', borderRadius: 10, background: 'var(--gray-50)' }}>
-      <div style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--gray-400)' }}>{label}</div>
-      <div style={{ fontSize: 20, fontWeight: 800, fontFamily: 'var(--font-display)', color: tone === 'bad' && Number(value) > 0 ? '#B91C1C' : tone === 'good' ? '#047857' : 'var(--slate)', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
+    <div className="xero-stat">
+      <div style={{ fontSize: 11, fontWeight: 500, color: 'var(--gray-400)', lineHeight: 1.3 }}>{label}</div>
+      <div style={{ fontSize: 19, fontWeight: 700, marginTop: 2, fontFamily: 'var(--font-display)', color: tone === 'bad' && Number(value) > 0 ? '#B91C1C' : tone === 'good' ? '#047857' : 'var(--slate)', fontVariantNumeric: 'tabular-nums' }}>{value}</div>
     </div>
   )
 }
 
 function ListBlock({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
   return (
-    <div style={{ marginTop: 18 }}>
-      <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--slate)', fontFamily: 'var(--font-display)' }}>{title}</div>
+    <div style={{ marginTop: 22 }}>
+      <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--slate)', fontFamily: 'var(--font-display)' }}>{title}</div>
       {hint && <div style={{ fontSize: 12, color: 'var(--gray-400)', margin: '2px 0 8px' }}>{hint}</div>}
       {children}
     </div>
   )
 }
 
-const cardStyle: React.CSSProperties = { border: '1px solid var(--gray-100)', borderRadius: 12, padding: 18, minWidth: 0 }
-const rowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, padding: '7px 0', borderBottom: '1px solid var(--gray-100)', fontSize: 13, color: 'var(--slate)' }
+const cardStyle: React.CSSProperties = { border: '1px solid var(--gray-100)', borderRadius: 14, padding: '20px 22px 22px', minWidth: 0, background: 'var(--white)' }
+const rowStyle: React.CSSProperties = { display: 'flex', alignItems: 'center', gap: 10, padding: '8px 0', borderBottom: '1px solid var(--gray-50)', fontSize: 13, color: 'var(--slate)' }
 
 function Section({ entity, isAdmin, reloadKey, onChanged }: { entity: Entity; isAdmin: boolean; reloadKey: number; onChanged: () => void }) {
   const l = LABEL[entity]
@@ -138,7 +138,7 @@ function Section({ entity, isAdmin, reloadKey, onChanged }: { entity: Entity; is
           <div style={{ fontFamily: 'var(--font-display)', fontSize: 16, fontWeight: 700, color: 'var(--slate)', textTransform: 'capitalize' }}>{l.many}</div>
           <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>Last synced: {data ? when(data.lastSyncedAt) : '…'}</div>
         </div>
-        {isAdmin && <button className="btn btn-primary" style={{ height: 34 }} disabled={busy !== null} onClick={() => void sync()}>{busy === 'sync' ? 'Syncing…' : `Sync ${l.many}`}</button>}
+        {isAdmin && <button className="btn btn-outline" style={{ height: 32 }} disabled={busy !== null} onClick={() => void sync()}>{busy === 'sync' ? 'Syncing…' : `Sync ${l.many}`}</button>}
       </div>
 
       {notice && <div style={{ ...noticeStyle(notice), marginBottom: 14 }}>{notice.text}</div>}
@@ -153,7 +153,7 @@ function Section({ entity, isAdmin, reloadKey, onChanged }: { entity: Entity; is
 
       {data && (
         <>
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <div className="xero-stats">
             <Tile label="In InventaHQ" value={data.inventa} />
             <Tile label="In Xero" value={data.xero} />
             <Tile label="Synced" value={data.synced} tone="good" />
@@ -286,7 +286,7 @@ function PostSection({ kind, isAdmin, reloadKey, postStatus }: { kind: Kind; isA
           <div style={{ fontFamily: 'var(--font-display)', fontSize: 16, fontWeight: 700, color: 'var(--slate)' }}>{k.title}</div>
           <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>{k.source} post to Xero{postStatus ? ` as ${postStatus === 'AUTHORISED' ? 'approved' : 'draft'} ${k.noun}s` : ''}. Last posted: {data ? when(data.lastPostedAt) : '…'}</div>
         </div>
-        {isAdmin && <button className="btn btn-primary" style={{ height: 34 }} disabled={busy} onClick={() => void sync()}>{busy ? 'Posting…' : `Sync ${k.title.toLowerCase()}`}</button>}
+        {isAdmin && <button className="btn btn-outline" style={{ height: 32 }} disabled={busy} onClick={() => void sync()}>{busy ? 'Posting…' : `Sync ${k.title.toLowerCase()}`}</button>}
       </div>
 
       {notice && <div style={{ ...noticeStyle(notice), marginBottom: 14 }}>{notice.text}</div>}
@@ -295,7 +295,7 @@ function PostSection({ kind, isAdmin, reloadKey, postStatus }: { kind: Kind; isA
 
       {data && (
         <>
-          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+          <div className="xero-stats">
             <Tile label={k.total} value={data.eligible} />
             <Tile label="Posted" value={data.posted} tone="good" />
             <Tile label="Not posted" value={data.notPosted} />
@@ -404,27 +404,27 @@ export default function XeroDashboard({ isAdmin }: { isAdmin: boolean }) {
   const auto = info && info.prefs.schedule !== 'manual'
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 14, flexWrap: 'wrap', padding: '14px 16px', background: 'var(--gray-50)', border: '1px solid var(--gray-100)', borderRadius: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', padding: '18px 22px', background: 'var(--gray-50)', border: '1px solid var(--gray-100)', borderRadius: 14 }}>
         <div style={{ minWidth: 0 }}>
-          <div style={{ fontFamily: 'var(--font-display)', fontSize: 14.5, fontWeight: 700, color: 'var(--slate)' }}>Sync everything</div>
-          <div style={{ fontSize: 12.5, color: 'var(--gray-400)' }}>Sends new contacts, then products, then closed sales orders (invoices) and received purchase orders (bills) to Xero.</div>
+          <div style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 700, color: 'var(--slate)' }}>Sync everything</div>
+          <div style={{ fontSize: 12.5, color: 'var(--gray-400)', marginTop: 2 }}>Sends new contacts, then products, then closed sales orders (invoices) and received purchase orders (bills) to Xero.</div>
           {info && (
-            <div style={{ fontSize: 12.5, color: 'var(--gray-500)', marginTop: 8, display: 'flex', flexWrap: 'wrap', gap: '4px 18px' }}>
-              <span><strong style={{ color: 'var(--slate)' }}>Last full sync:</strong> {when(info.lastFullSyncAt)}</span>
+            <div style={{ fontSize: 12.5, color: 'var(--gray-400)', marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: '4px 22px' }}>
+              <span>Last full sync: <span style={{ color: 'var(--slate)', fontWeight: 400 }}>{when(info.lastFullSyncAt)}</span></span>
               {auto
-                ? <span><strong style={{ color: 'var(--slate)' }}>Next sync:</strong> {when(info.nextSyncAt)} <span style={{ color: 'var(--gray-400)' }}>({SCHEDULE_LABELS[info.prefs.schedule].toLowerCase()} · {SCOPE_LABELS[info.prefs.scope].toLowerCase().replace(/ \(.*\)/, '')})</span></span>
-                : <span style={{ color: 'var(--gray-400)' }}>Automatic sync is off (manual).</span>}
+                ? <span>Next sync: <span style={{ color: 'var(--slate)', fontWeight: 400 }}>{when(info.nextSyncAt)}</span> ({SCHEDULE_LABELS[info.prefs.schedule].toLowerCase()} · {SCOPE_LABELS[info.prefs.scope].toLowerCase().replace(/ \(.*\)/, '')})</span>
+                : <span>Automatic sync is off (manual).</span>}
             </div>
           )}
         </div>
         {isAdmin
-          ? <button className="btn btn-primary" style={{ height: 38 }} disabled={busy} onClick={() => void syncAll()}>{busy ? 'Syncing…' : 'Sync now'}</button>
+          ? <button className="btn btn-primary" style={{ height: 38, paddingInline: 22 }} disabled={busy} onClick={() => void syncAll()}>{busy ? 'Syncing…' : 'Sync now'}</button>
           : <span style={{ fontSize: 12.5, color: 'var(--gray-400)' }}>Only admins can sync.</span>}
       </div>
       {notice && <div style={{ ...noticeStyle(notice), marginTop: 12 }}>{notice.text}</div>}
 
-      <div className="xero-grid" style={{ marginTop: 18 }}>
-        <style>{'.xero-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;align-items:start}@media(max-width:820px){.xero-grid{grid-template-columns:minmax(0,1fr)}}'}</style>
+      <div className="xero-grid" style={{ marginTop: 22 }}>
+        <style>{'.xero-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:22px;align-items:start}@media(max-width:820px){.xero-grid{grid-template-columns:minmax(0,1fr)}}.xero-stats{display:flex;border:1px solid var(--gray-100);border-radius:12px;overflow:hidden}.xero-stat{flex:1 1 0;min-width:0;padding:11px 14px;background:var(--white)}.xero-stat+.xero-stat{border-left:1px solid var(--gray-100)}'}</style>
         <Section entity="contact" isAdmin={isAdmin} reloadKey={reloadKey} onChanged={() => undefined} />
         <Section entity="product" isAdmin={isAdmin} reloadKey={reloadKey} onChanged={() => undefined} />
         <PostSection kind="invoice" isAdmin={isAdmin} reloadKey={reloadKey} postStatus={info?.prefs.invoice_status} />

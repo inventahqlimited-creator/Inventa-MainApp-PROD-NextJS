@@ -3,6 +3,7 @@
 // Shared pieces for the Contacts and Products tables: the Xero status badge, the "Post to Xero" button,
 // and the hook that sends one record. Only used when Xero is switched on and connected.
 import { useEffect, useState } from 'react'
+import { toast } from '@/components/app/toast'
 
 export type XeroRowInfo = { status: 'synced' | 'failed'; error?: string | null; url?: string | null }
 export type XeroMessage = { kind: 'ok' | 'err'; text: string; href?: string | null }
@@ -36,6 +37,7 @@ export function usePostToXero(entity: 'contact' | 'product' | 'invoice' | 'bill'
       })
       const body = await res.json().catch(() => ({}))
       if (!res.ok) {
+        toast.error(body.error ?? 'Could not post to Xero.')
         setMessage({ kind: 'err', text: body.error ?? 'Could not post to Xero.' })
         if (body.recorded) onResult(id, { status: 'failed', error: body.error })
         return
@@ -43,18 +45,24 @@ export function usePostToXero(entity: 'contact' | 'product' | 'invoice' | 'bill'
       if (entity === 'invoice' || entity === 'bill') {
         onResult(id, { status: 'synced', error: body.warning ?? null, url: body.url ?? null })
         const what = `${body.status === 'AUTHORISED' ? 'approved' : 'draft'} ${entity === 'bill' ? 'bill' : 'invoice'}`
-        setMessage({ kind: 'ok', text: `Posted to Xero as ${what}${body.number ? ` ${body.number}` : ''}.${body.warning ? ` ${body.warning}` : ''}`, href: body.url ?? null })
+        const text = `Posted to Xero as ${what}${body.number ? ` ${body.number}` : ''}.${body.warning ? ` ${body.warning}` : ''}`
+        if (body.warning) toast.error(text, { href: body.url ?? null, hrefLabel: 'Open in Xero →' })
+        else toast.success(text, { href: body.url ?? null, hrefLabel: 'Open in Xero →' })
+        setMessage({ kind: 'ok', text, href: body.url ?? null })
         return
       }
       const failure = (body.failures as { id: string; error: string }[] | undefined)?.find(f => f.id === id)
       if (failure) {
         onResult(id, { status: 'failed', error: failure.error })
+        toast.error(failure.error)
         setMessage({ kind: 'err', text: failure.error })
       } else {
         onResult(id, { status: 'synced' })
+        toast.success('Posted to Xero.')
         setMessage({ kind: 'ok', text: 'Posted to Xero.' })
       }
     } catch {
+      toast.error('Network error — please try again.')
       setMessage({ kind: 'err', text: 'Network error — please try again.' })
     } finally {
       setBusyId(null)
@@ -73,7 +81,9 @@ export function PostToXeroButton({ busy, onClick }: { busy: boolean; onClick: ()
 }
 
 /** A short notice under the page header after a post: green on success, red with Xero's reason on failure. */
+// The result now shows as a toast (see usePostToXero), so this banner no longer draws anything.
 export function XeroPostNotice({ message, onClose, flush }: { message: XeroMessage | null; onClose: () => void; flush?: boolean }) {
+  if (true as boolean) return null
   if (!message) return null
   return (
     <div style={{ margin: flush ? '0 0 20px' : '12px 20px 0', padding: '10px 14px', borderRadius: 10, fontSize: 13, fontWeight: 500, display: 'flex', justifyContent: 'space-between', gap: 12,

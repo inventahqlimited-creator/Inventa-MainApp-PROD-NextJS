@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import NumInput from '@/components/app/num-input'
 import TaxSelect from '@/components/app/tax-select'
+import { toast } from '@/components/app/toast'
 
 type Supplier = {
   id: string
@@ -234,7 +235,8 @@ export default function NewPurchaseOrder({
   const [orderDiscount, setOrderDiscount] = useState<number>(Number(prefill?.order_discount) || 0)
   const [supplierPriceLevelId, setSupplierPriceLevelId] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setErrorRaw] = useState<string | null>(null)
+  const setError = (m: string | null) => { setErrorRaw(m); if (m) toast.error(m) }
   const [confirmLeave, setConfirmLeave] = useState(false)
 
   const filteredSuppliers = useMemo(() =>
@@ -415,6 +417,7 @@ export default function NewPurchaseOrder({
       setSaving(false)
 
       if (!res.ok) { setError(data.error ?? 'Something went wrong'); return }
+      toast.later('success', 'Purchase order created')
       router.push(`/purchases/${data.id}`)
     } catch (err) {
       setSaving(false)

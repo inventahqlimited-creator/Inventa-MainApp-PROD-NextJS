@@ -7,6 +7,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { printPackingList } from '@/lib/packing-list/print'
 import type { PackOverrides } from '@/lib/packing-list/types'
+import { toast } from '@/components/app/toast'
 
 type Line = { id: string; name: string; sku: string; unit: string; picked: number }
 type Carton = { key: number; name: string; qty: Record<string, number> }
@@ -43,7 +44,8 @@ export default function PackSalesOrder({ packs }: { packs: OrderPack[] }) {
   const [confirm, setConfirm] = useState(false)
   const [saving, setSaving] = useState(false)
   const [printing, setPrinting] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setErrorRaw] = useState<string | null>(null)
+  const setError = (m: string | null) => { setErrorRaw(m); if (m) toast.error(m) }
 
   const upd = (oid: string, fn: (s: State) => State) => setStates(all => ({ ...all, [oid]: fn(all[oid]) }))
   const packedOf = (oid: string, lineId: string) => states[oid].cartons.reduce((s, c) => s + (c.qty[lineId] ?? 0), 0)
@@ -113,6 +115,7 @@ export default function PackSalesOrder({ packs }: { packs: OrderPack[] }) {
         }
         done++
       }
+      toast.later('success', done > 1 ? `${done} orders packed` : 'Order packed')
       router.push(backTo)
       router.refresh()
     } catch {

@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect, useRef } from 'react'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { PostToXeroButton, XeroColumnHeader, XeroPostNotice, XeroStatusBadge, usePostToXero, type XeroTableInfo } from '@/components/app/xero-sync-ui'
+import { toast } from '@/components/app/toast'
 
 type Product = {
   id: string
@@ -599,10 +600,12 @@ function ImportModal({ orgId, customFields, customLists, taxRates, suppliers, pr
 
     setImporting(false)
     if (createdItems.length > 0 || updatedCount > 0) {
+      toast.success(`Import complete: ${createdItems.length} added, ${updatedCount} updated`)
       setImported({ created: createdItems.length, updated: updatedCount })
       onImported(createdItems)
     } else {
       if (rowErrors.length === 0) rowErrors.push('No products were imported. Make sure your file matches the template format.')
+      toast.error('Nothing was imported. Check the errors in the import window.')
       setErrors(rowErrors)
     }
   }
@@ -793,7 +796,8 @@ export default function ProductsTable({
   const [form, setForm] = useState<ModalForm>(EMPTY_FORM)
   const [modalTab, setModalTab] = useState<'details' | 'pricing' | 'stock' | 'orders' | 'custom'>('details')
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setErrorRaw] = useState<string | null>(null)
+  const setError = (m: string | null) => { setErrorRaw(m); if (m) toast.error(m) }
   const [customFieldValues, setCustomFieldValues] = useState<Record<string, string>>({})
   const [pricing, setPricing] = useState<PricingRow[]>([])
   const [productOrders, setProductOrders] = useState<Record<string, unknown>[]>([])
@@ -1007,6 +1011,7 @@ export default function ProductsTable({
       if (!ok) { setError('The product was saved, but its price level prices could not be saved. Please try again.'); return }
     }
 
+    toast.success(isEdit ? 'Product updated' : 'Product created')
     if (isEdit) {
       const updated = { ...activeProduct, ...payload, custom_fields: customFieldValues } as Product
       setProducts(prev => prev.map(p => p.id === activeProduct.id ? updated : p))
@@ -1027,6 +1032,7 @@ export default function ProductsTable({
       })
     ))
     setProducts(prev => prev.map(p => selectedIds.has(p.id) ? { ...p, is_active: action === 'active' } : p))
+    toast.success(`${ids.length} product${ids.length !== 1 ? 's' : ''} marked ${action}`)
     setSelectedIds(new Set())
   }
 

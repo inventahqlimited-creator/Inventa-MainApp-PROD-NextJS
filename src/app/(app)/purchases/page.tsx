@@ -44,15 +44,12 @@ export default async function PurchasesPage() {
 
   const relatedSo = await relatedSalesOrders(adminClient, m.org_id, ((orders ?? []) as { id: string }[]).map(o => o.id))
   const xero = await loadXeroTableInfo(adminClient, m.org_id, 'bill', m.role === 'admin')
-  // Closed orders that are fully received: a bill can be posted for these
+  // Closed orders with something received: a bill can be posted for these
   let billReady: string[] = []
   if (xero.show) {
     const { data: closed } = await adminClient.from('purchase_orders').select('id, purchase_order_lines ( quantity_ordered, quantity_received )').eq('org_id', m.org_id).ilike('status', 'closed')
     billReady = ((closed ?? []) as { id: string; purchase_order_lines: { quantity_ordered: number | null; quantity_received: number | null }[] | null }[])
-      .filter(o => {
-        const real = (o.purchase_order_lines ?? []).filter(l => Number(l.quantity_ordered) > 0)
-        return real.length > 0 && real.every(l => Number(l.quantity_received ?? 0) + 1e-9 >= Number(l.quantity_ordered))
-      })
+      .filter(o => (o.purchase_order_lines ?? []).some(l => Number(l.quantity_received ?? 0) > 0))
       .map(o => o.id)
   }
   const shaped = ((orders ?? []) as { id: string }[]).map(o => ({ ...o, related_so_id: relatedSo.get(o.id) ?? null }))

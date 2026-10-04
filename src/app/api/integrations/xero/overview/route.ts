@@ -1,29 +1,24 @@
-// src/app/api/integrations/xero/invoice/route.ts
-// POST { id } — post one Closed sales order to Xero as a Draft invoice.
-// POST { all: true } — post up to 20 Closed, not-yet-posted orders; the reply says how many are left. Admin only.
+// src/app/api/integrations/xero/overview/route.ts
+// GET ?entity=contact|product|invoice|bill — counts and lists for the Xero dashboard.
 import { NextResponse } from 'next/server'
-import { guardXero } from '@/lib/xero/guard'
-import { postEligibleInvoices, postInvoice } from '@/lib/xero/invoice'
+import { guardXero, parseEntity } from '@/lib/xero/guard'
+import { buildOverview } from '@/lib/xero/sync'
+import { invoiceOverview } from '@/lib/xero/invoice'
+import { billOverview } from '@/lib/xero/bill'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
 
-export async function POST(req: Request) {
-  const g = await guardXero(true)
+export async function GET(req: Request) {
+  const g = await guardXero(false)
   if ('res' in g) return g.res
-  const body = await req.json().catch(() => ({}))
+  const raw = new URL(req.url).searchParams.get('entity')
+  if (raw === 'invoice') return NextResponse.json(await invoiceOverview(g.a.db, g.a.orgId)) // from Inventa only, no call to Xero
+  if (raw === 'bill') return NextResponse.json(await billOverview(g.a.db, g.a.orgId))
+  const entity = parseEntity(raw)
+  if (!entity) return NextResponse.json({ error: 'Unknown entity.' }, { status: 400 })
 
-  if (body?.all === true) {
-    if (!g.settings.sales_account_code || !g.settings.purchases_account_code) {
-      return NextResponse.json({ error: 'Save the Accounts and tax settings in Xero settings before posting invoices.' }, { status: 409 })
-    }
-    return NextResponse.json(await postEligibleInvoices(g.a.db, g.a.orgId, g.settings))
-  }
-
-  const id = typeof body?.id === 'string' && /^[0-9a-f-]{36}$/i.test(body.id) ? body.id : null
-  if (!id) return NextResponse.json({ error: 'Invalid order.' }, { status: 400 })
-
-  const r = await postInvoice(g.a.db, g.a.orgId, id, g.settings)
-  if (!r.ok) return NextResponse.json({ error: r.error, recorded: Boolean(r.recorded) }, { status: r.status === 404 ? 404 : r.status === 409 ? 409 : r.status === 429 ? 429 : r.status === 422 ? 422 : 502 })
-  return NextResponse.json({ number: r.number, url: r.url, warning: r.warning })
+  const r = await buildOverview(g.a.db, g.a.orgId, entity)
+  if (!r.ok) return NextResponse.json({ error: r.error }, { status: r.status === 429 ? 429 : 502 })
+  return NextResponse.json(r.overview)
 }

@@ -18,8 +18,9 @@ export default function XeroHome({ status, tenantName, isAdmin }: Props) {
   const connected = status === 'connected'
   return (
     <div>
-      <div className="page-header-card">
-        <div className="page-header-top">
+      {/* The header card and the body below are one block: no gap, no margin collapse between them */}
+      <div className="page-header-card" style={{ marginBottom: 0, paddingBottom: 16, borderBottomLeftRadius: 0, borderBottomRightRadius: 0, boxShadow: 'none' }}>
+        <div className="page-header-top" style={{ marginBottom: 0 }}>
           <div>
             <div className="page-title">Xero</div>
             <div className="page-subtitle">{connected ? `Connected to ${tenantName ?? 'Xero'}` : 'Accounting integration'}</div>

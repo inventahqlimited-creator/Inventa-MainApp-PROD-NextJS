@@ -11,6 +11,7 @@ import TaxSelect from '@/components/app/tax-select'
 import { printPickList } from '@/lib/pick-list/print'
 import { printPackingList } from '@/lib/packing-list/print'
 import { printInvoice } from '@/lib/invoice/print'
+import { XeroPostNotice, usePostToXero, type XeroRowInfo } from '@/components/app/xero-sync-ui'
 
 type Customer = {
   id: string
@@ -118,6 +119,7 @@ export type SalesOrder = {
 }
 
 type Props = {
+  xeroInvoice?: { show: boolean; canPost: boolean; info: XeroRowInfo | null } // Xero state of this order's invoice (sales order page)
   orgId: string
   order?: SalesOrder | null
   prefill?: SalesOrder | null // Clone Order — a new order pre-filled from an existing one
@@ -238,8 +240,9 @@ function Dd({ label, value, options, onPick, open, setOpen, disabled, placeholde
 }
 
 // Actions dropdown in the header of a saved order (view mode)
-function ActionsMenu({ orderId, soNumber, statusLower, relatedPoId, canEdit, canCancel, canPo, isQuote, onEdit, onCancel, onPo, onError }: {
+function ActionsMenu({ orderId, soNumber, statusLower, relatedPoId, canEdit, canCancel, canPo, isQuote, onEdit, onCancel, onPo, onError, xero, onPostXero }: {
   orderId: string; soNumber: string; statusLower: string; relatedPoId: string | null
+  xero?: { show: boolean; canPost: boolean; info: XeroRowInfo | null }; onPostXero: () => void
   canEdit: boolean; canCancel: boolean; canPo: boolean; isQuote: boolean
   onEdit: () => void; onCancel: () => void; onPo: () => void
   onError: (message: string) => void
@@ -307,6 +310,8 @@ function ActionsMenu({ orderId, soNumber, statusLower, relatedPoId, canEdit, can
           {item('Clone Order', () => { shut(); router.push(`/sales/new?clone=${orderId}`) }, { icon: ic('M9 9h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V11a2 2 0 0 1 2-2zM5 15H4a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v1') })}
           {canPo && item('Create Purchase Order', () => { shut(); onPo() }, { icon: ic('M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4zM3 6h18M16 10a4 4 0 0 1-8 0') })}
           {relatedPoId && item('Open Related Order', () => { shut(); router.push(`/purchases/${relatedPoId}`) }, { icon: ic('M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71') })}
+          {xero?.show && xero.canPost && statusLower === 'closed' && xero.info?.status !== 'synced' && item('Post to Xero', () => { shut(); onPostXero() }, { icon: ic('M16 16l-4-4-4 4M12 12v9M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3') })}
+          {xero?.show && xero.info?.status === 'synced' && xero.info.url && item('Open in Xero', () => { shut(); window.open(xero.info?.url ?? '', '_blank', 'noopener') }, { icon: ic('M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3') })}
           {canCancel && <>{sep('s2')}{item('Cancel Order', () => { shut(); onCancel() }, { danger: true, icon: ic('M18 6 6 18M6 6l12 12') })}</>}
         </div>
       )}
@@ -333,6 +338,7 @@ function SalesOrderFormInner({
   order,
   prefill,
   relatedPoId,
+  xeroInvoice,
   customers,
   locations,
   products,
@@ -437,6 +443,8 @@ function SalesOrderFormInner({
   const [orderDiscount, setOrderDiscount] = useState<number>(Number(seed?.order_discount) || 0)
   const [saving, setSaving] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [xeroInfo, setXeroInfo] = useState<XeroRowInfo | null>(xeroInvoice?.info ?? null)
+  const xeroPost = usePostToXero('invoice', (_id, info) => { setXeroInfo(info) })
   const [confirmLeave, setConfirmLeave] = useState(false)
   const [confirmCancelOrder, setConfirmCancelOrder] = useState(false)
   const [poOpen, setPoOpen] = useState(false)
@@ -811,6 +819,8 @@ function SalesOrderFormInner({
               soNumber={order!.so_number ?? 'Order'}
               statusLower={statusLower}
               relatedPoId={relatedPoId ?? null}
+              xero={xeroInvoice ? { ...xeroInvoice, info: xeroInfo } : undefined}
+              onPostXero={() => { setError(null); void xeroPost.post(order!.id) }}
               canEdit={statusEditable}
               canCancel={statusEditable}
               canPo={statusLower !== 'cancelled' && !isQuote}
@@ -829,6 +839,12 @@ function SalesOrderFormInner({
 
         {error && (
           <div style={{ background: '#FEF2F2', border: '1.5px solid #FECACA', borderRadius: 10, padding: '12px 16px', fontSize: 13, color: '#B91C1C', marginBottom: 20 }}>{error}</div>
+        )}
+        <XeroPostNotice message={xeroPost.message} onClose={xeroPost.clearMessage} flush />
+        {!xeroPost.message && statusLower === 'closed' && xeroInfo?.status === 'failed' && (
+          <div style={{ background: '#FEF2F2', border: '1.5px solid #FECACA', borderRadius: 10, padding: '12px 16px', fontSize: 13, color: '#B91C1C', marginBottom: 20 }}>
+            The last attempt to post this order to Xero failed: {xeroInfo.error}
+          </div>
         )}
 
         {!isNew && !statusEditable && (

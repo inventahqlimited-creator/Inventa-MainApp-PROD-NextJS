@@ -21,7 +21,7 @@ export function XeroStatusBadge({ info }: { info?: XeroRowInfo | null }) {
 export const XeroColumnHeader = () => <th>Xero</th>
 
 /** Sends one record to Xero. Returns the new status so the table can update its row. */
-export function usePostToXero(entity: 'contact' | 'product' | 'invoice', onResult: (id: string, info: XeroRowInfo) => void) {
+export function usePostToXero(entity: 'contact' | 'product' | 'invoice' | 'bill', onResult: (id: string, info: XeroRowInfo) => void) {
   const [busyId, setBusyId] = useState<string | null>(null)
   const [message, setMessage] = useState<XeroMessage | null>(null)
 
@@ -29,10 +29,10 @@ export function usePostToXero(entity: 'contact' | 'product' | 'invoice', onResul
     setBusyId(id)
     setMessage(null)
     try {
-      const res = await fetch(entity === 'invoice' ? '/api/integrations/xero/invoice' : '/api/integrations/xero/sync', {
+      const res = await fetch(entity === 'invoice' ? '/api/integrations/xero/invoice' : entity === 'bill' ? '/api/integrations/xero/bill' : '/api/integrations/xero/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(entity === 'invoice' ? { id } : { entity, id }),
+        body: JSON.stringify(entity === 'invoice' || entity === 'bill' ? { id } : { entity, id }),
       })
       const body = await res.json().catch(() => ({}))
       if (!res.ok) {
@@ -40,9 +40,10 @@ export function usePostToXero(entity: 'contact' | 'product' | 'invoice', onResul
         if (body.recorded) onResult(id, { status: 'failed', error: body.error })
         return
       }
-      if (entity === 'invoice') {
+      if (entity === 'invoice' || entity === 'bill') {
         onResult(id, { status: 'synced', error: body.warning ?? null, url: body.url ?? null })
-        setMessage({ kind: 'ok', text: `Posted to Xero as draft invoice ${body.number}.${body.warning ? ` ${body.warning}` : ''}`, href: body.url ?? null })
+        const what = `${body.status === 'AUTHORISED' ? 'approved' : 'draft'} ${entity === 'bill' ? 'bill' : 'invoice'}`
+        setMessage({ kind: 'ok', text: `Posted to Xero as ${what}${body.number ? ` ${body.number}` : ''}.${body.warning ? ` ${body.warning}` : ''}`, href: body.url ?? null })
         return
       }
       const failure = (body.failures as { id: string; error: string }[] | undefined)?.find(f => f.id === id)

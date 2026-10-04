@@ -11,7 +11,8 @@ import TaxSelect from '@/components/app/tax-select'
 import { printPickList } from '@/lib/pick-list/print'
 import { printPackingList } from '@/lib/packing-list/print'
 import { printInvoice } from '@/lib/invoice/print'
-import { XeroPostNotice, usePostToXero, type XeroRowInfo } from '@/components/app/xero-sync-ui'
+import { XeroPostNotice, XeroStatusBadge, usePostToXero, type XeroRowInfo } from '@/components/app/xero-sync-ui'
+import { toast } from '@/components/app/toast'
 
 type Customer = {
   id: string
@@ -442,7 +443,8 @@ function SalesOrderFormInner({
   const [orderDiscountType, setOrderDiscountType] = useState<'%' | '$'>((seed?.order_discount_type as '%' | '$') ?? '%')
   const [orderDiscount, setOrderDiscount] = useState<number>(Number(seed?.order_discount) || 0)
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setErrorRaw] = useState<string | null>(null)
+  const setError = (m: string | null) => { setErrorRaw(m); if (m) toast.error(m) }
   const [xeroInfo, setXeroInfo] = useState<XeroRowInfo | null>(xeroInvoice?.info ?? null)
   const xeroPost = usePostToXero('invoice', (_id, info) => { setXeroInfo(info) })
   const [confirmLeave, setConfirmLeave] = useState(false)
@@ -697,7 +699,8 @@ function SalesOrderFormInner({
       const data = await res.json().catch(() => ({}))
       setSaving(false)
       if (!res.ok) { setError(data.error ?? 'Something went wrong'); return }
-      if (isNew) { router.push(`/sales/${data.id}`); return }
+      if (isNew) { toast.later('success', 'Sales order created'); router.push(`/sales/${data.id}`); return }
+      toast.success('Sales order saved')
       setMode('view')
       router.refresh()
     } catch {
@@ -714,6 +717,7 @@ function SalesOrderFormInner({
       const data = await res.json().catch(() => ({}))
       if (!res.ok) { setConfirmClose(false); setError(data.error ?? 'Could not close this order'); return }
       setConfirmClose(false)
+      toast.success('Order closed')
       router.refresh()
     } catch {
       setConfirmClose(false)
@@ -734,8 +738,8 @@ function SalesOrderFormInner({
       const data = await res.json().catch(() => ({}))
       if (!res.ok) { setConvertOpen(false); setError(data.error ?? 'Could not convert this quote'); return }
       setConvertOpen(false)
-      if (convertMode === 'copy' && data.id) router.push(`/sales/${data.id}`)
-      else router.refresh()
+      if (convertMode === 'copy' && data.id) { toast.later('success', 'Sales order created from the quote'); router.push(`/sales/${data.id}`) }
+      else { toast.success('Quote converted to a sales order'); router.refresh() }
     } catch {
       setConvertOpen(false)
       setError('Network error — please try again.')
@@ -756,6 +760,7 @@ function SalesOrderFormInner({
       const data = await res.json().catch(() => ({}))
       if (!res.ok) { setError(data.error ?? 'Could not cancel this order'); return }
       setConfirmCancelOrder(false)
+      toast.success('Order cancelled')
       router.refresh()
     } catch {
       setError('Network error — please try again.')
@@ -813,6 +818,9 @@ function SalesOrderFormInner({
           {isNew
             ? <><span style={{ fontSize: 12, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)' }}>Draft</span><div style={{ width: 8, height: 8, borderRadius: '50%', background: '#F59E0B' }} /></>
             : <span className={`badge ${statusClass(order!.status)}`} style={shownStatus === 'Quote' ? { background: '#FEF3C7', color: '#92400E' } : shownStatus === 'Packed' ? { background: '#CCFBF1', color: '#0F766E' } : shownStatus === 'Picked' ? { background: '#DBEAFE', color: '#1D4ED8' } : undefined}>{shownStatus}</span>}
+          {!isNew && xeroInfo?.status === 'synced' && (xeroInfo.url
+            ? <a href={xeroInfo.url} target="_blank" rel="noreferrer" title="Open in Xero" style={{ textDecoration: 'none' }}><XeroStatusBadge info={xeroInfo} /></a>
+            : <XeroStatusBadge info={xeroInfo} />)}
           {!isNew && mode === 'view' && (
             <ActionsMenu
               orderId={order!.id}

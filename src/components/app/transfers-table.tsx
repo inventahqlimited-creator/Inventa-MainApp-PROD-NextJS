@@ -5,6 +5,7 @@
 
 import { useState, useMemo, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
+import { toast } from '@/components/app/toast'
 
 type Transfer = {
   id: string
@@ -110,8 +111,8 @@ export default function TransfersTable({ transfers, locations }: { transfers: Tr
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null)
 
   function flash(ok: boolean, text: string) {
-    setNotice({ ok, text })
-    setTimeout(() => setNotice(n => (n && n.text === text ? null : n)), 6000)
+    if (ok) toast.success(text)
+    else toast.error(text)
   }
 
   useEffect(() => { setVisibleCols(loadCols()) }, [])

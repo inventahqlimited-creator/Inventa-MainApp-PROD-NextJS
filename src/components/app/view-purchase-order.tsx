@@ -3,6 +3,7 @@
 import { useState, useMemo, useRef, useEffect, useCallback, Fragment } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
+import { toast } from '@/components/app/toast'
 
 type PO = {
   id: string
@@ -298,7 +299,8 @@ export default function ViewPurchaseOrder({
   const [costLines] = useState<CostLine[]>(initialCostLines)
   const [mode, setMode] = useState<'view' | 'edit' | 'receive'>('view')
   const [saving, setSaving] = useState(false)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setErrorRaw] = useState<string | null>(null)
+  const setError = (m: string | null) => { setErrorRaw(m); if (m) toast.error(m) }
   const [confirmCancel, setConfirmCancel] = useState(false)
 
   // Edit state
@@ -572,7 +574,9 @@ export default function ViewPurchaseOrder({
     })
     setLines(updatedLines)
     setPo(prev => ({ ...prev, status: data.new_status }))
-    if (returnTo) { router.push(returnTo); router.refresh(); return }
+    const bo = data.backorder_number ? ` Balance moved to ${data.backorder_number}.` : ''
+    if (returnTo) { toast.later('success', `Stock received.${bo}`); router.push(returnTo); router.refresh(); return }
+    toast.success(`Stock received.${bo}`)
     setMode('view')
   }
 
@@ -613,6 +617,7 @@ export default function ViewPurchaseOrder({
     const data = await res.json()
     setSaving(false)
     if (!res.ok) { setError(data.error ?? 'Something went wrong'); return }
+    toast.success('Purchase order saved')
     setPo(prev => ({ ...prev, ...payload }))
     setMode('view')
   }
@@ -623,7 +628,8 @@ export default function ViewPurchaseOrder({
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status: 'Cancelled' }),
     })
-    if (res.ok) setPo(prev => ({ ...prev, status: 'Cancelled' }))
+    if (res.ok) { setPo(prev => ({ ...prev, status: 'Cancelled' })); toast.success('Purchase order cancelled') }
+    else toast.error('Could not cancel this order')
     setConfirmCancel(false)
   }
 

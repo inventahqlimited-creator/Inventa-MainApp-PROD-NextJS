@@ -78,7 +78,7 @@ function Section({ entity, isAdmin, reloadKey, onChanged }: { entity: Entity; is
     try {
       const res = await fetch(`/api/integrations/xero/overview?entity=${entity}`, { cache: 'no-store' })
       const body = await res.json().catch(() => ({}))
-      if (!res.ok) { setError(body.error ?? 'Could not load from Xero.'); return }
+      if (!res.ok) { setError(body.error ?? `Could not load from Xero (the server answered ${res.status}).`); return }
       setData(body as Overview)
       setPicked(new Set())
     } catch {
@@ -243,7 +243,7 @@ function InvoiceSection({ isAdmin, reloadKey }: { isAdmin: boolean; reloadKey: n
     try {
       const res = await fetch('/api/integrations/xero/overview?entity=invoice', { cache: 'no-store' })
       const body = await res.json().catch(() => ({}))
-      if (!res.ok) { setError(body.error ?? 'Could not load invoices.'); return }
+      if (!res.ok) { setError(body.error ?? `Could not load invoices (the server answered ${res.status}).`); return }
       setData(body as InvoiceOverview)
     } catch {
       setError('Network error — please try again.')

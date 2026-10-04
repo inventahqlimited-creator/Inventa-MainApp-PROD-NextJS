@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import NumInput from '@/components/app/num-input'
 import TaxSelect from '@/components/app/tax-select'
 import { printPurchaseOrder } from '@/lib/purchase-order/print'
+import { XeroPostNotice, usePostToXero, type XeroRowInfo } from '@/components/app/xero-sync-ui'
 
 type Supplier = {
   id: string
@@ -167,6 +168,7 @@ type Props = {
   decimalPlaces?: number
   stockLevels?: StockLevel[]
   relatedSoId?: string | null // sales order this was created from / created from it (shows Open Related Order)
+  xeroBill?: { show: boolean; canPost: boolean; ready: boolean; info: XeroRowInfo | null } // Xero state of this order's bill (closed + fully received = ready)
   startInEdit?: boolean // opened with ?edit=1 (Edit Order in the Purchases list)
 }
 
@@ -200,7 +202,8 @@ function ConfirmModal({ title, message, confirmLabel, cancelLabel = 'Go back', o
 
 
 // Actions dropdown in the header of a saved purchase order (view mode)
-function ActionsMenu({ orderId, poNumber, status, relatedSoId, canEdit, canCancel, onEdit, onCancel, onError }: {
+function ActionsMenu({ orderId, poNumber, status, relatedSoId, canEdit, canCancel, onEdit, onCancel, onError, xero, onPostXero }: {
+  xero?: { show: boolean; canPost: boolean; ready: boolean; info: XeroRowInfo | null }; onPostXero: () => void
   orderId: string; poNumber: string; status: string; relatedSoId: string | null
   canEdit: boolean; canCancel: boolean
   onEdit: () => void; onCancel: () => void
@@ -252,6 +255,8 @@ function ActionsMenu({ orderId, poNumber, status, relatedSoId, canEdit, canCance
           {item('Clone Order', () => { setOpen(false); router.push(`/purchases/new?clone=${orderId}`) }, { icon: ic('M9 9h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V11a2 2 0 0 1 2-2zM5 15H4a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v1') })}
           {relatedSoId && item('Open Related Order', () => { setOpen(false); router.push(`/sales/${relatedSoId}`) }, { icon: ic('M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71') })}
           {!cancelled && item('Create Sales Order', () => { setOpen(false); router.push(`/sales/new?from_po=${orderId}`) }, { icon: ic('M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4zM3 6h18M16 10a4 4 0 0 1-8 0') })}
+          {xero?.show && xero.canPost && xero.ready && xero.info?.status !== 'synced' && item('Post bill to Xero', () => { setOpen(false); onPostXero() }, { icon: ic('M16 16l-4-4-4 4M12 12v9M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3') })}
+          {xero?.show && xero.info?.status === 'synced' && xero.info.url && item('Open bill in Xero', () => { setOpen(false); window.open(xero.info?.url ?? '', '_blank', 'noopener') }, { icon: ic('M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3') })}
           {canCancel && <>{sep('s2')}{item('Cancel Order', () => { setOpen(false); onCancel() }, { danger: true, icon: ic('M18 6 6 18M6 6l12 12') })}</>}
         </div>
       )}
@@ -287,6 +292,7 @@ function PurchaseOrderForm({
   taxRates = [],
   decimalPlaces = 2,
   stockLevels = [],
+  xeroBill,
   mode,
   setMode,
   onDiscard,
@@ -296,6 +302,8 @@ function PurchaseOrderForm({
   onDiscard: () => void
 }) {
   const router = useRouter()
+  const [xeroInfo, setXeroInfo] = useState<XeroRowInfo | null>(xeroBill?.info ?? null)
+  const xeroPost = usePostToXero('bill', (_id, info) => { setXeroInfo(info) })
 
   // ── Tax helpers: lines store the chosen tax (id + name) plus its numeric rate ──
   const taxById = (id: string | null | undefined) => (id ? taxRates.find(t => t.id === id) : undefined)
@@ -637,6 +645,8 @@ function PurchaseOrderForm({
               onEdit={() => { setError(null); setMode('edit') }}
               onCancel={() => setConfirmCancelOrder(true)}
               onError={setError}
+              xero={xeroBill ? { ...xeroBill, info: xeroInfo } : undefined}
+              onPostXero={() => { setError(null); void xeroPost.post(order.id) }}
             />
           )}
         </div>
@@ -647,6 +657,12 @@ function PurchaseOrderForm({
 
         {error && (
           <div style={{ background: '#FEF2F2', border: '1.5px solid #FECACA', borderRadius: 10, padding: '12px 16px', fontSize: 13, color: '#B91C1C', marginBottom: 20 }}>{error}</div>
+        )}
+        <XeroPostNotice message={xeroPost.message} onClose={xeroPost.clearMessage} flush />
+        {!xeroPost.message && xeroBill?.show && xeroInfo?.status === 'failed' && (
+          <div style={{ background: '#FEF2F2', border: '1.5px solid #FECACA', borderRadius: 10, padding: '12px 16px', fontSize: 13, color: '#B91C1C', marginBottom: 20 }}>
+            The last attempt to post this bill to Xero failed: {xeroInfo.error}
+          </div>
         )}
 
         {!statusEditable && (

@@ -7,6 +7,7 @@ import { printPickList } from '@/lib/pick-list/print'
 import { printPackingList } from '@/lib/packing-list/print'
 import { printInvoice } from '@/lib/invoice/print'
 import { XeroColumnMenuItem, XeroPostNotice, XeroStatusBadge, useXeroColumn, usePostToXero, type XeroTableInfo } from '@/components/app/xero-sync-ui'
+import { toast } from '@/components/app/toast'
 
 type Order = {
   id: string
@@ -173,8 +174,8 @@ export default function SalesTable({
   const [notice, setNotice] = useState<{ ok: boolean; text: string } | null>(null)
 
   function flash(ok: boolean, text: string) {
-    setNotice({ ok, text })
-    setTimeout(() => setNotice(n => (n && n.text === text ? null : n)), 6000)
+    if (ok) toast.success(text)
+    else toast.error(text)
   }
 
   // Load persisted column visibility on mount

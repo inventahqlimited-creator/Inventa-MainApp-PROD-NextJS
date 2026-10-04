@@ -173,7 +173,7 @@ export default function AppSidebar({ permissions = {}, xeroEnabled = false }: { 
 
         {/* Modules */}
         <div style={{ marginTop: 4 }}>
-          <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '8px 0 4px' }} />
+          <div style={{ height: 13 }} />
           <div className="nav-section-label">Modules</div>
           {visibleModules.map(item => <NavLink key={item.href} {...item} />)}
         </div>
@@ -181,7 +181,7 @@ export default function AppSidebar({ permissions = {}, xeroEnabled = false }: { 
         {/* Integrations — only the ones installed for this organisation */}
         {xeroEnabled && (
           <div style={{ marginTop: 4 }}>
-            <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '8px 0 4px' }} />
+            <div style={{ height: 13 }} />
             <div className="nav-section-label">Integrations</div>
             {INTEGRATION_NAV.map(item => <NavLink key={item.href} {...item} />)}
           </div>

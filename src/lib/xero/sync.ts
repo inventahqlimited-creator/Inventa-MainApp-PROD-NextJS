@@ -314,7 +314,7 @@ export async function importFromXero(
         ...(clean(addr?.Country) ? { bill_country: clean(addr?.Country) } : {}),
         is_active: true,
       }).select('id').single()
-      if (error || !data) { out.failed.push({ name, error: 'Could not add this contact to Inventa.' }); continue }
+      if (error || !data) { out.failed.push({ name, error: 'Could not add this contact to InventaHQ.' }); continue }
       out.imported++
       toSave.push({ entity_id: (data as { id: string }).id, xero_id: c.ContactID, status: 'synced', error: null })
     }
@@ -337,7 +337,7 @@ export async function importFromXero(
         cost_price: num(it.PurchaseDetails?.UnitPrice),
         is_active: true,
       }).select('id').single()
-      if (error || !data) { out.failed.push({ name, error: 'Could not add this product to Inventa.' }); continue }
+      if (error || !data) { out.failed.push({ name, error: 'Could not add this product to InventaHQ.' }); continue }
       out.imported++
       toSave.push({ entity_id: (data as { id: string }).id, xero_id: it.ItemID, status: 'synced', error: null })
     }

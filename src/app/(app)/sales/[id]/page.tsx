@@ -3,6 +3,7 @@ import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import SalesOrderForm from '@/components/app/sales-order-form'
 import { relatedPurchaseOrders } from '@/lib/related'
+import { loadXeroTableInfo } from '@/lib/xero/table-info'
 
 export default async function SalesOrderPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -40,6 +41,7 @@ export default async function SalesOrderPage({ params }: { params: Promise<{ id:
 
   if (!order) redirect('/sales')
   const relatedPoId = (await relatedPurchaseOrders(adminClient, m.org_id, [id])).get(id) ?? null
+  const xeroInfo = await loadXeroTableInfo(adminClient, m.org_id, 'invoice', m.role === 'admin')
 
   const [
     { data: locations }, { data: customers }, { data: products }, { data: org },
@@ -93,6 +95,7 @@ export default async function SalesOrderPage({ params }: { params: Promise<{ id:
       orgId={m.org_id}
       order={shaped}
       relatedPoId={relatedPoId}
+      xeroInvoice={{ show: xeroInfo.show, canPost: xeroInfo.canPost, info: xeroInfo.records[id] ?? null }}
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       customers={(customers ?? []) as any}
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

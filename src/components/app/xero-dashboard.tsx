@@ -154,7 +154,7 @@ function Section({ entity, isAdmin, reloadKey, onChanged }: { entity: Entity; is
       {data && (
         <>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap' }}>
-            <Tile label="In Inventa" value={data.inventa} />
+            <Tile label="In InventaHQ" value={data.inventa} />
             <Tile label="In Xero" value={data.xero} />
             <Tile label="Synced" value={data.synced} tone="good" />
             <Tile label="Not synced" value={data.notSynced} />
@@ -173,7 +173,7 @@ function Section({ entity, isAdmin, reloadKey, onChanged }: { entity: Entity; is
           )}
 
           {data.onlyInInventa.length > 0 && (
-            <ListBlock title={`Only in Inventa (${data.onlyInInventa.length})`} hint={`These ${l.many} will be created in Xero when you sync.`}>
+            <ListBlock title={`Only in InventaHQ (${data.onlyInInventa.length})`} hint={`These ${l.many} will be created in Xero when you sync.`}>
               {(showAllInv ? data.onlyInInventa : data.onlyInInventa.slice(0, 8)).map(i => <div key={i.id} style={rowStyle}>{i.name}</div>)}
               {data.onlyInInventa.length > 8 && (
                 <button className="btn btn-outline" style={{ height: 28, fontSize: 12, marginTop: 8 }} onClick={() => setShowAllInv(s => !s)}>
@@ -184,7 +184,7 @@ function Section({ entity, isAdmin, reloadKey, onChanged }: { entity: Entity; is
           )}
 
           {data.onlyInXero.length > 0 && (
-            <ListBlock title={`Only in Xero (${data.onlyInXero.length})`} hint={isAdmin ? `Tick the ${l.many} you want to bring into Inventa. Nothing is imported automatically.` : `Not in Inventa. An admin can import them.`}>
+            <ListBlock title={`Only in Xero (${data.onlyInXero.length})`} hint={isAdmin ? `Tick the ${l.many} you want to bring into InventaHQ. Nothing is imported automatically.` : `Not in InventaHQ. An admin can import them.`}>
               <div style={{ maxHeight: 260, overflowY: 'auto', border: '1px solid var(--gray-100)', borderRadius: 10, padding: '0 12px' }}>
                 {data.onlyInXero.map(x => (
                   <label key={x.xeroId} style={{ ...rowStyle, cursor: isAdmin ? 'pointer' : 'default' }}>
@@ -210,7 +210,7 @@ function Section({ entity, isAdmin, reloadKey, onChanged }: { entity: Entity; is
           )}
 
           {data.failures.length === 0 && data.onlyInInventa.length === 0 && data.onlyInXero.length === 0 && (
-            <div style={{ fontSize: 13, color: '#047857', marginTop: 14 }}>Everything matches between Inventa and Xero.</div>
+            <div style={{ fontSize: 13, color: '#047857', marginTop: 14 }}>Everything matches between InventaHQ and Xero.</div>
           )}
         </>
       )}
@@ -224,8 +224,8 @@ type Kind = 'invoice' | 'bill'
 const KIND = {
   invoice: { title: 'Invoices', source: 'Closed sales orders', noun: 'invoice', route: '/api/integrations/xero/invoice', href: '/sales', total: 'Closed orders', who: 'customer' as const,
     empty: 'No closed sales orders yet. Close an order, then post it here or from its Actions menu.' },
-  bill: { title: 'Bills', source: 'Closed, fully received purchase orders', noun: 'bill', route: '/api/integrations/xero/bill', href: '/purchases', total: 'Ready to bill', who: 'supplier' as const,
-    empty: 'No fully received, closed purchase orders yet. Receive an order in full and close it, then post it here or from its Actions menu.' },
+  bill: { title: 'Bills', source: 'Closed purchase orders', noun: 'bill', route: '/api/integrations/xero/bill', href: '/purchases', total: 'Closed orders', who: 'supplier' as const,
+    empty: 'No closed purchase orders with received stock yet. Receive and close an order, then post it here or from its Actions menu.' },
 }
 
 /** Posts in batches of 20 until none are left (or Xero asks us to slow down). */
@@ -306,10 +306,21 @@ function PostSection({ kind, isAdmin, reloadKey, postStatus }: { kind: Kind; isA
             <ListBlock title={`Failed (${data.failures.length})`} hint={`Fix the reason, then post again from the order or with Sync ${k.title.toLowerCase()}.`}>
               {data.failures.map(f => (
                 <div key={f.id} style={{ ...rowStyle, alignItems: 'flex-start', flexDirection: 'column', gap: 2 }}>
-                  <a href={`${k.href}/${f.id}`} style={{ fontWeight: 600, color: 'var(--slate)' }}>{f.name}</a>
+                  <a href={`${k.href}/${f.id}`} target="_blank" rel="noreferrer" style={{ fontWeight: 600, color: 'var(--slate)' }}>{f.name} ↗</a>
                   <span style={{ fontSize: 12, color: '#B91C1C' }}>{f.error}</span>
                 </div>
               ))}
+            </ListBlock>
+          )}
+
+          {data.waiting.length > 0 && (
+            <ListBlock title={`Waiting to post (${data.waiting.length})`} hint={`These will post when you sync ${k.title.toLowerCase()}.`}>
+              {data.waiting.slice(0, 8).map(w => (
+                <div key={w.id} style={rowStyle}>
+                  <a href={`${k.href}/${w.id}`} target="_blank" rel="noreferrer" style={{ fontWeight: 600, color: 'var(--slate)' }}>{w.name} ↗</a>
+                </div>
+              ))}
+              {data.waiting.length > 8 && <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 6 }}>and {data.waiting.length - 8} more</div>}
             </ListBlock>
           )}
 
@@ -319,9 +330,10 @@ function PostSection({ kind, isAdmin, reloadKey, postStatus }: { kind: Kind; isA
                 const rr = r as { id: string; number: string; total: number; postedAt: string; url: string; customer?: string; supplier?: string }
                 return (
                   <div key={rr.id} style={rowStyle}>
-                    <span style={{ fontWeight: 600, minWidth: 80 }}>{rr.url ? <a href={rr.url} target="_blank" rel="noreferrer" style={{ color: 'var(--slate)' }}>{rr.number}</a> : rr.number}</span>
+                    <span style={{ fontWeight: 600, minWidth: 80 }}><a href={`${k.href}/${rr.id}`} target="_blank" rel="noreferrer" style={{ color: 'var(--slate)' }} title={`Open in InventaHQ`}>{rr.number}</a></span>
                     <span style={{ flex: 1, minWidth: 0, color: 'var(--gray-500)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{k.who === 'customer' ? rr.customer : rr.supplier}</span>
                     <span style={{ fontVariantNumeric: 'tabular-nums' }}>${rr.total.toFixed(2)}</span>
+                    {rr.url && <a href={rr.url} target="_blank" rel="noreferrer" style={{ fontSize: 11.5, color: 'var(--teal)', whiteSpace: 'nowrap' }}>Xero ↗</a>}
                   </div>
                 )
               })}
@@ -411,7 +423,8 @@ export default function XeroDashboard({ isAdmin }: { isAdmin: boolean }) {
       </div>
       {notice && <div style={{ ...noticeStyle(notice), marginTop: 12 }}>{notice.text}</div>}
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(360px, 1fr))', gap: 18, marginTop: 18, alignItems: 'start' }}>
+      <div className="xero-grid" style={{ marginTop: 18 }}>
+        <style>{'.xero-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:18px;align-items:start}@media(max-width:820px){.xero-grid{grid-template-columns:minmax(0,1fr)}}'}</style>
         <Section entity="contact" isAdmin={isAdmin} reloadKey={reloadKey} onChanged={() => undefined} />
         <Section entity="product" isAdmin={isAdmin} reloadKey={reloadKey} onChanged={() => undefined} />
         <PostSection kind="invoice" isAdmin={isAdmin} reloadKey={reloadKey} postStatus={info?.prefs.invoice_status} />

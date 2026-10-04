@@ -65,8 +65,7 @@ export default async function EditPurchaseOrderPage({ params, searchParams }: { 
   }
 
   const xero = await loadXeroTableInfo(adminClient, m.org_id, 'bill', m.role === 'admin')
-  const realLines = (shaped.lines as { quantity_ordered: number | null; quantity_received: number | null }[]).filter(l => Number(l.quantity_ordered) > 0)
-  const billReady = String(o.status).toLowerCase() === 'closed' && realLines.length > 0 && realLines.every(l => Number(l.quantity_received ?? 0) + 1e-9 >= Number(l.quantity_ordered))
+  const billReady = String(o.status).toLowerCase() === 'closed' && (shaped.lines as { quantity_received: number | null }[]).some(l => Number(l.quantity_received ?? 0) > 0)
 
   return (
     <EditPurchaseOrder

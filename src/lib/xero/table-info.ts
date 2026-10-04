@@ -3,8 +3,9 @@
 // can this user post, and the sync status of each record.
 import type { SupabaseClient } from '@supabase/supabase-js'
 import type { XeroTableInfo } from '@/components/app/xero-sync-ui'
+import { xeroInvoiceUrl } from './invoice'
 
-export async function loadXeroTableInfo(db: SupabaseClient, orgId: string, entity: 'contact' | 'product', isAdmin: boolean): Promise<XeroTableInfo> {
+export async function loadXeroTableInfo(db: SupabaseClient, orgId: string, entity: 'contact' | 'product' | 'invoice', isAdmin: boolean): Promise<XeroTableInfo> {
   const off: XeroTableInfo = { show: false, canPost: false, records: {} }
   const [{ data: org }, { data: conn }] = await Promise.all([
     db.from('organisations').select('xero_enabled').eq('id', orgId).single(),
@@ -13,8 +14,10 @@ export async function loadXeroTableInfo(db: SupabaseClient, orgId: string, entit
   if (!(org as { xero_enabled?: boolean } | null)?.xero_enabled) return off
   if ((conn as { status?: string } | null)?.status !== 'connected') return off
 
-  const { data } = await db.from('xero_sync_records').select('entity_id, status, error').eq('org_id', orgId).eq('entity', entity)
+  const { data } = await db.from('xero_sync_records').select('entity_id, xero_id, status, error').eq('org_id', orgId).eq('entity', entity)
   const records: XeroTableInfo['records'] = {}
-  for (const r of (data ?? []) as { entity_id: string; status: 'synced' | 'failed'; error: string | null }[]) records[r.entity_id] = { status: r.status, error: r.error }
+  for (const r of (data ?? []) as { entity_id: string; xero_id: string | null; status: 'synced' | 'failed'; error: string | null }[]) {
+    records[r.entity_id] = { status: r.status, error: r.error, url: entity === 'invoice' && r.xero_id ? xeroInvoiceUrl(r.xero_id) : null }
+  }
   return { show: true, canPost: isAdmin, records }
 }

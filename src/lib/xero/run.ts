@@ -1,16 +1,19 @@
 // src/lib/xero/run.ts
 // One sync run for one organisation: used by "Sync now" on the dashboard and by the scheduled auto sync.
-// Posts what isn't in Xero yet (contacts → products → invoices → bills) within a time budget. Safe to call again to carry on.
+// Posts what isn't in Xero yet within a time budget: contacts → products → invoices → bills → stock adjustments.
+// When Xero tracks inventory, bills go before invoices (Xero refuses a sale of stock it doesn't have yet) and adjustments are not sent.
+// Safe to call again to carry on.
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { runSync, type SyncSummary } from './sync'
 import { postEligibleInvoices } from './invoice'
 import { postEligibleBills } from './bill'
+import { postEligibleAdjustments } from './adjustment'
 import type { XeroSettings } from './mapping'
 import { nextSyncFrom, scopeIncludes, type Scope, type XeroPrefs } from './prefs'
 
 type Db = SupabaseClient
-export type Part = 'contacts' | 'products' | 'invoices' | 'bills'
-type Posted = { posted: number; failed: number; remaining: number; failures: { id: string; name: string; error: string }[] }
+export type Part = 'contacts' | 'products' | 'invoices' | 'bills' | 'adjustments'
+type Posted = { posted: number; failed: number; remaining: number; failures: { id: string; name: string; error: string }[]; note?: string }
 
 export type RunReport = {
   done: boolean                 // nothing left to post within this scope
@@ -19,6 +22,7 @@ export type RunReport = {
   products?: SyncSummary
   invoices?: Posted
   bills?: Posted
+  adjustments?: Posted
   lastSyncAt?: string
   lastFullSyncAt?: string | null
   nextSyncAt?: string | null
@@ -26,7 +30,7 @@ export type RunReport = {
 
 const merge = (a: Posted | undefined, b: Posted): Posted => ({
   posted: (a?.posted ?? 0) + b.posted, failed: (a?.failed ?? 0) + b.failed, remaining: b.remaining,
-  failures: [...(a?.failures ?? []), ...b.failures].slice(0, 100),
+  failures: [...(a?.failures ?? []), ...b.failures].slice(0, 100), note: b.note ?? a?.note,
 })
 
 /**
@@ -48,9 +52,10 @@ export async function runScope(db: Db, orgId: string, scope: Scope, settings: Xe
     rep[part] = r.summary
   }
 
-  for (const part of ['invoices', 'bills'] as const) {
+  const order = prefs.inventory_tracked ? (['bills', 'invoices'] as const) : (['invoices', 'bills', 'adjustments'] as const)
+  for (const part of order) {
     if (!want[part] || skip.has(part) || rep.stopped) continue
-    const post = part === 'invoices' ? postEligibleInvoices : postEligibleBills
+    const post = part === 'invoices' ? postEligibleInvoices : part === 'bills' ? postEligibleBills : postEligibleAdjustments
     let acc: Posted | undefined
     // each call posts up to 20; keep going while there is time. Failures are only retried on the first pass.
     for (let round = 0; ; round++) {

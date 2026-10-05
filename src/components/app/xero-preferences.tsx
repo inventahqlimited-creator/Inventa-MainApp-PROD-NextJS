@@ -98,6 +98,44 @@ export default function XeroPreferences() {
 
             <div style={{ height: 1, background: 'var(--gray-100)', margin: '22px 0' }} />
 
+            <div style={{ fontSize: 13, fontWeight: 700, color: 'var(--slate)', fontFamily: 'var(--font-display)', marginBottom: 12 }}>Stock adjustments</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 18 }}>
+              <div>
+                <label style={label}>Do you track inventory in Xero?</label>
+                <select style={selectStyle} disabled={!can} value={draft.inventory_tracked ? 'yes' : 'no'} onChange={e => set('inventory_tracked', e.target.value === 'yes')}>
+                  <option value="no">No (default)</option>
+                  <option value="yes">Yes</option>
+                </select>
+                <div style={hint}>
+                  {draft.inventory_tracked
+                    ? 'Xero holds your stock quantities, so InventaHQ does not send stock adjustments. Post each adjustment in Xero yourself.'
+                    : 'InventaHQ holds your stock. Each completed stock adjustment is sent to Xero as a journal.'}
+                </div>
+              </div>
+              {!draft.inventory_tracked && (
+                <div>
+                  <label style={label}>Post stock adjustment journals as</label>
+                  <select style={selectStyle} disabled={!can} value={draft.journal_status} onChange={e => set('journal_status', e.target.value as XeroPrefs['journal_status'])}>
+                    <option value="DRAFT">Draft (review in Xero first)</option>
+                    <option value="POSTED">Posted</option>
+                  </select>
+                  <div style={hint}>Choose the inventory and stock adjustment accounts under Accounts and tax.</div>
+                </div>
+              )}
+            </div>
+            {draft.inventory_tracked && (
+              <div style={{ ...hint, marginTop: 12, lineHeight: 1.5 }}>
+                Mark your items as tracked in Xero (they are matched by item code). Xero won’t accept an invoice for a tracked item it doesn’t have stock of, so bills are posted before invoices.
+              </div>
+            )}
+            {data.prefs.inventory_tracked !== draft.inventory_tracked && (
+              <div style={{ fontSize: 12.5, marginTop: 12, padding: '9px 12px', borderRadius: 8, background: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A' }}>
+                This only affects stock adjustments completed after you save. Earlier ones are left as they are.
+              </div>
+            )}
+
+            <div style={{ height: 1, background: 'var(--gray-100)', margin: '22px 0' }} />
+
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 18 }}>
               <div>
                 <label style={label}>Automatic sync</label>

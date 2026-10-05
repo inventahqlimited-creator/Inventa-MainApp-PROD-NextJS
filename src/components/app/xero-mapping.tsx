@@ -3,10 +3,11 @@
 // Settings → Integrations → Xero → "Accounts and tax": the default Xero accounts and which Xero tax
 // rate each Inventa tax rate posts as. Suggestions are filled in; nothing is saved until the admin clicks Save.
 import { useCallback, useEffect, useMemo, useState } from 'react'
-import type { InventaTax, TaxMap, XeroAccount, XeroSettings, XeroTaxRate } from '@/lib/xero/mapping'
+import type { AccountLists, InventaTax, TaxMap, XeroSettings, XeroTaxRate } from '@/lib/xero/mapping'
+type XeroAccount = AccountLists['sales'][number]
 
 type Payload = {
-  accounts: { sales: XeroAccount[]; purchases: XeroAccount[] }
+  accounts: AccountLists
   taxRates: XeroTaxRate[]
   inventaRates: InventaTax[]
   settings: XeroSettings
@@ -14,7 +15,7 @@ type Payload = {
   canEdit: boolean
 }
 
-type Draft = { sales: string; purchases: string; tax: TaxMap }
+type Draft = { sales: string; purchases: string; inventory: string; adjustment: string; tax: TaxMap }
 
 const selectStyle: React.CSSProperties = { width: '100%', height: 36, padding: '0 10px', border: '1.5px solid var(--gray-200)', borderRadius: 8, background: 'var(--white)', fontSize: 13, color: 'var(--slate)' }
 const label: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: 'var(--gray-500)', marginBottom: 6, display: 'block' }
@@ -35,6 +36,8 @@ function draftFrom(p: Payload, useSuggested: boolean): Draft {
   return {
     sales: (!useSuggested && saved ? s.sales_account_code : sug.sales_account_code) ?? '',
     purchases: (!useSuggested && saved ? s.purchases_account_code : sug.purchases_account_code) ?? '',
+    inventory: (!useSuggested && saved ? s.inventory_account_code : sug.inventory_account_code) ?? '',
+    adjustment: (!useSuggested && saved ? s.adjustment_account_code : sug.adjustment_account_code) ?? '',
     tax,
   }
 }
@@ -89,7 +92,7 @@ export default function XeroMapping() {
       const res = await fetch('/api/integrations/xero/mapping', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ settings: { sales_account_code: draft.sales, purchases_account_code: draft.purchases, tax_map: draft.tax } }),
+        body: JSON.stringify({ settings: { sales_account_code: draft.sales, purchases_account_code: draft.purchases, inventory_account_code: draft.inventory || null, adjustment_account_code: draft.adjustment || null, tax_map: draft.tax } }),
       })
       const body = await res.json().catch(() => ({}))
       if (!res.ok) { setMsg({ kind: 'err', text: body.error ?? 'Could not save.' }); return }
@@ -135,6 +138,24 @@ export default function XeroMapping() {
             {data.accounts.purchases.map(a => <option key={a.code} value={a.code}>{a.code} · {a.name}</option>)}
           </select>
           <div style={{ fontSize: 11.5, color: 'var(--gray-400)', marginTop: 5 }}>Bill lines post here.</div>
+        </div>
+        <div>
+          <label style={label}>Inventory asset account</label>
+          <select style={selectStyle} value={draft.inventory} disabled={!canEdit} onChange={e => setDraft({ ...draft, inventory: e.target.value })}>
+            <option value="">Choose an account…</option>
+            {missing(data.accounts.inventory, draft.inventory) && <option value={draft.inventory}>{draft.inventory} (no longer in Xero)</option>}
+            {data.accounts.inventory.map(a => <option key={a.code} value={a.code}>{a.code} · {a.name}</option>)}
+          </select>
+          <div style={{ fontSize: 11.5, color: 'var(--gray-400)', marginTop: 5 }}>Stock adjustment journals move value in and out of this account.</div>
+        </div>
+        <div>
+          <label style={label}>Stock adjustment account</label>
+          <select style={selectStyle} value={draft.adjustment} disabled={!canEdit} onChange={e => setDraft({ ...draft, adjustment: e.target.value })}>
+            <option value="">Choose an account…</option>
+            {missing(data.accounts.purchases, draft.adjustment) && <option value={draft.adjustment}>{draft.adjustment} (no longer in Xero)</option>}
+            {data.accounts.purchases.map(a => <option key={a.code} value={a.code}>{a.code} · {a.name}</option>)}
+          </select>
+          <div style={{ fontSize: 11.5, color: 'var(--gray-400)', marginTop: 5 }}>The other side of each journal, such as write-offs or cost of goods sold. Only used when inventory isn’t tracked in Xero.</div>
         </div>
       </div>
 

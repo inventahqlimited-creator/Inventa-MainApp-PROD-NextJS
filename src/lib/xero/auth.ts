@@ -1,6 +1,7 @@
 // src/lib/xero/auth.ts
 // Who is calling, which organisation they belong to, and whether they may manage Xero for it.
 import { createAdminClient, createClient } from '@/lib/supabase/server'
+import { setActor } from './audit'
 
 export type XeroAuth = {
   userId: string
@@ -15,9 +16,10 @@ export async function xeroAuth(): Promise<XeroAuth | null> {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null
   const db = createAdminClient()
-  const { data: m } = await db.from('org_members').select('org_id, role').eq('user_id', user.id).eq('invite_status', 'accepted').single()
+  const { data: m } = await db.from('org_members').select('org_id, role, first_name, last_name').eq('user_id', user.id).eq('invite_status', 'accepted').single()
   if (!m) return null
-  const member = m as { org_id: string; role: string }
+  const member = m as { org_id: string; role: string; first_name: string | null; last_name: string | null }
+  setActor(db, { id: user.id, name: [member.first_name, member.last_name].filter(Boolean).join(' ') || user.email || null })
   const { data: org } = await db.from('organisations').select('xero_enabled').eq('id', member.org_id).single()
   return {
     userId: user.id,

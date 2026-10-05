@@ -4,6 +4,7 @@
 import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
 import StocktakeModal from './stocktake-modal'
+import type { XeroRowInfo } from './xero-sync-ui'
 
 type Adjustment = {
   id: string
@@ -58,7 +59,9 @@ export default function AdjustmentsTable({
   locations,
   orgId,
   products,
+  xero,
 }: {
+  xero?: { show: boolean; records: Record<string, XeroRowInfo> }
   adjustments: Adjustment[]
   locations: Location[]
   orgId: string
@@ -208,7 +211,13 @@ export default function AdjustmentsTable({
                   <td className="td-muted">{fmtDate(a.adjustment_date)}</td>
                   <td><span style={{ fontWeight: 500, color: 'var(--slate)', fontSize: 13 }}>{a.location_name ?? '—'}</span></td>
                   <td className="td-muted">{a.reason ?? '—'}</td>
-                  <td>{statusBadge(a.status)}</td>
+                  <td>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                      {statusBadge(a.status)}
+                      {xero?.show && xero.records[a.id]?.status === 'synced' && <span className="badge" title="Posted to Xero" style={{ background: '#D1FAE5', color: '#065F46' }}>Synced</span>}
+                      {xero?.show && xero.records[a.id]?.status === 'failed' && <span className="badge" title={xero.records[a.id]?.error ?? 'Failed'} style={{ background: '#FEE2E2', color: '#991B1B', cursor: 'help' }}>Xero failed</span>}
+                    </div>
+                  </td>
                   <td>
                     <div className="row-actions">
                       <button className="row-action-btn" onClick={e => { e.stopPropagation(); router.push(`/products/adjustments/${a.id}`) }} title="View">

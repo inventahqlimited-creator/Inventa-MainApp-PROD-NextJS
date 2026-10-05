@@ -13,6 +13,7 @@ import { printPackingList } from '@/lib/packing-list/print'
 import { printInvoice } from '@/lib/invoice/print'
 import { XeroPostNotice, XeroStatusBadge, usePostToXero, type XeroRowInfo } from '@/components/app/xero-sync-ui'
 import { toast } from '@/components/app/toast'
+import OrderHistory from '@/components/app/order-history'
 
 type Customer = {
   id: string
@@ -251,6 +252,7 @@ function ActionsMenu({ orderId, soNumber, statusLower, relatedPoId, canEdit, can
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [printOpen, setPrintOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
   const box = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -313,9 +315,11 @@ function ActionsMenu({ orderId, soNumber, statusLower, relatedPoId, canEdit, can
           {relatedPoId && item('Open Related Order', () => { shut(); router.push(`/purchases/${relatedPoId}`) }, { icon: ic('M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71') })}
           {xero?.show && xero.canPost && statusLower === 'closed' && xero.info?.status !== 'synced' && item('Post to Xero', () => { shut(); onPostXero() }, { icon: ic('M16 16l-4-4-4 4M12 12v9M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3') })}
           {xero?.show && xero.info?.status === 'synced' && xero.info.url && item('Open in Xero', () => { shut(); window.open(xero.info?.url ?? '', '_blank', 'noopener') }, { icon: ic('M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3') })}
+          {item('Order History', () => { shut(); setHistoryOpen(true) }, { icon: ic('M12 8v4l3 3M3.05 11a9 9 0 1 1 .5 4M3 4v5h5') })}
           {canCancel && <>{sep('s2')}{item('Cancel Order', () => { shut(); onCancel() }, { danger: true, icon: ic('M18 6 6 18M6 6l12 12') })}</>}
         </div>
       )}
+      {historyOpen && <OrderHistory type="sales" id={orderId} label={soNumber} onClose={() => setHistoryOpen(false)} />}
     </div>
   )
 }

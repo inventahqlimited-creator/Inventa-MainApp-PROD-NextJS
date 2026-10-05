@@ -1,52 +1,38 @@
 // src/app/api/org/roles/[id]/route.ts
-import { createAdminClient, createClient } from '@/lib/supabase/server'
+// PATCH — save a custom role's permissions. DELETE — remove it (not while anyone still has it). Needs "Manage roles and permissions".
 import { NextResponse } from 'next/server'
+import { requirePerm } from '@/lib/auth/access'
+import { closeSet } from '@/lib/permissions'
 
-async function getAuth() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return null
-  const adminClient = createAdminClient()
-  const { data: m } = await adminClient
-    .from('org_members')
-    .select('org_id, role')
-    .eq('user_id', user.id)
-    .eq('invite_status', 'accepted')
-    .single()
-  return m ? { orgId: m.org_id, role: m.role, adminClient } : null
-}
+type Params = { params: Promise<{ id: string }> }
 
-export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await getAuth()
-  if (!auth) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  if (auth.role !== 'admin') return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-
+export async function PATCH(req: Request, { params }: Params) {
+  const g = await requirePerm('manage_roles')
+  if ('res' in g) return g.res
   const { id } = await params
-  const { permissions } = await req.json()
+  const { permissions } = await req.json().catch(() => ({}))
+  if (!permissions || typeof permissions !== 'object') return NextResponse.json({ error: 'Permissions are required' }, { status: 400 })
 
-  const { error } = await auth.adminClient
+  const { data, error } = await g.access.db
     .from('org_roles')
-    .update({ permissions })
-    .eq('id', id)
-    .eq('org_id', auth.orgId)
-
+    .update({ permissions: closeSet(permissions), updated_at: new Date().toISOString() })
+    .eq('id', id).eq('org_id', g.access.orgId)
+    .select('id')
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (!data || data.length === 0) return NextResponse.json({ error: 'Role not found' }, { status: 404 })
   return NextResponse.json({ success: true })
 }
 
-export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
-  const auth = await getAuth()
-  if (!auth) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  if (auth.role !== 'admin') return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-
+export async function DELETE(_req: Request, { params }: Params) {
+  const g = await requirePerm('manage_roles')
+  if ('res' in g) return g.res
   const { id } = await params
 
-  const { error } = await auth.adminClient
-    .from('org_roles')
-    .delete()
-    .eq('id', id)
-    .eq('org_id', auth.orgId)
-
+  const { count } = await g.access.db.from('org_members').select('id', { count: 'exact', head: true }).eq('org_id', g.access.orgId).eq('custom_role_id', id)
+  if ((count ?? 0) > 0) {
+    return NextResponse.json({ error: `${count} ${count === 1 ? 'person has' : 'people have'} this role. Give them another role first, then delete it.` }, { status: 409 })
+  }
+  const { error } = await g.access.db.from('org_roles').delete().eq('id', id).eq('org_id', g.access.orgId)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ success: true })
 }

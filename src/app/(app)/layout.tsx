@@ -1,26 +1,30 @@
-import { createAdminClient, createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
+import { getAccess } from '@/lib/auth/access'
+import { PermissionsProvider } from '@/components/app/permissions-provider'
 import AppSidebar from '@/components/app/app-sidebar'
 import AppTopbar from '@/components/app/app-topbar'
 import ToastProvider from '@/components/app/toast'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) redirect('/login')
+  const access = await getAccess()
+  if (!access) redirect('/login')
 
   const adminClient = createAdminClient()
 
   const { data: membership } = await adminClient
     .from('org_members')
-    .select('role, org_id, first_name, last_name, avatar_url')
-    .eq('user_id', user.id)
+    .select('first_name, last_name, avatar_url')
+    .eq('user_id', access.userId)
     .eq('invite_status', 'accepted')
     .single()
 
-  if (!membership) redirect('/login')
-
-  const m = membership as { role: string; org_id: string; first_name: string | null; last_name: string | null; avatar_url: string | null }
+  const m = {
+    role: access.role,
+    org_id: access.orgId,
+    ...((membership ?? {}) as { first_name?: string | null; last_name?: string | null; avatar_url?: string | null }),
+  } as { role: string; org_id: string; first_name: string | null; last_name: string | null; avatar_url: string | null }
+  const user = { email: access.email }
 
   const { data: org } = await adminClient
     .from('organisations')
@@ -35,7 +39,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   return (
     <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: '#ECEEED' }}>
-      <AppSidebar xeroEnabled={xeroEnabled} />
+      <AppSidebar xeroEnabled={xeroEnabled} perms={access.perms} />
       <div className="main">
         <AppTopbar
           displayName={displayName}
@@ -46,7 +50,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           avatarUrl={m.avatar_url ?? ''}
         />
         <div className="content">
-          {children}
+          <PermissionsProvider perms={access.perms} isAdmin={access.isAdmin}>
+            {children}
+          </PermissionsProvider>
         </div>
       </div>
       <ToastProvider />

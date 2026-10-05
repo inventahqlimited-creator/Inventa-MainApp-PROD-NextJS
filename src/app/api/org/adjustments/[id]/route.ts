@@ -24,12 +24,13 @@ async function applyStockChanges(adminClient: ReturnType<typeof createAdminClien
 
   const { data: lines, error: linesError } = await adminClient
     .from('adjustment_order_lines')
-    .select('product_id, quantity_before, quantity_after, batch_number, serial_number, expiry_date, bin_id')
+    .select('id, product_id, quantity_before, quantity_after, batch_number, serial_number, expiry_date, bin_id')
     .eq('adj_id', adjId)
 
   if (linesError) return { error: linesError.message }
 
   const typedLines = (lines ?? []) as {
+    id: string
     product_id: string
     quantity_before: number
     quantity_after: number
@@ -67,9 +68,22 @@ async function applyStockChanges(adminClient: ReturnType<typeof createAdminClien
     }
   }
 
+  // The cost of each product at this moment (average, then last purchase, then cost price). It is saved on the line and the stock
+  // movement so the value of the adjustment never changes later (this is what a Xero stock adjustment journal is based on).
+  const productIds = [...new Set(typedLines.map(l => l.product_id).filter(Boolean))]
+  const costOf = new Map<string, number | null>()
+  if (productIds.length > 0) {
+    const { data: prods } = await adminClient.from('products').select('id, avg_cost, last_cost, cost_price').eq('org_id', orgId).in('id', productIds)
+    for (const p of (prods ?? []) as { id: string; avg_cost: number | null; last_cost: number | null; cost_price: number | null }[]) {
+      costOf.set(p.id, [p.avg_cost, p.last_cost, p.cost_price].map(Number).find(x => Number.isFinite(x) && x > 0) ?? null)
+    }
+  }
+
   for (const line of typedLines) {
     if (!line.product_id) continue
     const delta = line.quantity_after - line.quantity_before
+    const unitCost = costOf.get(line.product_id) ?? null
+    if (unitCost !== null) await adminClient.from('adjustment_order_lines').update({ unit_cost: unitCost }).eq('id', line.id)
 
     // ── Update stock_levels (total per product+location) ──
     const { data: existing } = await adminClient
@@ -108,6 +122,7 @@ async function applyStockChanges(adminClient: ReturnType<typeof createAdminClien
           location_id:    locationId,
           movement_type:  'adjustment',
           qty:            delta,
+          unit_cost:      unitCost,
           reference_id:   adjId,
           reference_type: 'adjustment_order',
           bin_id:         line.bin_id         ?? null,
@@ -169,7 +184,7 @@ async function applyStockChanges(adminClient: ReturnType<typeof createAdminClien
   return { error: null }
 }
 
-// PATCH: update status (Complete or Cancel)
+// PATCH: update status (Complete or Cancel), or tick / untick "Don't send to Xero" ({ skip_xero })
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -182,9 +197,18 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const { id } = await params
   const body = await request.json()
 
+  // "Don't send to Xero" can be changed until the adjustment has been posted
+  if (body.status === undefined && typeof body.skip_xero === 'boolean') {
+    const { data: rec } = await adminClient.from('xero_sync_records').select('status').eq('org_id', orgId).eq('entity', 'adjustment').eq('entity_id', id).maybeSingle()
+    if ((rec as { status?: string } | null)?.status === 'synced') return NextResponse.json({ error: 'This adjustment has already been posted to Xero.' }, { status: 409 })
+    const { error: skipError } = await adminClient.from('adjustment_orders').update({ skip_xero: body.skip_xero }).eq('id', id).eq('org_id', orgId)
+    if (skipError) return NextResponse.json({ error: skipError.message }, { status: 400 })
+    return NextResponse.json({ ok: true })
+  }
+
   const { error } = await adminClient
     .from('adjustment_orders')
-    .update({ status: body.status })
+    .update({ status: body.status, ...(body.status === 'Completed' ? { completed_at: new Date().toISOString() } : {}) })
     .eq('id', id)
     .eq('org_id', orgId)
 

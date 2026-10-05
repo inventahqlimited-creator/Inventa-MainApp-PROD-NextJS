@@ -33,19 +33,21 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
     { count: transferCount },
     { count: adjustmentCount },
     { data: xeroRow },
+    { data: rolesRaw },
   ] = await Promise.all([
     adminClient.from('organisations').select('*').eq('id', m.org_id).single(),
     adminClient.from('locations').select('*').eq('org_id', m.org_id).order('name'),
     adminClient.from('tax_rates').select('*').eq('org_id', m.org_id).order('name'),
     adminClient.from('currencies').select('*').eq('org_id', m.org_id).order('code'),
     adminClient.from('bins').select('*').eq('org_id', m.org_id).eq('is_active', true).order('name'),
-    adminClient.from('org_members').select('id, first_name, last_name, email, role, invite_status, accepted_at, user_id, phone, designation, avatar_url').eq('org_id', m.org_id).order('accepted_at', { ascending: true }),
+    adminClient.from('org_members').select('id, first_name, last_name, email, role, custom_role_id, invite_status, accepted_at, user_id, phone, designation, avatar_url').eq('org_id', m.org_id).order('accepted_at', { ascending: true }),
     adminClient.from('sales_orders').select('*', { count: 'exact', head: true }).eq('org_id', m.org_id).limit(1),
     adminClient.from('purchase_orders').select('*', { count: 'exact', head: true }).eq('org_id', m.org_id).limit(1),
     adminClient.from('stock_transfers').select('*', { count: 'exact', head: true }).eq('org_id', m.org_id).limit(1),
     adminClient.from('stock_adjustments').select('*', { count: 'exact', head: true }).eq('org_id', m.org_id).limit(1),
     // Never selects the tokens — only what the Xero settings screen shows
     adminClient.from('xero_connections').select('status, tenant_name, connected_at, pending_tenants').eq('org_id', m.org_id).maybeSingle(),
+    adminClient.from('org_roles').select('id, name').eq('org_id', m.org_id),
   ])
 
   // Fetch last_sign_in_at from auth.users for accepted members
@@ -69,8 +71,10 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
     )
   }
 
+  const roleName = new Map(((rolesRaw ?? []) as { id: string; name: string }[]).map(r => [r.id, r.name]))
   const members = (membersRaw ?? []).map((mb: Record<string, unknown>) => ({
     ...mb,
+    custom_role_name: mb.custom_role_id ? roleName.get(mb.custom_role_id as string) ?? null : null,
     email: (mb.email as string | null) || emailMap[mb.user_id as string] || null,
     last_sign_in_at: lastSignInMap[mb.user_id as string] ?? null,
     is_me: mb.user_id === user.id,

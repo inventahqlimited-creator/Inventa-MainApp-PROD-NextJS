@@ -3,7 +3,7 @@
 // Settings → Integrations → Xero. Connect, choose the Xero organisation, disconnect.
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import XeroMapping from '@/components/app/xero-mapping'
+import XeroMapping, { clearXeroMappingCache } from '@/components/app/xero-mapping'
 import XeroPreferences from '@/components/app/xero-preferences'
 
 export type XeroConnection = {
@@ -80,6 +80,7 @@ export default function XeroSettings({ isAdmin, connection, flash, onBack }: {
   async function link() {
     if (!picked) { setError('Pick the Xero organisation to link.'); return }
     if (await call('POST', { tenantId: picked })) {
+      clearXeroMappingCache()
       setOk('Xero connected.')
       router.replace('/settings?tab=integrations&xero=1')
       router.refresh()
@@ -88,6 +89,7 @@ export default function XeroSettings({ isAdmin, connection, flash, onBack }: {
 
   async function disconnect() {
     if (await call('DELETE')) {
+      clearXeroMappingCache()
       setConfirmOff(false)
       setOk(status === 'pending' ? null : 'Xero disconnected.')
       router.replace('/settings?tab=integrations&xero=1')

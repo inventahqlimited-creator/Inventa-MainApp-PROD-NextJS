@@ -1,0 +1,146 @@
+name: Refresh staging database from production
+
+# Every night (3am NZ summer time / 2am winter) staging's business data is replaced with a copy of
+# production's, so staging is always a day or less behind. Staging logins, Xero connection and
+# Supabase settings are kept. Production is only ever read.
+on:
+  schedule:
+    - cron: "0 14 * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: refresh-staging-db
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    name: Copy production data into staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      PROD_DB_URL: ${{ secrets.PROD_DB_URL_READONLY }}
+      STAGING_DB_URL: ${{ secrets.STAGING_DB_URL }}
+    steps:
+      - name: Install PostgreSQL 17 client
+        run: |
+          sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
+          sudo apt-get install -y postgresql-client-17
+
+      - name: Build the copy script
+        run: |
+          cat > pre.sql <<'SQL'
+          SET session_replication_role = replica;
+          -- remember staging's own Xero connection so the wipe doesn't lose it
+          CREATE TEMP TABLE _keep_xero AS SELECT * FROM public.xero_connections;
+          TRUNCATE TABLE
+            public.adjustment_order_lines,
+            public.adjustment_orders,
+            public.audit_log,
+            public.bins,
+            public.categories,
+            public.contact_addresses,
+            public.contact_custom_fields,
+            public.contact_custom_list_options,
+            public.contact_custom_lists,
+            public.contacts,
+            public.currencies,
+            public.locations,
+            public.org_roles,
+            public.org_settings,
+            public.organisations,
+            public.price_levels,
+            public.product_custom_fields,
+            public.product_custom_list_options,
+            public.product_custom_lists,
+            public.product_prices,
+            public.product_pricing,
+            public.products,
+            public.purchase_order_cost_lines,
+            public.purchase_order_lines,
+            public.purchase_orders,
+            public.sales_order_carton_lines,
+            public.sales_order_cartons,
+            public.sales_order_cost_lines,
+            public.sales_order_lines,
+            public.sales_order_picks,
+            public.sales_orders,
+            public.stock_adjustments,
+            public.stock_groups,
+            public.stock_levels,
+            public.stock_movements,
+            public.stock_transfer_lines,
+            public.stock_transfers,
+            public.tax_rates,
+            public.transfer_order_lines,
+            public.transfer_order_picks,
+            public.transfer_orders,
+            public.uoms
+          CASCADE;
+          SQL
+
+          cat > post.sql <<'SQL'
+          -- production's users do not exist in staging, so blank the "created by" links
+          UPDATE public.purchase_orders SET created_by = NULL;
+          UPDATE public.sales_orders SET created_by = NULL;
+          UPDATE public.stock_transfers SET created_by = NULL;
+          UPDATE public.stock_adjustments SET performed_by = NULL;
+          -- every staging login becomes an admin of every copied company
+          INSERT INTO public.org_members (org_id, user_id, role, invite_status, email, accepted_at)
+          SELECT o.id, u.id, 'admin', 'accepted', u.email, now()
+            FROM public.organisations o CROSS JOIN auth.users u
+          ON CONFLICT DO NOTHING;
+          -- put staging's Xero connection back
+          INSERT INTO public.xero_connections
+          SELECT * FROM _keep_xero WHERE org_id IN (SELECT id FROM public.organisations);
+          SQL
+
+      - name: Copy production data into staging
+        run: |
+          pg_dump "$PROD_DB_URL" --data-only --no-owner --no-privileges \
+            -t public.adjustment_order_lines \
+            -t public.adjustment_orders \
+            -t public.audit_log \
+            -t public.bins \
+            -t public.categories \
+            -t public.contact_addresses \
+            -t public.contact_custom_fields \
+            -t public.contact_custom_list_options \
+            -t public.contact_custom_lists \
+            -t public.contacts \
+            -t public.currencies \
+            -t public.locations \
+            -t public.org_roles \
+            -t public.org_settings \
+            -t public.organisations \
+            -t public.price_levels \
+            -t public.product_custom_fields \
+            -t public.product_custom_list_options \
+            -t public.product_custom_lists \
+            -t public.product_prices \
+            -t public.product_pricing \
+            -t public.products \
+            -t public.purchase_order_cost_lines \
+            -t public.purchase_order_lines \
+            -t public.purchase_orders \
+            -t public.sales_order_carton_lines \
+            -t public.sales_order_cartons \
+            -t public.sales_order_cost_lines \
+            -t public.sales_order_lines \
+            -t public.sales_order_picks \
+            -t public.sales_orders \
+            -t public.stock_adjustments \
+            -t public.stock_groups \
+            -t public.stock_levels \
+            -t public.stock_movements \
+            -t public.stock_transfer_lines \
+            -t public.stock_transfers \
+            -t public.tax_rates \
+            -t public.transfer_order_lines \
+            -t public.transfer_order_picks \
+            -t public.transfer_orders \
+            -t public.uoms > data.sql
+          cat pre.sql data.sql post.sql > full.sql
+          psql "$STAGING_DB_URL" -v ON_ERROR_STOP=1 --single-transaction -f full.sql
+
+      - name: Check the copy
+        run: psql "$STAGING_DB_URL" -c "select (select count(*) from public.organisations) as companies, (select count(*) from public.products) as products, (select count(*) from public.org_members) as members;"

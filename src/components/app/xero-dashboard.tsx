@@ -1,12 +1,10 @@
 'use client'
 // src/components/app/xero-dashboard.tsx
 // The connected Xero page: a "Sync now" bar (with last full sync and next automatic sync), then two columns:
-// contacts | products, and invoices | bills. Each shows counts, what failed, and a button to sync that part.
+// contacts | products, invoices | bills, and stock adjustments. Each shows counts, what failed, and a button to sync that part.
 import { useCallback, useEffect, useState } from 'react'
 import type { Overview } from '@/lib/xero/sync'
-import type { InvoiceOverview } from '@/lib/xero/invoice'
-import type { BillOverview } from '@/lib/xero/bill'
-import { SCHEDULE_LABELS, SCOPE_LABELS, type Schedule, type Scope } from '@/lib/xero/prefs'
+import { SCHEDULE_LABELS, SCOPE_LABELS, STOCK_ERROR_PREFIX, type Schedule, type Scope } from '@/lib/xero/prefs'
 
 type Entity = 'contact' | 'product'
 type SyncSummary = { linked: number; created: number; failed: number; unchanged: number; failures: { id: string; name: string; error: string }[] }
@@ -220,12 +218,32 @@ function Section({ entity, isAdmin, reloadKey, onChanged }: { entity: Entity; is
 
 
 type BulkSummary = { posted: number; failed: number; remaining: number; failures: { id: string; name: string; error: string }[]; stopped?: string }
-type Kind = 'invoice' | 'bill'
+type Kind = 'invoice' | 'bill' | 'adjustment'
+type PostData = {
+  eligible: number; posted: number; notPosted: number; failed: number
+  failures: { id: string; name: string; error: string | null }[]
+  waiting: { id: string; name: string }[]
+  recent: { id: string; number: string; total: number; postedAt: string; url: string; customer?: string; supplier?: string; location?: string }[]
+  lastPostedAt: string | null
+  tracked?: boolean; needsAccounts?: boolean; skipped?: number
+  manual?: { id: string; name: string }[]; manualCount?: number
+}
+
+/** A failure's reason. A "not enough stock in Xero" refusal shows a short label and the full advice on hover. */
+function FailText({ error }: { error: string | null }) {
+  if (!error) return null
+  if (error.startsWith(STOCK_ERROR_PREFIX)) {
+    return <span title={error} style={{ fontSize: 12, color: '#B91C1C', cursor: 'help', textDecoration: 'underline dotted' }}>Not enough stock in Xero ⓘ</span>
+  }
+  return <span style={{ fontSize: 12, color: '#B91C1C' }}>{error}</span>
+}
 const KIND = {
   invoice: { title: 'Invoices', source: 'Closed sales orders', noun: 'invoice', route: '/api/integrations/xero/invoice', href: '/sales', total: 'Closed orders', who: 'customer' as const,
     empty: 'No closed sales orders yet. Close an order, then post it here or from its Actions menu.' },
   bill: { title: 'Bills', source: 'Closed purchase orders', noun: 'bill', route: '/api/integrations/xero/bill', href: '/purchases', total: 'Closed orders', who: 'supplier' as const,
     empty: 'No closed purchase orders with received stock yet. Receive and close an order, then post it here or from its Actions menu.' },
+  adjustment: { title: 'Stock adjustments', source: 'Completed stock adjustments', noun: 'journal', route: '/api/integrations/xero/adjustment', href: '/products/adjustments', total: 'Completed', who: 'location' as const,
+    empty: 'No completed stock adjustments since stock adjustments were switched on for Xero.' },
 }
 
 /** Posts in batches of 20 until none are left (or Xero asks us to slow down). */
@@ -253,7 +271,7 @@ const postText = (kind: Kind, r: { posted: number; failed: number }) =>
 
 function PostSection({ kind, isAdmin, reloadKey, postStatus }: { kind: Kind; isAdmin: boolean; reloadKey: number; postStatus?: string }) {
   const k = KIND[kind]
-  const [data, setData] = useState<(InvoiceOverview & BillOverview) | null>(null)
+  const [data, setData] = useState<PostData | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [busy, setBusy] = useState(false)
   const [notice, setNotice] = useState<Notice>(null)
@@ -264,7 +282,7 @@ function PostSection({ kind, isAdmin, reloadKey, postStatus }: { kind: Kind; isA
       const res = await fetch(`/api/integrations/xero/overview?entity=${kind}`, { cache: 'no-store' })
       const body = await res.json().catch(() => ({}))
       if (!res.ok) { setError(body.error ?? `Could not load ${k.title.toLowerCase()} (the server answered ${res.status}).`); return }
-      setData(body as InvoiceOverview & BillOverview)
+      setData(body as PostData)
     } catch {
       setError('Network error — please try again.')
     }
@@ -284,17 +302,44 @@ function PostSection({ kind, isAdmin, reloadKey, postStatus }: { kind: Kind; isA
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap', marginBottom: 14 }}>
         <div>
           <div style={{ fontFamily: 'var(--font-display)', fontSize: 16, fontWeight: 700, color: 'var(--slate)' }}>{k.title}</div>
-          <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>{k.source} post to Xero{postStatus ? ` as ${postStatus === 'AUTHORISED' ? 'approved' : 'draft'} ${k.noun}s` : ''}. Last posted: {data ? when(data.lastPostedAt) : '…'}</div>
+          <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>
+            {data?.tracked
+              ? 'Xero tracks your inventory, so stock adjustments are not sent.'
+              : <>{k.source} post to Xero{postStatus ? ` as ${postStatus === 'AUTHORISED' || postStatus === 'POSTED' ? (kind === 'adjustment' ? '' : 'approved ') : 'draft '}${k.noun}s` : ''}. Last posted: {data ? when(data.lastPostedAt) : '…'}</>}
+          </div>
         </div>
-        {isAdmin && <button className="btn btn-outline" style={{ height: 32 }} disabled={busy} onClick={() => void sync()}>{busy ? 'Posting…' : `Sync ${k.title.toLowerCase()}`}</button>}
+        {isAdmin && !data?.tracked && <button className="btn btn-outline" style={{ height: 32 }} disabled={busy} onClick={() => void sync()}>{busy ? 'Posting…' : `Sync ${k.title.toLowerCase()}`}</button>}
       </div>
 
       {notice && <div style={{ ...noticeStyle(notice), marginBottom: 14 }}>{notice.text}</div>}
       {error && <div style={{ fontSize: 13, color: '#B91C1C' }}>{error}</div>}
       {!error && !data && <div style={{ fontSize: 13, color: 'var(--gray-400)' }}>Loading…</div>}
 
-      {data && (
+      {data?.tracked && (
         <>
+          <div style={{ padding: '12px 14px', borderRadius: 10, fontSize: 13, background: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A', lineHeight: 1.5 }}>
+            Stock adjustments will need to be posted in Xero manually.
+          </div>
+          {(data.manualCount ?? 0) > 0 && (
+            <ListBlock title={`To post in Xero (${data.manualCount})`} hint="Completed since you said Xero tracks your inventory.">
+              {(data.manual ?? []).map(w => (
+                <div key={w.id} style={rowStyle}>
+                  <a href={`${k.href}/${w.id}`} target="_blank" rel="noreferrer" style={{ fontWeight: 600, color: 'var(--slate)' }}>{w.name} ↗</a>
+                </div>
+              ))}
+              {(data.manualCount ?? 0) > (data.manual ?? []).length && <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 6 }}>and {(data.manualCount ?? 0) - (data.manual ?? []).length} more</div>}
+            </ListBlock>
+          )}
+        </>
+      )}
+
+      {data && !data.tracked && (
+        <>
+          {data.needsAccounts && (
+            <div style={{ padding: '10px 14px', borderRadius: 10, marginBottom: 14, fontSize: 12.5, background: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A', lineHeight: 1.5 }}>
+              Choose the inventory asset and stock adjustment accounts in Settings → Xero → Accounts and tax. Adjustments wait until then.
+            </div>
+          )}
           <div className="xero-stats">
             <Tile label={k.total} value={data.eligible} />
             <Tile label="Posted" value={data.posted} tone="good" />
@@ -307,7 +352,7 @@ function PostSection({ kind, isAdmin, reloadKey, postStatus }: { kind: Kind; isA
               {data.failures.map(f => (
                 <div key={f.id} style={{ ...rowStyle, alignItems: 'flex-start', flexDirection: 'column', gap: 2 }}>
                   <a href={`${k.href}/${f.id}`} target="_blank" rel="noreferrer" style={{ fontWeight: 600, color: 'var(--slate)' }}>{f.name} ↗</a>
-                  <span style={{ fontSize: 12, color: '#B91C1C' }}>{f.error}</span>
+                  <FailText error={f.error} />
                 </div>
               ))}
             </ListBlock>
@@ -327,11 +372,11 @@ function PostSection({ kind, isAdmin, reloadKey, postStatus }: { kind: Kind; isA
           {data.recent.length > 0 && (
             <ListBlock title="Recently posted">
               {data.recent.map(r => {
-                const rr = r as { id: string; number: string; total: number; postedAt: string; url: string; customer?: string; supplier?: string }
+                const rr = r
                 return (
                   <div key={rr.id} style={rowStyle}>
                     <span style={{ fontWeight: 600, minWidth: 80 }}><a href={`${k.href}/${rr.id}`} target="_blank" rel="noreferrer" style={{ color: 'var(--slate)' }} title={`Open in InventaHQ`}>{rr.number}</a></span>
-                    <span style={{ flex: 1, minWidth: 0, color: 'var(--gray-500)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{k.who === 'customer' ? rr.customer : rr.supplier}</span>
+                    <span style={{ flex: 1, minWidth: 0, color: 'var(--gray-500)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{k.who === 'customer' ? rr.customer : k.who === 'supplier' ? rr.supplier : rr.location}</span>
                     <span style={{ fontVariantNumeric: 'tabular-nums' }}>${rr.total.toFixed(2)}</span>
                     {rr.url && <a href={rr.url} target="_blank" rel="noreferrer" style={{ fontSize: 11.5, color: 'var(--teal)', whiteSpace: 'nowrap' }}>Xero ↗</a>}
                   </div>
@@ -340,16 +385,17 @@ function PostSection({ kind, isAdmin, reloadKey, postStatus }: { kind: Kind; isA
             </ListBlock>
           )}
 
-          {data.eligible === 0 && <div style={{ fontSize: 13, color: 'var(--gray-400)', marginTop: 14 }}>{k.empty}</div>}
+          {data.eligible === 0 && !data.needsAccounts && <div style={{ fontSize: 13, color: 'var(--gray-400)', marginTop: 14 }}>{k.empty}</div>}
+          {kind === 'adjustment' && (data.skipped ?? 0) > 0 && <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 12 }}>{data.skipped} marked “Don’t send to Xero”.</div>}
         </>
       )}
     </div>
   )
 }
 
-type PrefsInfo = { prefs: { schedule: Schedule; scope: Scope; invoice_status: string; bill_status: string }; lastFullSyncAt: string | null; nextSyncAt: string | null; timezone: string }
+type PrefsInfo = { prefs: { schedule: Schedule; scope: Scope; invoice_status: string; bill_status: string; journal_status: string; inventory_tracked: boolean }; lastFullSyncAt: string | null; nextSyncAt: string | null; timezone: string }
 type RunPart = { posted: number; failed: number }
-type RunReport = { done: boolean; stopped?: string; contacts?: SyncSummary; products?: SyncSummary; invoices?: RunPart; bills?: RunPart }
+type RunReport = { done: boolean; stopped?: string; contacts?: SyncSummary; products?: SyncSummary; invoices?: RunPart; bills?: RunPart; adjustments?: RunPart & { note?: string } }
 
 export default function XeroDashboard({ isAdmin }: { isAdmin: boolean }) {
   const [reloadKey, setReloadKey] = useState(0)
@@ -385,6 +431,10 @@ export default function XeroDashboard({ isAdmin }: { isAdmin: boolean }) {
         if (r.products) { lines.push(summaryText('product', r.products)); if (r.products.failed) bad = true; skip.push('products') }
         if (r.invoices) { lines.push(postText('invoice', r.invoices)); if (r.invoices.failed) bad = true }
         if (r.bills) { lines.push(postText('bill', r.bills)); if (r.bills.failed) bad = true }
+        if (r.adjustments) {
+          if (r.adjustments.note) lines.push(`Stock adjustments: ${r.adjustments.note}`)
+          else { lines.push(postText('adjustment', r.adjustments)); if (r.adjustments.failed) bad = true }
+        }
         rep = r
         if (r.done || r.stopped) break
       } catch {
@@ -407,7 +457,11 @@ export default function XeroDashboard({ isAdmin }: { isAdmin: boolean }) {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 16, flexWrap: 'wrap', padding: '18px 22px', background: 'var(--gray-50)', border: '1px solid var(--gray-100)', borderRadius: 14 }}>
         <div style={{ minWidth: 0 }}>
           <div style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 700, color: 'var(--slate)' }}>Sync everything</div>
-          <div style={{ fontSize: 12.5, color: 'var(--gray-400)', marginTop: 2 }}>Sends new contacts, then products, then closed sales orders (invoices) and received purchase orders (bills) to Xero.</div>
+          <div style={{ fontSize: 12.5, color: 'var(--gray-400)', marginTop: 2 }}>
+            {info?.prefs.inventory_tracked
+              ? 'Sends new contacts, then products, then received purchase orders (bills) and closed sales orders (invoices) to Xero. Stock adjustments are posted in Xero manually.'
+              : 'Sends new contacts, then products, then closed sales orders (invoices), received purchase orders (bills) and stock adjustments (journals) to Xero.'}
+          </div>
           {info && (
             <div style={{ fontSize: 12.5, color: 'var(--gray-400)', marginTop: 10, display: 'flex', flexWrap: 'wrap', gap: '4px 22px' }}>
               <span>Last full sync: <span style={{ color: 'var(--slate)', fontWeight: 400 }}>{when(info.lastFullSyncAt)}</span></span>
@@ -429,6 +483,7 @@ export default function XeroDashboard({ isAdmin }: { isAdmin: boolean }) {
         <Section entity="product" isAdmin={isAdmin} reloadKey={reloadKey} onChanged={() => undefined} />
         <PostSection kind="invoice" isAdmin={isAdmin} reloadKey={reloadKey} postStatus={info?.prefs.invoice_status} />
         <PostSection kind="bill" isAdmin={isAdmin} reloadKey={reloadKey} postStatus={info?.prefs.bill_status} />
+        <PostSection kind="adjustment" isAdmin={isAdmin} reloadKey={reloadKey} postStatus={info?.prefs.journal_status} />
       </div>
     </div>
   )

@@ -1,21 +1,80 @@
-// src/app/api/integrations/xero/run/route.ts
-// POST { scope?: 'full' | …, skip?: ('contacts'|'products'|'invoices'|'bills')[] } — "Sync now". Admin only.
-// Posts what isn't in Xero yet, within about 50 seconds. If `done` is false, call again with the finished parts in `skip`.
-import { NextResponse } from 'next/server'
-import { guardXero } from '@/lib/xero/guard'
-import { runScope, type Part } from '@/lib/xero/run'
-import { normalizePrefs } from '@/lib/xero/prefs'
+// src/lib/xero/run.ts
+// One sync run for one organisation: used by "Sync now" on the dashboard and by the scheduled auto sync.
+// Posts what isn't in Xero yet within a time budget: contacts → products → invoices → bills → stock adjustments.
+// When Xero tracks inventory, bills go before invoices (Xero refuses a sale of stock it doesn't have yet) and adjustments are not sent.
+// Safe to call again to carry on.
+import type { SupabaseClient } from '@supabase/supabase-js'
+import { runSync, type SyncSummary } from './sync'
+import { postEligibleInvoices } from './invoice'
+import { postEligibleBills } from './bill'
+import { postEligibleAdjustments } from './adjustment'
+import type { XeroSettings } from './mapping'
+import { nextSyncFrom, scopeIncludes, type Scope, type XeroPrefs } from './prefs'
 
-export const dynamic = 'force-dynamic'
-export const maxDuration = 60
+type Db = SupabaseClient
+export type Part = 'contacts' | 'products' | 'invoices' | 'bills' | 'adjustments'
+type Posted = { posted: number; failed: number; remaining: number; failures: { id: string; name: string; error: string }[]; note?: string }
 
-const PARTS: Part[] = ['contacts', 'products', 'invoices', 'bills']
+export type RunReport = {
+  done: boolean                 // nothing left to post within this scope
+  stopped?: string              // Xero refused or rate-limited: the reason
+  contacts?: SyncSummary
+  products?: SyncSummary
+  invoices?: Posted
+  bills?: Posted
+  adjustments?: Posted
+  lastSyncAt?: string
+  lastFullSyncAt?: string | null
+  nextSyncAt?: string | null
+}
 
-export async function POST(req: Request) {
-  const g = await guardXero(true)
-  if ('res' in g) return g.res
-  const body = await req.json().catch(() => ({}))
-  const scope = normalizePrefs({ scope: body?.scope }).scope
-  const skip = Array.isArray(body?.skip) ? (body.skip as unknown[]).filter((p): p is Part => PARTS.includes(p as Part)) : []
-  return NextResponse.json(await runScope(g.a.db, g.a.orgId, scope, g.settings, g.prefs, { skip }))
+const merge = (a: Posted | undefined, b: Posted): Posted => ({
+  posted: (a?.posted ?? 0) + b.posted, failed: (a?.failed ?? 0) + b.failed, remaining: b.remaining,
+  failures: [...(a?.failures ?? []), ...b.failures].slice(0, 100), note: b.note ?? a?.note,
+})
+
+/**
+ * @param skip parts already finished in an earlier call of the same run (the dashboard passes these on when it asks again)
+ * @param budgetMs how long this call may keep posting before it hands back (the caller asks again if `done` is false)
+ */
+export async function runScope(db: Db, orgId: string, scope: Scope, settings: XeroSettings, prefs: XeroPrefs, opts: { skip?: Part[]; budgetMs?: number } = {}): Promise<RunReport> {
+  const deadline = Date.now() + (opts.budgetMs ?? 50_000)
+  const want = scopeIncludes(scope)
+  const skip = new Set(opts.skip ?? [])
+  const rep: RunReport = { done: true }
+  const stop = (reason: string) => { rep.stopped = reason; rep.done = false }
+
+  for (const entity of ['contact', 'product'] as const) {
+    const part = entity === 'contact' ? 'contacts' : 'products'
+    if (!want[part] || skip.has(part) || rep.stopped) continue
+    const r = await runSync(db, orgId, entity, { settings })
+    if (!r.ok) { stop(r.error); break }
+    rep[part] = r.summary
+  }
+
+  const order = prefs.inventory_tracked ? (['bills', 'invoices'] as const) : (['invoices', 'bills', 'adjustments'] as const)
+  for (const part of order) {
+    if (!want[part] || skip.has(part) || rep.stopped) continue
+    const post = part === 'invoices' ? postEligibleInvoices : part === 'bills' ? postEligibleBills : postEligibleAdjustments
+    let acc: Posted | undefined
+    // each call posts up to 20; keep going while there is time. Failures are only retried on the first pass.
+    for (let round = 0; ; round++) {
+      const r = await post(db, orgId, settings, prefs, round === 0, deadline)
+      acc = merge(acc, r)
+      if (r.stopped) { stop(r.stopped); break }
+      if (r.remaining === 0) break
+      if (Date.now() > deadline) { rep.done = false; break }
+    }
+    rep[part] = acc
+  }
+
+  if (rep.done) {
+    const now = new Date()
+    rep.lastSyncAt = now.toISOString()
+    rep.nextSyncAt = nextSyncFrom(prefs.schedule, now)
+    const patch: Record<string, unknown> = { last_sync_at: rep.lastSyncAt, next_sync_at: rep.nextSyncAt }
+    if (scope === 'full') { patch.last_full_sync_at = rep.lastSyncAt; rep.lastFullSyncAt = rep.lastSyncAt }
+    await db.from('xero_connections').update(patch).eq('org_id', orgId)
+  }
+  return rep
 }

@@ -187,7 +187,7 @@ export default function AppTopbar({
             </div>
             <div className="topbar-user-info">
               <div className="topbar-user-name">{nameDisplay}</div>
-              <div className="topbar-user-role">{roleLabel}</div>
+              <div className="topbar-user-role">{orgName}</div>
             </div>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--gray-400)" strokeWidth="2.5" style={{ marginLeft: 4, flexShrink: 0 }}>
               <polyline points="6 9 12 15 18 9"/>
@@ -197,7 +197,7 @@ export default function AppTopbar({
           {profileOpen && (
             <div className="inv-dropdown" style={{ display: 'block', minWidth: 220, right: 0, left: 'auto' }}>
               <div className="profile-dropdown-header">
-                <div className="profile-dropdown-biz">{orgName}</div>
+                <div className="profile-dropdown-biz">{orgName} · {roleLabel}</div>
                 <div className="profile-dropdown-email">{email}</div>
               </div>
               <div className="dd-item" onClick={() => { setProfileOpen(false); setShowProfile(true) }}>

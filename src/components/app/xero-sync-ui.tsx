@@ -22,7 +22,7 @@ export function XeroStatusBadge({ info }: { info?: XeroRowInfo | null }) {
 export const XeroColumnHeader = () => <th>Xero</th>
 
 /** Sends one record to Xero. Returns the new status so the table can update its row. */
-export function usePostToXero(entity: 'contact' | 'product' | 'invoice' | 'bill', onResult: (id: string, info: XeroRowInfo) => void) {
+export function usePostToXero(entity: 'contact' | 'product' | 'invoice' | 'bill' | 'adjustment', onResult: (id: string, info: XeroRowInfo) => void) {
   const [busyId, setBusyId] = useState<string | null>(null)
   const [message, setMessage] = useState<XeroMessage | null>(null)
 
@@ -30,10 +30,10 @@ export function usePostToXero(entity: 'contact' | 'product' | 'invoice' | 'bill'
     setBusyId(id)
     setMessage(null)
     try {
-      const res = await fetch(entity === 'invoice' ? '/api/integrations/xero/invoice' : entity === 'bill' ? '/api/integrations/xero/bill' : '/api/integrations/xero/sync', {
+      const res = await fetch(entity === 'invoice' ? '/api/integrations/xero/invoice' : entity === 'bill' ? '/api/integrations/xero/bill' : entity === 'adjustment' ? '/api/integrations/xero/adjustment' : '/api/integrations/xero/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(entity === 'invoice' || entity === 'bill' ? { id } : { entity, id }),
+        body: JSON.stringify(entity === 'invoice' || entity === 'bill' || entity === 'adjustment' ? { id } : { entity, id }),
       })
       const body = await res.json().catch(() => ({}))
       if (!res.ok) {
@@ -42,9 +42,11 @@ export function usePostToXero(entity: 'contact' | 'product' | 'invoice' | 'bill'
         if (body.recorded) onResult(id, { status: 'failed', error: body.error })
         return
       }
-      if (entity === 'invoice' || entity === 'bill') {
+      if (entity === 'invoice' || entity === 'bill' || entity === 'adjustment') {
         onResult(id, { status: 'synced', error: body.warning ?? null, url: body.url ?? null })
-        const what = `${body.status === 'AUTHORISED' ? 'approved' : 'draft'} ${entity === 'bill' ? 'bill' : 'invoice'}`
+        const what = entity === 'adjustment'
+          ? (body.status === 'POSTED' ? 'journal' : 'draft journal')
+          : `${body.status === 'AUTHORISED' ? 'approved' : 'draft'} ${entity === 'bill' ? 'bill' : 'invoice'}`
         const text = `Posted to Xero as ${what}${body.number ? ` ${body.number}` : ''}.${body.warning ? ` ${body.warning}` : ''}`
         if (body.warning) toast.error(text, { href: body.url ?? null, hrefLabel: 'Open in Xero →' })
         else toast.success(text, { href: body.url ?? null, hrefLabel: 'Open in Xero →' })

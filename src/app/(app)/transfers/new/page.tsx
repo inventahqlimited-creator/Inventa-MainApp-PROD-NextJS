@@ -3,7 +3,8 @@ import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import TransferForm from '@/components/app/transfer-form'
 
-export default async function NewTransferPage() {
+export default async function NewTransferPage({ searchParams }: { searchParams: Promise<{ clone?: string }> }) {
+  const { clone } = await searchParams
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) redirect('/login')
@@ -26,11 +27,24 @@ export default async function NewTransferPage() {
     adminClient.from('organisations').select('so_default_ship_from').eq('id', m.org_id).single(),
   ])
 
+  // Clone Order: copy another transfer's locations, notes and items
+  let cloneOf: { from_location_id: string | null; to_location_id: string | null; notes: string | null } | null = null
+  let cloneLines: unknown[] = []
+  if (clone && /^[0-9a-f-]{36}$/i.test(clone)) {
+    const [{ data: src }, { data: srcLines }] = await Promise.all([
+      adminClient.from('transfer_orders').select('from_location_id, to_location_id, notes').eq('id', clone).eq('org_id', m.org_id).maybeSingle(),
+      adminClient.from('transfer_order_lines').select('*').eq('tr_id', clone).eq('org_id', m.org_id).order('sort_order'),
+    ])
+    if (src) { cloneOf = src as typeof cloneOf; cloneLines = srcLines ?? [] }
+  }
+
   return (
     <TransferForm
       orgId={m.org_id}
       transfer={null}
-      lines={[]}
+      cloneOf={cloneOf}
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      lines={cloneLines as any}
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       locations={(locations ?? []) as any}
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

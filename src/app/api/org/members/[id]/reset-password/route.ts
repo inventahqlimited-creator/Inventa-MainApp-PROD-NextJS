@@ -1,8 +1,9 @@
 // src/app/api/org/members/[id]/reset-password/route.ts
 // Admin sends a member a password reset email.
 import { NextResponse } from 'next/server'
-import { createAdminClient, createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/server'
 import { requirePerm } from '@/lib/auth/access'
+import { sendResetEmail } from '@/lib/auth/send-reset'
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -29,8 +30,8 @@ export async function POST(request: Request, { params }: Params) {
   if (!email) return NextResponse.json({ error: 'No email address on file for this user' }, { status: 400 })
 
   const origin = new URL(request.url).origin
-  const supabase = await createClient()
-  const { error } = await supabase.auth.resetPasswordForEmail(email, { redirectTo: `${origin}/auth/confirm` })
+  // implicit-flow link so it works when opened on the member's own device/browser (not the admin's)
+  const { error } = await sendResetEmail(email, origin)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ success: true, email })
 }

@@ -1,7 +1,9 @@
 'use client'
 
+import { useEffect, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
+import { signOutIfSessionExpired } from '@/lib/auth/remember'
 
 interface Props {
   userName: string
@@ -13,9 +15,19 @@ export default function HubSidebar({ userName, userEmail }: Props) {
   const router = useRouter()
   const supabase = createClient()
 
+  const [signingOut, setSigningOut] = useState(false)
+
+  useEffect(() => {
+    signOutIfSessionExpired(supabase)
+    router.prefetch('/login')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   async function signOut() {
-    await supabase.auth.signOut()
-    router.push('/login')
+    if (signingOut) return
+    setSigningOut(true)
+    try { await supabase.auth.signOut() } catch { /* cleared locally regardless */ }
+    window.location.replace('/login')
   }
 
   const navItems = [
@@ -153,7 +165,7 @@ export default function HubSidebar({ userName, userEmail }: Props) {
             <polyline points="16 17 21 12 16 7"/>
             <line x1="21" y1="12" x2="9" y2="12"/>
           </svg>
-          Sign out
+          {signingOut ? 'Signing out…' : 'Sign out'}
         </button>
       </div>
     </aside>

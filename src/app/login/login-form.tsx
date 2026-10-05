@@ -3,6 +3,15 @@
 import { useState, useEffect } from 'react'
 import { createClient } from '@/lib/supabase/client'
 import { useRouter } from 'next/navigation'
+import { applyRememberChoice, getRememberedEmail } from '@/lib/auth/remember'
+
+const LINK_ERRORS: Record<string, string> = {
+  invalid_link: 'That link is invalid or has already been used. Please request a new one.',
+  session_failed: 'That link has expired or was already used. Please request a new one.',
+  auth_callback_failed: 'We could not sign you in from that link. Please request a new one.',
+  otp_expired: 'That link has expired. Please request a new one.',
+  access_denied: 'That link has expired or was already used. Please request a new one.',
+}
 
 export default function LoginForm() {
   const router = useRouter()
@@ -14,11 +23,31 @@ export default function LoginForm() {
   const [loading, setLoading]   = useState(false)
   const [error, setError]       = useState('')
   const [showPw, setShowPw]     = useState(false)
+  const [remember, setRemember] = useState(true)
   const [view, setView]         = useState<'signin' | 'forgot' | 'forgot-sent'>('signin')
   const [forgotEmail, setForgotEmail] = useState('')
 
   useEffect(() => {
     setIsHub(window.location.hostname === 'hub.inventahq.com')
+
+    // Prefill the email from the last "Remember me" sign-in
+    const saved = getRememberedEmail()
+    if (saved) setEmail(saved)
+
+    // A password-reset / invite link that landed on the login page (for example when the email link was
+    // sent to the site root): hand it to the confirm page, which knows how to finish it.
+    const { search, hash } = window.location
+    const q = new URLSearchParams(search)
+    const h = new URLSearchParams(hash.replace(/^#/, ''))
+    if (q.get('code') || q.get('token_hash') || h.get('access_token')) {
+      router.replace(`/auth/confirm${search}${hash}`)
+      return
+    }
+
+    // Show why a link failed instead of silently showing the sign-in form
+    const code = q.get('error') ?? h.get('error_code') ?? h.get('error')
+    if (code) setError(LINK_ERRORS[code] ?? 'Something went wrong with that link. Please try again.')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
   async function handleSignIn(e: React.FormEvent) {
@@ -28,6 +57,7 @@ export default function LoginForm() {
     try {
       const { data: authData, error: authErr } = await supabase.auth.signInWithPassword({ email, password })
       if (authErr) { setError('Incorrect email or password. Please try again.'); setPassword(''); setLoading(false); return }
+      applyRememberChoice(remember, email)
 
       const { data: memberships, error: memberErr } = await supabase
         .from('org_members')
@@ -67,13 +97,23 @@ export default function LoginForm() {
 
   async function handleForgot(e: React.FormEvent) {
     e.preventDefault()
+    setError('')
     setLoading(true)
-    const { error: resetErr } = await supabase.auth.resetPasswordForEmail(forgotEmail, {
-      redirectTo: `${window.location.origin}/auth/confirm`,
-    })
-    setLoading(false)
-    if (resetErr) { setError(resetErr.message); return }
-    setView('forgot-sent')
+    try {
+      // Sent from the server so the link works on any device or browser
+      const res = await fetch('/auth/forgot', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: forgotEmail }),
+      })
+      const json = await res.json().catch(() => ({}))
+      setLoading(false)
+      if (!res.ok) { setError(json.error ?? 'Could not send the reset link. Please try again.'); return }
+      setView('forgot-sent')
+    } catch {
+      setLoading(false)
+      setError('Could not send the reset link. Please check your connection and try again.')
+    }
   }
 
   return (
@@ -205,7 +245,7 @@ export default function LoginForm() {
                   </div>
                 </div>
                 <div className="remforg">
-                  <label className="remember"><input type="checkbox"/> Remember me</label>
+                  <label className="remember"><input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)}/> Remember me</label>
                   <button type="button" className="forgot-link" onClick={() => { setView('forgot'); setError('') }}>Forgot password?</button>
                 </div>
                 <button type="submit" className="btn-signin" disabled={loading}>

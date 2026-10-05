@@ -1,31 +1,29 @@
 // src/app/api/org/members/[id]/route.ts
-// One team member — read, edit (details, role, active/inactive, pending email) and remove. Admins only.
+// One team member — read, edit (details, role, active/inactive, pending email) and remove.
+// Needs "Invite, edit and remove users" (reading needs "View users"). Only an Administrator can touch another Administrator or make one.
 import { NextResponse } from 'next/server'
-import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/server'
+import { getAccess, can } from '@/lib/auth/access'
 
 type Params = { params: Promise<{ id: string }> }
 const ROLES = ['admin', 'manager', 'staff', 'read_only']
 
 type Member = {
-  id: string; user_id: string | null; org_id: string; role: string; invite_status: string
+  id: string; user_id: string | null; org_id: string; role: string; custom_role_id: string | null; invite_status: string
   first_name: string | null; last_name: string | null; email: string | null
   phone: string | null; designation: string | null; avatar_url: string | null
 }
 
-async function getCaller() {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return null
-  const db = createAdminClient()
-  const { data } = await db.from('org_members').select('role, org_id').eq('user_id', user.id).eq('invite_status', 'accepted').limit(1).maybeSingle()
-  const m = data as { role: string; org_id: string } | null
-  if (!m || m.role !== 'admin') return null
-  return { user, db, orgId: m.org_id }
+async function getCaller(write = true) {
+  const a = await getAccess()
+  if (!a) return null
+  if (!(write ? can(a, 'manage_users') : can(a, 'view_users'))) return null
+  return { user: { id: a.userId }, db: a.db as ReturnType<typeof createAdminClient>, orgId: a.orgId, isAdmin: a.isAdmin }
 }
 
 async function getTarget(db: ReturnType<typeof createAdminClient>, id: string, orgId: string) {
   const { data } = await db.from('org_members')
-    .select('id, user_id, org_id, role, invite_status, first_name, last_name, email, phone, designation, avatar_url')
+    .select('id, user_id, org_id, role, custom_role_id, invite_status, first_name, last_name, email, phone, designation, avatar_url')
     .eq('id', id).eq('org_id', orgId).maybeSingle()
   return data as Member | null
 }
@@ -34,7 +32,7 @@ const str = (v: unknown, max: number) => (typeof v === 'string' ? v.trim().slice
 
 export async function GET(_req: Request, { params }: Params) {
   const { id } = await params
-  const c = await getCaller()
+  const c = await getCaller(false)
   if (!c) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   const t = await getTarget(c.db, id, c.orgId)
   if (!t) return NextResponse.json({ error: 'Member not found' }, { status: 404 })
@@ -52,6 +50,7 @@ export async function PATCH(request: Request, { params }: Params) {
   if (!c) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   const t = await getTarget(c.db, id, c.orgId)
   if (!t) return NextResponse.json({ error: 'Member not found' }, { status: 404 })
+  if (t.role === 'admin' && !c.isAdmin) return NextResponse.json({ error: 'Only an Administrator can change another Administrator.' }, { status: 403 })
 
   const body = await request.json().catch(() => ({})) as Record<string, unknown>
   const isSelf = t.user_id === c.user.id
@@ -68,10 +67,21 @@ export async function PATCH(request: Request, { params }: Params) {
   const desig = str(body.designation, 80); if (desig !== null) update.designation = desig || null
 
   // role
-  if (body.role !== undefined && body.role !== t.role) {
+  const wantCustom = body.custom_role_id === undefined ? undefined : (typeof body.custom_role_id === 'string' && body.custom_role_id ? body.custom_role_id : null)
+  const roleChanging = (body.role !== undefined && body.role !== t.role) || (wantCustom !== undefined && wantCustom !== t.custom_role_id)
+  if (roleChanging) {
     if (isSelf) return NextResponse.json({ error: 'You cannot change your own role' }, { status: 400 })
-    if (!ROLES.includes(String(body.role))) return NextResponse.json({ error: 'Invalid role' }, { status: 400 })
-    update.role = String(body.role)
+    const newRole = String(body.role ?? t.role)
+    if (!ROLES.includes(newRole)) return NextResponse.json({ error: 'Invalid role' }, { status: 400 })
+    if (newRole === 'admin' && !c.isAdmin) return NextResponse.json({ error: 'Only an Administrator can make someone an Administrator.' }, { status: 403 })
+    if (wantCustom) {
+      if (newRole === 'admin') return NextResponse.json({ error: 'An Administrator can’t have a custom role.' }, { status: 400 })
+      const { data: cr } = await c.db.from('org_roles').select('id').eq('id', wantCustom).eq('org_id', c.orgId).maybeSingle()
+      if (!cr) return NextResponse.json({ error: 'That role no longer exists.' }, { status: 400 })
+    }
+    update.role = newRole
+    // a fixed role clears any custom role; a custom role sits on top of "staff"
+    update.custom_role_id = newRole === 'admin' ? null : wantCustom === undefined ? t.custom_role_id : wantCustom
   }
 
   // active / inactive
@@ -131,6 +141,7 @@ export async function DELETE(_request: Request, { params }: Params) {
   const t = await getTarget(c.db, id, c.orgId)
   if (!t) return NextResponse.json({ error: 'Member not found' }, { status: 404 })
   if (t.user_id === c.user.id) return NextResponse.json({ error: 'You cannot remove yourself' }, { status: 400 })
+  if (t.role === 'admin' && !c.isAdmin) return NextResponse.json({ error: 'Only an Administrator can remove another Administrator.' }, { status: 403 })
 
   const { error } = await c.db.from('org_members').delete().eq('id', id).eq('org_id', c.orgId)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })

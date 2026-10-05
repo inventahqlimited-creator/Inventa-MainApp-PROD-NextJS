@@ -1,22 +1,12 @@
 import { NextResponse } from 'next/server'
-import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/server'
+import { requirePerm } from '@/lib/auth/access'
 
 export async function POST(request: Request) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-
-  const { data: membership } = await supabase
-    .from('org_members')
-    .select('role, org_id')
-    .eq('user_id', user.id)
-    .eq('invite_status', 'accepted')
-    .single()
-
-  const m = membership as { role: string; org_id: string } | null
-  if (!m || m.role !== 'admin') {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
+  const g = await requirePerm('manage_users')
+  if ('res' in g) return g.res
+  const supabase = g.access.db
+  const m = { org_id: g.access.orgId }
 
   const { email } = await request.json()
   if (!email) return NextResponse.json({ error: 'email is required' }, { status: 400 })

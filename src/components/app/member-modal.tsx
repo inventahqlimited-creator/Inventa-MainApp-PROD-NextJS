@@ -13,6 +13,8 @@ export type TeamMember = {
   last_name: string | null
   email: string | null
   role: string
+  custom_role_id?: string | null
+  custom_role_name?: string | null
   invite_status: string
   phone?: string | null
   designation?: string | null
@@ -21,6 +23,7 @@ export type TeamMember = {
 
 export const ROLE_LABELS: Record<string, string> = { admin: 'Administrator', manager: 'Manager', staff: 'Staff', read_only: 'Read Only' }
 const ROLE_OPTIONS = Object.entries(ROLE_LABELS)
+type CustomRoleOption = { id: string; name: string }
 
 export default function MemberModal({ member, onClose, onDone }: {
   member: TeamMember | null            // null = invite a new user
@@ -35,8 +38,17 @@ export default function MemberModal({ member, onClose, onDone }: {
   const [form, setForm] = useState({
     first_name: member?.first_name ?? '', last_name: member?.last_name ?? '',
     phone: member?.phone ?? '', designation: member?.designation ?? '',
-    email: member?.email ?? '', role: member?.role ?? 'staff',
+    email: member?.email ?? '',
+    // a fixed role, or `custom:<id>` for one of the organisation's own roles
+    role: member?.custom_role_id ? `custom:${member.custom_role_id}` : member?.role ?? 'staff',
   })
+  const [customRoles, setCustomRoles] = useState<CustomRoleOption[]>([])
+  useEffect(() => {
+    fetch('/api/org/roles').then(r => (r.ok ? r.json() : [])).then((d: CustomRoleOption[]) => setCustomRoles(Array.isArray(d) ? d : [])).catch(() => {})
+  }, [])
+  const roleLabel = (v: string) => (v.startsWith('custom:') ? customRoles.find(r => `custom:${r.id}` === v)?.name ?? member?.custom_role_name ?? 'Custom role' : ROLE_LABELS[v] ?? v)
+  // the API takes the fixed role plus (for custom roles) the custom role id
+  const roleBody = (v: string) => (v.startsWith('custom:') ? { role: 'staff', custom_role_id: v.slice(7) } : { role: v, custom_role_id: null })
   const [roleOpen, setRoleOpen] = useState(false)
   const [ddPos, setDdPos] = useState<{ left: number; top: number; width: number } | null>(null)
   const [busy, setBusy] = useState<string | null>(null)
@@ -72,11 +84,11 @@ export default function MemberModal({ member, onClose, onDone }: {
     if (!form.first_name.trim()) { setError('First name is required'); return }
     if (emailEditable && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(form.email.trim())) { setError('Enter a valid email address'); return }
     if (isInvite) {
-      const d = await call('save', '/api/org/invite', json('POST', { ...form, email: form.email.trim() }))
+      const d = await call('save', '/api/org/invite', json('POST', { ...form, ...roleBody(form.role), email: form.email.trim() }))
       if (d) onDone(`Invite sent to ${form.email.trim()}.`)
       return
     }
-    const body: Record<string, string> = { first_name: form.first_name, last_name: form.last_name, phone: form.phone, designation: form.designation, role: form.role }
+    const body: Record<string, string | null> = { first_name: form.first_name, last_name: form.last_name, phone: form.phone, designation: form.designation, ...roleBody(form.role) }
     if (pending) body.email = form.email.trim()
     const d = await call('save', `/api/org/members/${member!.id}`, json('PATCH', body))
     if (d) onDone(d.invited ? `Saved. A new invite was sent to ${d.invited}.` : 'Changes saved.')
@@ -168,12 +180,12 @@ export default function MemberModal({ member, onClose, onDone }: {
                 <button className="modal-dd-btn" type="button" onClick={e => {
                   if (roleOpen) { setRoleOpen(false); return }
                   const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
-                  const menuH = 4 * 36 + 40
+                  const menuH = (4 + customRoles.length) * 36 + 70
                   const top = window.innerHeight - r.bottom < menuH + 12 ? Math.max(8, r.top - menuH - 6) : r.bottom + 6
                   setDdPos({ left: r.left, top, width: Math.max(r.width, 190) })
                   setRoleOpen(true)
                 }}>
-                  <span>{ROLE_LABELS[form.role] ?? form.role}</span>
+                  <span>{roleLabel(form.role)}</span>
                   <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="6 9 12 15 18 9"/></svg>
                 </button>
                 {roleOpen && ddPos && (
@@ -181,6 +193,10 @@ export default function MemberModal({ member, onClose, onDone }: {
                     <div className="col-dropdown-title">User level</div>
                     {ROLE_OPTIONS.map(([k, label]) => (
                       <div key={k} className={`fp-item${form.role === k ? ' active' : ''}`} onClick={() => { set('role', k); setRoleOpen(false) }}>{label}</div>
+                    ))}
+                    {customRoles.length > 0 && <div className="col-dropdown-title" style={{ marginTop: 6 }}>Your roles</div>}
+                    {customRoles.map(r => (
+                      <div key={r.id} className={`fp-item${form.role === `custom:${r.id}` ? ' active' : ''}`} onClick={() => { set('role', `custom:${r.id}`); setRoleOpen(false) }}>{r.name}</div>
                     ))}
                   </div>
                 )}

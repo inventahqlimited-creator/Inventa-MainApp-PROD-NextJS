@@ -60,12 +60,15 @@ function Tile({ label, value, tone }: { label: string; value: number | string; t
   )
 }
 
-function ListBlock({ title, hint, children }: { title: string; hint?: string; children: React.ReactNode }) {
+/** A titled list. Past 5 records it stops growing and scrolls instead. `rowH` is the height of one row. */
+function ListBlock({ title, hint, children, count = 0, rowH = 38 }: { title: string; hint?: string; children: React.ReactNode; count?: number; rowH?: number }) {
   return (
     <div style={{ marginTop: 22 }}>
       <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--slate)', fontFamily: 'var(--font-display)' }}>{title}</div>
       {hint && <div style={{ fontSize: 12, color: 'var(--gray-400)', margin: '2px 0 8px' }}>{hint}</div>}
-      {children}
+      {count > 5
+        ? <div style={{ maxHeight: rowH * 5, overflowY: 'auto', paddingRight: 8, borderTop: '1px solid var(--gray-50)' }}>{children}</div>
+        : children}
     </div>
   )
 }
@@ -80,7 +83,6 @@ function Section({ entity, isAdmin, reloadKey, onChanged }: { entity: Entity; is
   const [busy, setBusy] = useState<'sync' | 'import' | null>(null)
   const [notice, setNotice] = useState<Notice>(null)
   const [picked, setPicked] = useState<Set<string>>(new Set())
-  const [showAllInv, setShowAllInv] = useState(false)
 
   const load = useCallback(async () => {
     setError(null)
@@ -160,7 +162,7 @@ function Section({ entity, isAdmin, reloadKey, onChanged }: { entity: Entity; is
           </div>
 
           {data.failures.length > 0 && (
-            <ListBlock title={`Failed (${data.failures.length})`} hint="Fix the reason, then sync again.">
+            <ListBlock title={`Failed (${data.failures.length})`} hint="Fix the reason, then sync again." count={data.failures.length} rowH={56}>
               {data.failures.map(f => (
                 <div key={f.id} style={{ ...rowStyle, alignItems: 'flex-start', flexDirection: 'column', gap: 2 }}>
                   <span style={{ fontWeight: 600 }}>{f.name}</span>
@@ -171,19 +173,14 @@ function Section({ entity, isAdmin, reloadKey, onChanged }: { entity: Entity; is
           )}
 
           {data.onlyInInventa.length > 0 && (
-            <ListBlock title={`Only in InventaHQ (${data.onlyInInventa.length})`} hint={`These ${l.many} will be created in Xero when you sync.`}>
-              {(showAllInv ? data.onlyInInventa : data.onlyInInventa.slice(0, 8)).map(i => <div key={i.id} style={rowStyle}>{i.name}</div>)}
-              {data.onlyInInventa.length > 8 && (
-                <button className="btn btn-outline" style={{ height: 28, fontSize: 12, marginTop: 8 }} onClick={() => setShowAllInv(s => !s)}>
-                  {showAllInv ? 'Show fewer' : `Show all ${data.onlyInInventa.length}`}
-                </button>
-              )}
+            <ListBlock title={`Only in InventaHQ (${data.onlyInInventa.length})`} hint={`These ${l.many} will be created in Xero when you sync.`} count={data.onlyInInventa.length}>
+              {data.onlyInInventa.map(i => <div key={i.id} style={rowStyle}>{i.name}</div>)}
             </ListBlock>
           )}
 
           {data.onlyInXero.length > 0 && (
             <ListBlock title={`Only in Xero (${data.onlyInXero.length})`} hint={isAdmin ? `Tick the ${l.many} you want to bring into InventaHQ. Nothing is imported automatically.` : `Not in InventaHQ. An admin can import them.`}>
-              <div style={{ maxHeight: 260, overflowY: 'auto', border: '1px solid var(--gray-100)', borderRadius: 10, padding: '0 12px' }}>
+              <div style={{ maxHeight: data.onlyInXero.length > 5 ? 38 * 5 + 2 : undefined, overflowY: 'auto', border: '1px solid var(--gray-100)', borderRadius: 10, padding: '0 12px' }}>
                 {data.onlyInXero.map(x => (
                   <label key={x.xeroId} style={{ ...rowStyle, cursor: isAdmin ? 'pointer' : 'default' }}>
                     {isAdmin && <input type="checkbox" checked={picked.has(x.xeroId)} onChange={() => toggle(x.xeroId)} style={{ accentColor: 'var(--teal)' }} />}
@@ -208,7 +205,14 @@ function Section({ entity, isAdmin, reloadKey, onChanged }: { entity: Entity; is
           )}
 
           {data.failures.length === 0 && data.onlyInInventa.length === 0 && data.onlyInXero.length === 0 && (
-            <div style={{ fontSize: 13, color: '#047857', marginTop: 14 }}>Everything matches between InventaHQ and Xero.</div>
+            data.notSynced > 0
+              ? <div style={{ fontSize: 13, color: 'var(--gray-500)', marginTop: 14 }}>{data.notSynced} {l.many} will be linked to Xero the next time you sync.</div>
+              : <div style={{ fontSize: 13, color: '#047857', marginTop: 14 }}>Nothing needs attention.</div>
+          )}
+          {data.sharedKey > 0 && (
+            <div style={{ fontSize: 12.5, color: 'var(--gray-500)', marginTop: 14, lineHeight: 1.5 }}>
+              {data.sharedKey} {data.sharedKey === 1 ? `${l.one} in InventaHQ shares` : `${l.many} in InventaHQ share`} {entity === 'contact' ? 'a name' : 'a SKU'} with another {l.one}. Xero keeps one record for each {entity === 'contact' ? 'name' : 'item code'}, so they share it. That is why InventaHQ shows {data.inventa} and Xero shows {data.xero}.
+            </div>
           )}
         </>
       )}
@@ -321,7 +325,7 @@ function PostSection({ kind, isAdmin, reloadKey, postStatus }: { kind: Kind; isA
             Stock adjustments will need to be posted in Xero manually.
           </div>
           {(data.manualCount ?? 0) > 0 && (
-            <ListBlock title={`To post in Xero (${data.manualCount})`} hint="Completed since you said Xero tracks your inventory.">
+            <ListBlock title={`To post in Xero (${data.manualCount})`} hint="Completed since you said Xero tracks your inventory." count={(data.manual ?? []).length}>
               {(data.manual ?? []).map(w => (
                 <div key={w.id} style={rowStyle}>
                   <a href={`${k.href}/${w.id}`} target="_blank" rel="noreferrer" style={{ fontWeight: 600, color: 'var(--slate)' }}>{w.name} ↗</a>
@@ -348,7 +352,7 @@ function PostSection({ kind, isAdmin, reloadKey, postStatus }: { kind: Kind; isA
           </div>
 
           {data.failures.length > 0 && (
-            <ListBlock title={`Failed (${data.failures.length})`} hint={`Fix the reason, then post again from the order or with Sync ${k.title.toLowerCase()}.`}>
+            <ListBlock title={`Failed (${data.failures.length})`} hint={`Fix the reason, then post again from the order or with Sync ${k.title.toLowerCase()}.`} count={data.failures.length} rowH={56}>
               {data.failures.map(f => (
                 <div key={f.id} style={{ ...rowStyle, alignItems: 'flex-start', flexDirection: 'column', gap: 2 }}>
                   <a href={`${k.href}/${f.id}`} target="_blank" rel="noreferrer" style={{ fontWeight: 600, color: 'var(--slate)' }}>{f.name} ↗</a>
@@ -359,18 +363,17 @@ function PostSection({ kind, isAdmin, reloadKey, postStatus }: { kind: Kind; isA
           )}
 
           {data.waiting.length > 0 && (
-            <ListBlock title={`Waiting to post (${data.waiting.length})`} hint={`These will post when you sync ${k.title.toLowerCase()}.`}>
-              {data.waiting.slice(0, 8).map(w => (
+            <ListBlock title={`Waiting to post (${data.waiting.length})`} hint={`These will post when you sync ${k.title.toLowerCase()}.`} count={data.waiting.length}>
+              {data.waiting.map(w => (
                 <div key={w.id} style={rowStyle}>
                   <a href={`${k.href}/${w.id}`} target="_blank" rel="noreferrer" style={{ fontWeight: 600, color: 'var(--slate)' }}>{w.name} ↗</a>
                 </div>
               ))}
-              {data.waiting.length > 8 && <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 6 }}>and {data.waiting.length - 8} more</div>}
             </ListBlock>
           )}
 
           {data.recent.length > 0 && (
-            <ListBlock title="Recently posted">
+            <ListBlock title="Recently posted" count={data.recent.length}>
               {data.recent.map(r => {
                 const rr = r
                 return (

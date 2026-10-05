@@ -2,6 +2,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { createClient } from '@/lib/supabase/server'
 import { redirect, notFound } from 'next/navigation'
 import ViewAdjustment from '@/components/app/view-adjustment'
+import { loadAdjustmentXeroMode, loadXeroTableInfo } from '@/lib/xero/table-info'
 
 export default async function ViewAdjustmentPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -50,5 +51,16 @@ export default async function ViewAdjustmentPage({ params }: { params: Promise<{
 
   const showBins = linesWithBinName.some((l: Record<string, unknown>) => l.bin_id)
 
-  return <ViewAdjustment adjustment={adjustment} lines={linesWithBinName} orgId={m.org_id} trackingFlags={trackingFlags} showBins={showBins} />
+  const [xero, mode] = await Promise.all([loadXeroTableInfo(adminClient, m.org_id, 'adjustment', m.role === 'admin'), loadAdjustmentXeroMode(adminClient, m.org_id)])
+
+  return (
+    <ViewAdjustment
+      adjustment={adjustment}
+      lines={linesWithBinName}
+      orgId={m.org_id}
+      trackingFlags={trackingFlags}
+      showBins={showBins}
+      xero={{ show: xero.show, canPost: xero.canPost, tracked: mode.tracked, mapped: mode.mapped, info: xero.records[id] ?? null }}
+    />
+  )
 }

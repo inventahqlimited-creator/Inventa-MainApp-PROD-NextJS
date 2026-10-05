@@ -7,7 +7,7 @@ primary_region = "syd"
   [build.args]
     NEXT_PUBLIC_SUPABASE_URL      = "https://bhftrrftncxmtadxisgv.supabase.co"
     NEXT_PUBLIC_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJoZnRycmZ0bmN4bXRhZHhpc2d2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTExODI3NjYsImV4cCI6MjEwNjc1ODc2Nn0.ADKLpdHsb9teZgUlXuHUZ_xUJE1n5Re93dEkztSE3c8"
-    NEXT_PUBLIC_APP_URL           = "https://inventa-staging-nextjs.fly.dev"
+    NEXT_PUBLIC_APP_URL           = "https://staging.inventahq.com"
 
 [env]
   PORT     = "3000"

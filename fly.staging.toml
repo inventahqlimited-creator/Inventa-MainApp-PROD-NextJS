@@ -1,0 +1,38 @@
+app            = "inventa-staging-nextjs"
+primary_region = "syd"
+
+[build]
+  dockerfile = "Dockerfile"
+
+  [build.args]
+    NEXT_PUBLIC_SUPABASE_URL      = "https://bhftrrftncxmtadxisgv.supabase.co"
+    NEXT_PUBLIC_SUPABASE_ANON_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJoZnRycmZ0bmN4bXRhZHhpc2d2Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTExODI3NjYsImV4cCI6MjEwNjc1ODc2Nn0.ADKLpdHsb9teZgUlXuHUZ_xUJE1n5Re93dEkztSE3c8"
+    NEXT_PUBLIC_APP_URL           = "https://inventa-staging-nextjs.fly.dev"
+
+[env]
+  PORT     = "3000"
+  NODE_ENV = "production"
+
+[http_service]
+  internal_port        = 3000
+  force_https          = true
+  auto_stop_machines   = "stop"
+  auto_start_machines  = true
+  min_machines_running = 0
+
+  [http_service.concurrency]
+    type       = "requests"
+    hard_limit = 200
+    soft_limit = 150
+
+[[vm]]
+  size   = "shared-cpu-1x"
+  memory = "512mb"
+
+[checks]
+  [checks.health]
+    port     = 3000
+    type     = "http"
+    interval = "15s"
+    timeout  = "10s"
+    path     = "/api/health"

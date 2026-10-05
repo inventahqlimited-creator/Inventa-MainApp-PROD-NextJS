@@ -108,8 +108,8 @@ export default function XeroPreferences() {
                 </select>
                 <div style={hint}>
                   {draft.inventory_tracked
-                    ? 'Xero holds your stock quantities, so InventaHQ does not send stock adjustments. Post each adjustment in Xero yourself.'
-                    : 'InventaHQ holds your stock. Each completed stock adjustment is sent to Xero as a journal.'}
+                    ? 'Xero keeps count of your stock, so InventaHQ won’t send your stock adjustments. When you adjust stock here, make the same adjustment in Xero.'
+                    : 'InventaHQ keeps count of your stock. Each stock adjustment you complete is sent to Xero as a journal.'}
                 </div>
               </div>
               {!draft.inventory_tracked && (
@@ -125,12 +125,12 @@ export default function XeroPreferences() {
             </div>
             {draft.inventory_tracked && (
               <div style={{ ...hint, marginTop: 12, lineHeight: 1.5 }}>
-                Mark your items as tracked in Xero (they are matched by item code). Xero won’t accept an invoice for a tracked item it doesn’t have stock of, so bills are posted before invoices.
+                To make this work, set your products up as tracked items in Xero (we match them by item code). Xero won’t let you sell a tracked item it has no stock of, so InventaHQ sends your purchase bills before your invoices.
               </div>
             )}
             {data.prefs.inventory_tracked !== draft.inventory_tracked && (
               <div style={{ fontSize: 12.5, marginTop: 12, padding: '9px 12px', borderRadius: 8, background: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A' }}>
-                This only affects stock adjustments completed after you save. Earlier ones are left as they are.
+                This only applies to stock adjustments you complete after saving. Past adjustments stay as they are.
               </div>
             )}
 

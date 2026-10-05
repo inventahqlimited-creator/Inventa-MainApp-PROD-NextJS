@@ -10,7 +10,7 @@ import { xeroPost } from './api'
 import { resolveTaxType, type XeroSettings } from './mapping'
 import { runSync } from './sync'
 import { loadInvoicePayload } from '@/lib/invoice/data'
-import type { XeroPrefs } from './prefs'
+import { stockError, type XeroPrefs } from './prefs'
 
 type Row = Record<string, unknown>
 type Db = SupabaseClient
@@ -41,11 +41,22 @@ export function dueInDays(terms: string | null | undefined): number | null {
 }
 export const addDays = (ymd: string, d: number) => { const t = new Date(`${ymd}T00:00:00Z`); t.setUTCDate(t.getUTCDate() + d); return t.toISOString().slice(0, 10) }
 
-export async function saveRecord(db: Db, orgId: string, soId: string, rec: { xero_id: string | null; status: 'synced' | 'failed'; error: string | null; meta?: Record<string, unknown> }, entity: 'invoice' | 'bill' = 'invoice') {
+export async function saveRecord(db: Db, orgId: string, soId: string, rec: { xero_id: string | null; status: 'synced' | 'failed'; error: string | null; meta?: Record<string, unknown> }, entity: 'invoice' | 'bill' | 'adjustment' = 'invoice') {
   await db.from('xero_sync_records').upsert(
     { org_id: orgId, entity, entity_id: soId, synced_at: new Date().toISOString(), meta: {}, ...rec },
     { onConflict: 'org_id,entity,entity_id' },
   )
+}
+
+// Xero refuses to sell a tracked item it has no stock of. Its wording varies, so this is deliberately broad.
+const STOCK_RE = /(insufficient|not enough|exceeds?|greater than|more than).{0,70}(stock|quantity|on hand|available)|(stock|quantity|on hand|available).{0,70}(insufficient|not enough|exceed|negative)|negative (stock|quantity|inventory)/i
+/** When inventory is tracked in Xero, a "not enough stock" refusal becomes our own plain message (the dashboard shows it on hover). */
+export function friendlyXeroError(prefs: XeroPrefs, message: string, itemNames: string[]): string {
+  if (!prefs.inventory_tracked || !STOCK_RE.test(message)) return message
+  const quoted = message.match(/['"‘’“”]([^'"‘’“”]{1,80})['"‘’“”]/)?.[1]
+  const named = itemNames.find(nm => nm && message.toLowerCase().includes(nm.toLowerCase()))
+  const only = [...new Set(itemNames.filter(Boolean))]
+  return stockError(named ?? quoted ?? (only.length === 1 ? only[0] : null))
 }
 
 export type TaxRow = { id: string; name: string; rate: number }
@@ -188,15 +199,16 @@ export async function postInvoice(db: Db, orgId: string, soId: string, settings:
     }],
   }
 
+  const itemNames = lines.map(l => clean(l.product_name))
   const res = await xeroPost<{ Invoices?: { InvoiceID?: string; InvoiceNumber?: string; Total?: number; HasErrors?: boolean; ValidationErrors?: { Message?: string }[] }[] }>(
     db, orgId, '/Invoices?summarizeErrors=false&unitdp=4', body,
   )
-  if (!res.ok) return res.status === 429 || res.status === 401 ? { ok: false, status: res.status, error: res.error } : fail(res.status === 400 ? 422 : 502, res.error)
+  if (!res.ok) return res.status === 429 || res.status === 401 ? { ok: false, status: res.status, error: res.error } : fail(res.status === 400 ? 422 : 502, friendlyXeroError(prefs, res.error, itemNames))
 
   const out = res.data.Invoices?.[0]
   if (!out?.InvoiceID || out.HasErrors) {
     const msg = out?.ValidationErrors?.map(e => e.Message).filter(Boolean).join(' ') || 'Xero did not accept this invoice.'
-    return fail(422, msg)
+    return fail(422, friendlyXeroError(prefs, msg, itemNames))
   }
 
   const xeroTotal = r2(n(out.Total))

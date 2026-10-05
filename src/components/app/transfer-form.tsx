@@ -8,6 +8,7 @@ import { useState, useMemo, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import NumInput from './num-input'
 import { toast } from '@/components/app/toast'
+import OrderHistory from '@/components/app/order-history'
 
 type Loc = { id: string; name: string; address?: string | null; city?: string | null; country?: string | null; phone?: string | null; email?: string | null }
 type Product = { id: string; name: string; sku: string | null; sell_uom: string | null; track_stock: boolean | null; type: string | null }
@@ -112,7 +113,50 @@ function LocationCard({ title, locations, value, onPick, onClear, editable, canC
   )
 }
 
-export default function TransferForm({ transfer, lines: dbLines, locations, products, stockLevels, bins, defaultFromId }: {
+// Actions dropdown in the header of a saved transfer (view mode)
+function TransferActions({ transferId, number, canEdit, canCancel, onEdit, onCancel }: {
+  transferId: string; number: string; canEdit: boolean; canCancel: boolean; onEdit: () => void; onCancel: () => void
+}) {
+  const router = useRouter()
+  const [open, setOpen] = useState(false)
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const box = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const close = (e: MouseEvent) => { if (box.current && !box.current.contains(e.target as Node)) setOpen(false) }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [open])
+
+  const ic = (d: string) => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d={d} /></svg>
+  const item = (label: string, onClick: () => void, icon: React.ReactNode, danger = false) => (
+    <div key={label} className="fp-item" onClick={() => { setOpen(false); onClick() }} style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer', color: danger ? 'var(--danger)' : undefined }}>
+      <span style={{ width: 16, display: 'inline-flex', justifyContent: 'center', flexShrink: 0 }}>{icon}</span>
+      <span style={{ flex: 1 }}>{label}</span>
+    </div>
+  )
+
+  return (
+    <div ref={box} style={{ position: 'relative', display: 'inline-block' }}>
+      <button className="btn btn-outline" style={{ height: 34, marginLeft: 4 }} onClick={() => setOpen(o => !o)} aria-haspopup="menu" aria-expanded={open}>
+        Actions
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
+      </button>
+      {open && (
+        <div className="inv-dropdown" role="menu" style={{ display: 'block', position: 'absolute', right: 0, top: 'calc(100% + 6px)', width: 230, padding: 6, zIndex: 60 }}>
+          {canEdit && item('Edit Order', onEdit, ic('M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z'))}
+          {item('Clone Order', () => router.push(`/transfers/new?clone=${transferId}`), ic('M9 9h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V11a2 2 0 0 1 2-2zM5 15H4a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v1'))}
+          {item('Order History', () => setHistoryOpen(true), ic('M12 8v4l3 3M3.05 11a9 9 0 1 1 .5 4M3 4v5h5'))}
+          {canCancel && <><div style={{ height: 1, background: 'var(--gray-100)', margin: '5px 0' }} />{item('Cancel Order', onCancel, ic('M18 6 6 18M6 6l12 12'), true)}</>}
+        </div>
+      )}
+      {historyOpen && <OrderHistory type="transfer" id={transferId} label={number} onClose={() => setHistoryOpen(false)} />}
+    </div>
+  )
+}
+
+export default function TransferForm({ transfer, lines: dbLines, locations, products, stockLevels, bins, defaultFromId, cloneOf = null }: {
   orgId: string
   transfer: Transfer | null
   lines: DbLine[]
@@ -121,6 +165,8 @@ export default function TransferForm({ transfer, lines: dbLines, locations, prod
   stockLevels: StockLevel[]
   bins: Bin[]
   defaultFromId: string | null
+  /** New transfer started from an existing one (Actions → Clone Order): its locations, notes and lines are copied. */
+  cloneOf?: { from_location_id: string | null; to_location_id: string | null; notes: string | null } | null
 }) {
   const router = useRouter()
   const isNew = !transfer
@@ -133,12 +179,13 @@ export default function TransferForm({ transfer, lines: dbLines, locations, prod
   }))
 
   const [mode, setMode] = useState<'view' | 'edit'>(isNew ? 'edit' : 'view')
-  const [fromId, setFromId] = useState<string | null>(transfer?.from_location_id ?? (isNew ? defaultFromId : null))
-  const [toId, setToId] = useState<string | null>(transfer?.to_location_id ?? null)
+  const [fromId, setFromId] = useState<string | null>(transfer?.from_location_id ?? (isNew ? cloneOf?.from_location_id ?? defaultFromId : null))
+  const [toId, setToId] = useState<string | null>(transfer?.to_location_id ?? (isNew ? cloneOf?.to_location_id ?? null : null))
   const [transferDate, setTransferDate] = useState((transfer?.transfer_date ?? today()).slice(0, 10))
   const [expectedDate, setExpectedDate] = useState((transfer?.expected_date ?? '').slice(0, 10))
-  const [notes, setNotes] = useState(transfer?.notes ?? '')
-  const [lines, setLines] = useState<Line[]>(() => toLines(dbLines))
+  const [notes, setNotes] = useState(transfer?.notes ?? cloneOf?.notes ?? '')
+  // a clone starts with the same items, but nothing picked and no link to the original lines
+  const [lines, setLines] = useState<Line[]>(() => (cloneOf && !transfer ? toLines(dbLines).map(l => ({ ...l, key: newKey(), id: undefined, quantity_picked: 0 })) : toLines(dbLines)))
   const [openDd, setOpenDd] = useState<string | null>(null)
   const [itemSearch, setItemSearch] = useState('')
   const [itemDropOpen, setItemDropOpen] = useState(false)
@@ -318,11 +365,15 @@ export default function TransferForm({ transfer, lines: dbLines, locations, prod
           {isNew
             ? <><span style={{ fontSize: 12, color: 'var(--gray-400)' }}>Draft</span><div style={{ width: 8, height: 8, borderRadius: '50%', background: '#F59E0B' }} /></>
             : <span className={`badge ${statusClass}`} style={statusStyle}>{status}</span>}
-          {!isNew && mode === 'view' && statusEditable && (
-            <button className="btn btn-outline" style={{ height: 34, marginLeft: 4 }} onClick={() => { setError(null); setMode('edit') }}>
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/></svg>
-              Edit
-            </button>
+          {!isNew && mode === 'view' && (
+            <TransferActions
+              transferId={transfer!.id}
+              number={transfer!.tr_number ?? 'Transfer'}
+              canEdit={statusEditable}
+              canCancel={statusEditable}
+              onEdit={() => { setError(null); setMode('edit') }}
+              onCancel={() => setConfirmCancel(true)}
+            />
           )}
         </div>
       </div>
@@ -492,9 +543,6 @@ export default function TransferForm({ transfer, lines: dbLines, locations, prod
 
         {!isNew && mode === 'view' && (
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-            {statusEditable && (
-              <button className="btn btn-outline" style={{ height: 38, color: 'var(--danger)', borderColor: '#FECACA' }} onClick={() => setConfirmCancel(true)}>Cancel Transfer</button>
-            )}
             {status === 'Draft' && (
               <button className="btn btn-primary" style={{ height: 38, padding: '0 20px', fontSize: 14 }} onClick={() => save('Open')} disabled={saving}>
                 {saving ? 'Submitting…' : 'Submit Transfer'}

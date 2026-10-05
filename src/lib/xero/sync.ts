@@ -7,6 +7,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { xeroGet, xeroPost } from './api'
 import { resolveTaxType, type XeroSettings } from './mapping'
+import { logXero } from './audit'
 
 export type Entity = 'contact' | 'product'
 type Row = Record<string, unknown>
@@ -24,6 +25,8 @@ export type Overview = {
   onlyInInventa: OverviewItem[]
   onlyInXero: XeroOnlyItem[]
   lastSyncedAt: string | null
+  /** InventaHQ records that share a name (contacts) or SKU (products) with another record. Xero keeps one record per name, so they share it. */
+  sharedKey: number
 }
 
 const LIST_CAP = 200
@@ -204,7 +207,24 @@ export async function runSync(
   }
 
   await saveLinks(db, orgId, entity, toSave)
+  await logRun(db, orgId, entity, 'synced', summary)
   return { ok: true, summary }
+}
+
+const PLURAL = { contact: 'Contacts', product: 'Products' } as const
+/** One Audit Log line for a sync or import run (nothing is written when nothing happened). */
+async function logRun(db: SupabaseClient, orgId: string, entity: Entity, verb: 'synced' | 'imported', s: { created?: number; imported?: number; linked: number; failed: number | { name: string; error: string }[]; failures?: { name: string; error: string }[] }) {
+  const made = s.created ?? s.imported ?? 0
+  const failList = Array.isArray(s.failed) ? s.failed : (s.failures ?? [])
+  const failed = Array.isArray(s.failed) ? s.failed.length : s.failed
+  if (made + s.linked + failed === 0) return
+  const bits = [made ? `${made} ${verb === 'synced' ? 'created in Xero' : 'imported from Xero'}` : '', s.linked ? `${s.linked} matched to existing Xero ${PLURAL[entity].toLowerCase()}` : '', failed ? `${failed} failed` : ''].filter(Boolean)
+  const names = failList.slice(0, 3).map(f => f.name).join(', ')
+  await logXero(db, orgId, {
+    action: verb === 'synced' ? `Xero ${PLURAL[entity]} Synced` : `Xero ${PLURAL[entity]} Imported`,
+    ref: PLURAL[entity], entity_type: entity === 'contact' ? 'contacts' : 'products', entity_id: null,
+    detail: `${bits.join(' · ')}${names ? ` · Failed: ${names}${failList.length > 3 ? '…' : ''}` : ''}`,
+  })
 }
 
 // ── Overview for the dashboard ──────────────────────────────────────────────
@@ -219,6 +239,9 @@ export async function buildOverview(db: SupabaseClient, orgId: string, entity: E
   for (const x of xero.list) { const k = xeroKey(entity, x); if (k && !byKey.has(k)) byKey.set(k, x.id) }
 
   const used = new Set<string>()
+  const seenKeys = new Set<string>()
+  let sharedKey = 0
+  for (const r of rows) { const k = keyOf(entity, r); if (!k) continue; if (seenKeys.has(k)) sharedKey++; else seenKeys.add(k) }
   const failures: OverviewItem[] = []
   const onlyInInventa: OverviewItem[] = []
   let synced = 0
@@ -253,6 +276,7 @@ export async function buildOverview(db: SupabaseClient, orgId: string, entity: E
       onlyInInventa: onlyInInventa.slice(0, LIST_CAP),
       onlyInXero: onlyInXero.slice(0, LIST_CAP),
       lastSyncedAt,
+      sharedKey,
     },
   }
 }
@@ -344,5 +368,6 @@ export async function importFromXero(
   }
 
   await saveLinks(db, orgId, entity, toSave)
+  await logRun(db, orgId, entity, 'imported', { imported: out.imported, linked: out.linked, failed: out.failed })
   return { ok: true, ...out }
 }

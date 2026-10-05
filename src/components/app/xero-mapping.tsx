@@ -17,6 +17,12 @@ type Payload = {
 
 type Draft = { sales: string; purchases: string; inventory: string; adjustment: string; tax: TaxMap }
 
+// Kept for the rest of the session, so reopening Xero settings is instant. "Refresh from Xero" fetches fresh lists.
+let cached: { at: number; payload: Payload } | null = null
+const FRESH_MS = 5 * 60_000
+/** Call when the Xero organisation changes (connect, disconnect) so old lists are never shown. */
+export function clearXeroMappingCache() { cached = null }
+
 const selectStyle: React.CSSProperties = { width: '100%', height: 36, padding: '0 10px', border: '1.5px solid var(--gray-200)', borderRadius: 8, background: 'var(--white)', fontSize: 13, color: 'var(--slate)' }
 const label: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: 'var(--gray-500)', marginBottom: 6, display: 'block' }
 
@@ -50,17 +56,21 @@ export default function XeroMapping() {
   const [busy, setBusy] = useState(false)
   const [saved, setSaved] = useState<string>('')
 
-  const load = useCallback(async () => {
-    setLoadError(null)
-    try {
-      const res = await fetch('/api/integrations/xero/mapping', { cache: 'no-store' })
-      const body = await res.json().catch(() => ({}))
-      if (!res.ok) { setLoadError(body.error ?? 'Could not load Xero accounts and tax rates.'); return }
-      const p = body as Payload
+  const load = useCallback(async (force = false) => {
+    const apply = (p: Payload) => {
       const d = draftFrom(p, false)
       setData(p)
       setDraft(d)
       setSaved(p.settings.sales_account_code ? JSON.stringify(d) : '')
+    }
+    setLoadError(null)
+    if (!force && cached && Date.now() - cached.at < FRESH_MS) { apply(cached.payload); return }
+    try {
+      const res = await fetch(`/api/integrations/xero/mapping${force ? '?refresh=1' : ''}`, { cache: 'no-store' })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) { setLoadError(body.error ?? 'Could not load Xero accounts and tax rates.'); return }
+      cached = { at: Date.now(), payload: body as Payload }
+      apply(body as Payload)
     } catch {
       setLoadError('Network error — please try again.')
     }
@@ -75,7 +85,7 @@ export default function XeroMapping() {
     return (
       <Card>
         <div style={{ fontSize: 13, color: '#B91C1C', marginBottom: 12 }}>{loadError}</div>
-        <button className="btn btn-outline" style={{ height: 34 }} onClick={() => void load()}>Try again</button>
+        <button className="btn btn-outline" style={{ height: 34 }} onClick={() => void load(true)}>Try again</button>
       </Card>
     )
   }
@@ -98,6 +108,7 @@ export default function XeroMapping() {
       if (!res.ok) { setMsg({ kind: 'err', text: body.error ?? 'Could not save.' }); return }
       setSaved(JSON.stringify(draft))
       setData(d => (d ? { ...d, settings: body.settings } : d))
+      if (cached) cached = { ...cached, payload: { ...cached.payload, settings: body.settings } }
       setMsg({ kind: 'ok', text: 'Saved.' })
     } catch {
       setMsg({ kind: 'err', text: 'Network error — please try again.' })
@@ -170,7 +181,7 @@ export default function XeroMapping() {
             <thead>
               <tr>
                 {['Inventa tax rate', 'Xero rate on sales invoices', 'Xero rate on bills'].map(h => (
-                  <th key={h} style={{ textAlign: 'left', fontSize: 11.5, fontWeight: 600, color: 'var(--gray-400)', padding: '8px 10px 8px 0', borderBottom: '1px solid var(--gray-100)' }}>{h}</th>
+                  <th key={h} style={{ textAlign: 'left', verticalAlign: 'bottom', fontSize: 11.5, fontWeight: 600, letterSpacing: 0, textTransform: 'none', color: 'var(--gray-400)', background: 'transparent', position: 'static', padding: '0 12px 8px 0', borderBottom: '1px solid var(--gray-100)', whiteSpace: 'normal' }}>{h}</th>
                 ))}
               </tr>
             </thead>
@@ -211,7 +222,7 @@ export default function XeroMapping() {
             {busy ? 'Saving…' : 'Save'}
           </button>
           <button className="btn btn-outline" style={{ height: 38 }} disabled={busy} onClick={() => { setDraft(draftFrom(data, true)); setMsg(null) }}>Use suggestions</button>
-          <button className="btn btn-outline" style={{ height: 38 }} disabled={busy} onClick={() => void load()}>Refresh from Xero</button>
+          <button className="btn btn-outline" style={{ height: 38 }} disabled={busy} onClick={() => void load(true)}>Refresh from Xero</button>
         </div>
       ) : (
         <div style={{ fontSize: 12.5, color: 'var(--gray-400)', marginTop: 16 }}>Only admins can change the Xero mapping.</div>

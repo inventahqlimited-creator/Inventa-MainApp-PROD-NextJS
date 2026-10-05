@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import AdjustmentsTable from '@/components/app/adjustments-table'
+import { loadXeroTableInfo } from '@/lib/xero/table-info'
 
 export default async function AdjustmentsPage() {
   const supabase = await createClient()
@@ -40,9 +41,12 @@ export default async function AdjustmentsPage() {
       .order('name'),
   ])
 
+  const xero = await loadXeroTableInfo(adminClient, m.org_id, 'adjustment', m.role === 'admin')
+
   return (
     <AdjustmentsTable
       adjustments={adjustments ?? []}
+      xero={{ show: xero.show, records: xero.records }}
       locations={locations ?? []}
       orgId={m.org_id}
       products={(products ?? []) as {

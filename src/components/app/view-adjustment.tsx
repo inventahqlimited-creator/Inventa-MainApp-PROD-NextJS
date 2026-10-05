@@ -2,6 +2,10 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { toast } from '@/components/app/toast'
+import { XeroStatusBadge, usePostToXero, type XeroRowInfo } from '@/components/app/xero-sync-ui'
+
+type XeroAdj = { show: boolean; canPost: boolean; tracked: boolean; mapped: boolean; info: XeroRowInfo | null }
 
 type Adjustment = {
   id: string
@@ -12,6 +16,7 @@ type Adjustment = {
   adjustment_date: string | null
   reason: string | null
   notes: string | null
+  skip_xero?: boolean | null
 }
 
 type Line = {
@@ -78,7 +83,9 @@ export default function ViewAdjustment({
   orgId,
   trackingFlags = { showSerial: false, showBatch: false, showExpiry: false },
   showBins = false,
+  xero,
 }: {
+  xero?: XeroAdj
   adjustment: Adjustment
   lines: Line[]
   orgId: string
@@ -90,6 +97,9 @@ export default function ViewAdjustment({
   const [saving, setSaving] = useState(false)
   // Bug 6 fix: modal state instead of browser confirm()
   const [modal, setModal] = useState<'cancel' | 'complete' | null>(null)
+  const [xeroInfo, setXeroInfo] = useState<XeroRowInfo | null>(xero?.info ?? null)
+  const [skip, setSkip] = useState(Boolean(initialAdj.skip_xero))
+  const xeroPost = usePostToXero('adjustment', (_id, info) => { setXeroInfo(info) })
 
   const canComplete = adj.status.toLowerCase() === 'draft'
   const canCancel = adj.status.toLowerCase() === 'draft'
@@ -105,8 +115,29 @@ export default function ViewAdjustment({
       body: JSON.stringify({ status }),
     })
     setSaving(false)
-    if (res.ok) setAdj(prev => ({ ...prev, status }))
+    if (res.ok) {
+      setAdj(prev => ({ ...prev, status }))
+      toast.success(status === 'Completed' ? 'Stock adjustment completed' : 'Stock adjustment cancelled')
+    } else {
+      const b = await res.json().catch(() => ({}))
+      toast.error(b.error ?? 'Could not update this adjustment.')
+    }
   }
+
+  async function toggleSkip(v: boolean) {
+    setSkip(v)
+    const res = await fetch(`/api/org/adjustments/${adj.id}`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ skip_xero: v }) })
+    if (!res.ok) {
+      setSkip(!v)
+      const b = await res.json().catch(() => ({}))
+      toast.error(b.error ?? 'Could not save this choice.')
+    } else {
+      toast.success(v ? 'This adjustment won’t be sent to Xero.' : 'This adjustment will be sent to Xero.')
+    }
+  }
+
+  const isDone = adj.status.toLowerCase() === 'completed'
+  const synced = xeroInfo?.status === 'synced'
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
@@ -145,11 +176,20 @@ export default function ViewAdjustment({
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {xero?.show && !xero.tracked && xeroInfo && (xeroInfo.url
+            ? <a href={xeroInfo.url} target="_blank" rel="noreferrer" title="Open journal in Xero" style={{ textDecoration: 'none' }}><XeroStatusBadge info={xeroInfo} /></a>
+            : <XeroStatusBadge info={xeroInfo} />)}
           {statusBadge(adj.status)}
         </div>
       </div>
 
       <div style={{ flex: 1, overflowY: 'auto', padding: '24px 28px 100px' }}>
+
+        {xero?.show && xero.tracked && isDone && (
+          <div style={{ marginBottom: 20, padding: '11px 16px', borderRadius: 10, fontSize: 13, fontWeight: 500, background: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A' }}>
+            Xero tracks your inventory. Post this stock adjustment in Xero manually.
+          </div>
+        )}
 
         <div className="npo-card" style={{ marginBottom: 20 }}>
           <div className="npo-card-title">
@@ -177,6 +217,31 @@ export default function ViewAdjustment({
             )}
           </div>
         </div>
+
+        {xero?.show && !xero.tracked && adj.status.toLowerCase() !== 'cancelled' && (
+          <div className="npo-card" style={{ marginBottom: 20 }}>
+            <div className="npo-card-title">Xero</div>
+            <label style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 13, color: 'var(--slate)', cursor: xero.canPost && !synced ? 'pointer' : 'default' }}>
+              <input type="checkbox" checked={skip} disabled={!xero.canPost || synced} onChange={e => void toggleSkip(e.target.checked)} style={{ accentColor: 'var(--teal)' }} />
+              Don’t send to Xero
+            </label>
+            <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 6, lineHeight: 1.5 }}>
+              {synced
+                ? 'This adjustment has been posted to Xero.'
+                : !xero.mapped
+                  ? 'Choose the inventory asset and stock adjustment accounts in Settings → Xero → Accounts and tax. Completed adjustments are then sent to Xero as a journal.'
+                  : skip
+                    ? 'This adjustment will not be sent to Xero.'
+                    : 'Once completed, this adjustment is sent to Xero as a journal the next time you sync. Tick this for corrections that shouldn’t reach your accounts.'}
+            </div>
+            {xero.canPost && isDone && !synced && !skip && xero.mapped && (
+              <button className="btn btn-outline" style={{ height: 34, marginTop: 12 }} disabled={xeroPost.busyId === adj.id} onClick={() => void xeroPost.post(adj.id)}>
+                {xeroPost.busyId === adj.id ? 'Posting…' : xeroInfo?.status === 'failed' ? 'Post to Xero again' : 'Post to Xero now'}
+              </button>
+            )}
+            {xeroInfo?.status === 'failed' && xeroInfo.error && <div style={{ fontSize: 12.5, color: '#B91C1C', marginTop: 10 }}>{xeroInfo.error}</div>}
+          </div>
+        )}
 
         <div className="npo-card">
           <div className="npo-card-title">

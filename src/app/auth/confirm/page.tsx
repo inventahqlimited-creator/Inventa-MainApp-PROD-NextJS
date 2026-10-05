@@ -13,8 +13,23 @@ export default function AuthConfirmPage() {
       process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
     )
 
+    const query = new URLSearchParams(window.location.search)
+
+    // Link that carries a one-time token (works in any browser): verify it, then continue
+    const tokenHash = query.get('token_hash')
+    const otpType = query.get('type')
+    if (tokenHash && otpType) {
+      supabase.auth
+        .verifyOtp({ token_hash: tokenHash, type: otpType as 'recovery' | 'invite' | 'email' | 'magiclink' })
+        .then(({ error }) => {
+          if (error) { router.replace('/login?error=session_failed'); return }
+          router.replace(otpType === 'recovery' ? '/auth/update-password' : '/dashboard')
+        })
+      return
+    }
+
     // Newer Supabase links arrive as ?code=… (PKCE) — exchange it for a session, then set the password
-    const code = new URLSearchParams(window.location.search).get('code')
+    const code = query.get('code')
     if (code) {
       supabase.auth.exchangeCodeForSession(code).then(({ error }) => {
         router.replace(error ? '/login?error=session_failed' : '/auth/update-password')
@@ -29,7 +44,8 @@ export default function AuthConfirmPage() {
     const type = params.get('type')
 
     if (!accessToken || !refreshToken) {
-      router.replace('/login?error=invalid_link')
+      const errCode = params.get('error_code') ?? params.get('error')
+      router.replace(`/login?error=${errCode ?? 'invalid_link'}`)
       return
     }
 

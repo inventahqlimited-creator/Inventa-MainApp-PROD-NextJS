@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import GlobalSearch from '@/components/app/global-search'
 import ProfileModal, { type ProfileData } from '@/components/app/profile-modal'
+import { signOutIfSessionExpired } from '@/lib/auth/remember'
 
 export default function AppTopbar({
   displayName,
@@ -32,6 +33,7 @@ export default function AppTopbar({
   const [profileOpen, setProfileOpen] = useState(false)
   const [quickOpen, setQuickOpen] = useState(false)
   const [showProfile, setShowProfile] = useState(false)
+  const [signingOut, setSigningOut] = useState(false)
   const [me, setMe] = useState({ name: displayName, avatar: avatarUrl })
   const profileRef = useRef<HTMLDivElement>(null)
   const quickRef = useRef<HTMLDivElement>(null)
@@ -49,9 +51,19 @@ export default function AppTopbar({
     return () => document.removeEventListener('mousedown', handle)
   }, [])
 
+  // "Remember me" unticked: end the session once the browser has been closed; also warm up /login for a quick sign-out
+  useEffect(() => {
+    signOutIfSessionExpired(supabase)
+    router.prefetch('/login')
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   async function handleSignOut() {
-    await supabase.auth.signOut()
-    router.push('/login')
+    if (signingOut) return
+    setSigningOut(true) // show the "Signing out…" screen straight away
+    setProfileOpen(false)
+    try { await supabase.auth.signOut() } catch { /* the cookie is cleared locally even if the network call fails */ }
+    window.location.replace('/login')
   }
 
   const roleLabel =
@@ -65,6 +77,21 @@ export default function AppTopbar({
 
   return (
     <>
+    {signingOut && (
+      <div
+        role="status"
+        aria-live="polite"
+        style={{
+          position: 'fixed', inset: 0, zIndex: 9999, display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center', gap: 14,
+          background: 'rgba(15,45,53,0.92)', color: 'white', fontFamily: 'var(--font-ui)', fontSize: 15,
+        }}
+      >
+        <div style={{ width: 28, height: 28, borderRadius: '50%', border: '3px solid rgba(255,255,255,0.25)', borderTopColor: 'var(--teal-light, #5EEAD4)', animation: 'inv-spin 0.8s linear infinite' }} />
+        Signing out…
+        <style>{'@keyframes inv-spin { to { transform: rotate(360deg) } }'}</style>
+      </div>
+    )}
     <header className="topbar">
       <GlobalSearch canViewProducts={canViewProducts} />
 

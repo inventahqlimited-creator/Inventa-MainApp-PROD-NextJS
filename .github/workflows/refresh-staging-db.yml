@@ -1,17 +1,22 @@
 name: Refresh staging database from production
 
 # Every night (3am NZ summer time / 2am winter) staging's business data is replaced with a copy of
-# production's, so staging is always a day or less behind. Staging logins, Xero connection and
-# Supabase settings are kept. Production is only ever read.
+# production's, including logins, so staging is always a day or less behind. Staging's own Xero
+# connection is kept. Production is only ever read.
 on:
   schedule:
     - cron: "0 14 * * *"
   workflow_dispatch:
-
+  # TEMPORARY: lets us test from the staging branch before this file is released to main.
+  # Delete these two lines before the release, or staging gets wiped on every deploy.
+  push:
+    branches: [staging]
+    paths: [".github/workflows/refresh-staging-db.yml"]
+ 
 concurrency:
   group: refresh-staging-db
   cancel-in-progress: false
-
+ 
 jobs:
   refresh:
     name: Copy production data into staging
@@ -25,7 +30,7 @@ jobs:
         run: |
           sudo /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh -y
           sudo apt-get install -y postgresql-client-17
-
+ 
       - name: Build the copy script
         run: |
           cat > pre.sql <<'SQL'
@@ -33,6 +38,8 @@ jobs:
           -- remember staging's own Xero connection so the wipe doesn't lose it
           CREATE TEMP TABLE _keep_xero AS SELECT * FROM public.xero_connections;
           TRUNCATE TABLE
+            public.org_members,
+            public.users,
             public.adjustment_order_lines,
             public.adjustment_orders,
             public.audit_log,
@@ -76,27 +83,20 @@ jobs:
             public.transfer_orders,
             public.uoms
           CASCADE;
+          -- production's logins replace staging's (this also clears their sessions)
+          TRUNCATE TABLE auth.users CASCADE;
           SQL
-
+ 
           cat > post.sql <<'SQL'
-          -- production's users do not exist in staging, so blank the "created by" links
-          UPDATE public.purchase_orders SET created_by = NULL;
-          UPDATE public.sales_orders SET created_by = NULL;
-          UPDATE public.stock_transfers SET created_by = NULL;
-          UPDATE public.stock_adjustments SET performed_by = NULL;
-          -- every staging login becomes an admin of every copied company
-          INSERT INTO public.org_members (org_id, user_id, role, invite_status, email, accepted_at)
-          SELECT o.id, u.id, 'admin', 'accepted', u.email, now()
-            FROM public.organisations o CROSS JOIN auth.users u
-          ON CONFLICT DO NOTHING;
           -- put staging's Xero connection back
           INSERT INTO public.xero_connections
           SELECT * FROM _keep_xero WHERE org_id IN (SELECT id FROM public.organisations);
           SQL
-
+ 
       - name: Copy production data into staging
         run: |
           pg_dump "$PROD_DB_URL" --data-only --no-owner --no-privileges \
+            -t auth.users -t auth.identities -t public.org_members -t public.users \
             -t public.adjustment_order_lines \
             -t public.adjustment_orders \
             -t public.audit_log \
@@ -141,6 +141,6 @@ jobs:
             -t public.uoms > data.sql
           cat pre.sql data.sql post.sql > full.sql
           psql "$STAGING_DB_URL" -v ON_ERROR_STOP=1 --single-transaction -f full.sql
-
+ 
       - name: Check the copy
-        run: psql "$STAGING_DB_URL" -c "select (select count(*) from public.organisations) as companies, (select count(*) from public.products) as products, (select count(*) from public.org_members) as members;"
+        run: psql "$STAGING_DB_URL" -c "select (select count(*) from public.organisations) as companies, (select count(*) from public.products) as products, (select count(*) from public.org_members) as members, (select count(*) from auth.users) as logins;"

@@ -13,14 +13,29 @@ async function connected(a: NonNullable<Awaited<ReturnType<typeof xeroAuth>>>) {
   return row && row.status === 'connected' ? row : null
 }
 
-export async function GET() {
+// Xero's accounts and tax rates change rarely, so each server keeps them for a few minutes per organisation.
+// "Refresh from Xero" (?refresh=1) and saving bypass it. This is what makes opening the settings quick.
+type Lists = Extract<Awaited<ReturnType<typeof fetchXeroLists>>, { ok: true }>
+const listCache = new Map<string, { at: number; lists: Lists }>()
+const LISTS_TTL_MS = 10 * 60_000
+
+async function xeroLists(db: Parameters<typeof fetchXeroLists>[0], orgId: string, fresh: boolean) {
+  const hit = listCache.get(orgId)
+  if (!fresh && hit && Date.now() - hit.at < LISTS_TTL_MS) return hit.lists
+  const lists = await fetchXeroLists(db, orgId)
+  if (lists.ok) listCache.set(orgId, { at: Date.now(), lists })
+  return lists
+}
+
+export async function GET(req: Request) {
   const a = await xeroAuth()
   if (!a) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   if (!a.enabled) return NextResponse.json({ error: 'Xero isn’t switched on for your organisation.' }, { status: 403 })
   const row = await connected(a)
   if (!row) return NextResponse.json({ error: 'Connect Xero first.' }, { status: 409 })
 
-  const [lists, inventaRates] = await Promise.all([fetchXeroLists(a.db, a.orgId), loadInventaTaxRates(a.db, a.orgId)])
+  const fresh = new URL(req.url).searchParams.get('refresh') === '1'
+  const [lists, inventaRates] = await Promise.all([xeroLists(a.db, a.orgId, fresh), loadInventaTaxRates(a.db, a.orgId)])
   if (!lists.ok) return NextResponse.json({ error: lists.error }, { status: lists.status === 401 ? 409 : 502 })
 
   return NextResponse.json({
@@ -41,7 +56,7 @@ export async function PUT(req: Request) {
   if (!(await connected(a))) return NextResponse.json({ error: 'Connect Xero first.' }, { status: 409 })
 
   const body = await req.json().catch(() => null)
-  const [lists, inventaRates] = await Promise.all([fetchXeroLists(a.db, a.orgId), loadInventaTaxRates(a.db, a.orgId)])
+  const [lists, inventaRates] = await Promise.all([xeroLists(a.db, a.orgId, false), loadInventaTaxRates(a.db, a.orgId)])
   if (!lists.ok) return NextResponse.json({ error: lists.error }, { status: 502 })
 
   const cleaned = cleanSettings(body?.settings, lists, inventaRates.map(r => r.id))

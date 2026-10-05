@@ -13,7 +13,7 @@ type Ev = {
 
 const CATS: Record<string, [string, string]> = {
   Sales: ['#DBEAFE', '#1E40AF'], Purchases: ['#EDE9FE', '#5B21B6'], Inventory: ['#D1FAE5', '#065F46'],
-  Transfers: ['#FEF3C7', '#92400E'], Adjustments: ['#FEF9C3', '#854D0E'], Contacts: ['#FCE7F3', '#9D174D'], Settings: ['#F1F5F9', '#475569'],
+  Transfers: ['#FEF3C7', '#92400E'], Adjustments: ['#FEF9C3', '#854D0E'], Contacts: ['#FCE7F3', '#9D174D'], Settings: ['#F1F5F9', '#475569'], Xero: ['#CFFAFE', '#155E75'],
 }
 const CAT_LIST = Object.keys(CATS)
 const PAGE_SIZE = 15

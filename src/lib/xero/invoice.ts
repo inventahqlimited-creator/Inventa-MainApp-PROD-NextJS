@@ -11,6 +11,7 @@ import { resolveTaxType, type XeroSettings } from './mapping'
 import { runSync } from './sync'
 import { loadInvoicePayload } from '@/lib/invoice/data'
 import { stockError, type XeroPrefs } from './prefs'
+import { auditPost } from './audit'
 
 type Row = Record<string, unknown>
 type Db = SupabaseClient
@@ -42,10 +43,16 @@ export function dueInDays(terms: string | null | undefined): number | null {
 export const addDays = (ymd: string, d: number) => { const t = new Date(`${ymd}T00:00:00Z`); t.setUTCDate(t.getUTCDate() + d); return t.toISOString().slice(0, 10) }
 
 export async function saveRecord(db: Db, orgId: string, soId: string, rec: { xero_id: string | null; status: 'synced' | 'failed'; error: string | null; meta?: Record<string, unknown> }, entity: 'invoice' | 'bill' | 'adjustment' = 'invoice') {
+  // A failure that repeats unchanged (the schedule retrying) is not written to the Audit Log again.
+  const { data: before } = await db.from('xero_sync_records').select('status, error').eq('org_id', orgId).eq('entity', entity).eq('entity_id', soId).maybeSingle()
+  const prev = before as { status?: string; error?: string | null } | null
   await db.from('xero_sync_records').upsert(
     { org_id: orgId, entity, entity_id: soId, synced_at: new Date().toISOString(), meta: {}, ...rec },
     { onConflict: 'org_id,entity,entity_id' },
   )
+  if (rec.status === 'failed' && prev?.status === 'failed' && prev.error === rec.error) return
+  const meta = (rec.meta ?? {}) as { number?: string; status?: string }
+  await auditPost(db, orgId, entity, soId, { status: rec.status, error: rec.error, number: meta.number ?? null, postedAs: meta.status ?? null })
 }
 
 // Xero refuses to sell a tracked item it has no stock of. Its wording varies, so this is deliberately broad.

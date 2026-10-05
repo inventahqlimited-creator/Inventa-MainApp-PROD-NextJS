@@ -3,9 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 
-type SidebarPermissions = {
-  view_products?: boolean
-}
+import { menuAccess, fullSet, type PermissionSet } from '@/lib/permissions'
 
 const MAIN_NAV = [
   {
@@ -139,14 +137,16 @@ function NavLink({ href, label, icon }: { href: string; label: string; icon: Rea
   )
 }
 
-export default function AppSidebar({ permissions = {}, xeroEnabled = false }: { permissions?: SidebarPermissions; xeroEnabled?: boolean }) {
-  // Admins (no permissions object set) get full access
-  const canViewProducts = permissions.view_products !== false
-
-  const visibleModules = MODULE_NAV.filter(item => {
-    if (item.href === '/products') return canViewProducts
-    return true
-  })
+export default function AppSidebar({ perms = fullSet(), xeroEnabled = false }: { perms?: PermissionSet; xeroEnabled?: boolean }) {
+  // Only the entries this person may open
+  const access = menuAccess(perms)
+  const allowed: Record<string, boolean> = {
+    '/dashboard': access.dashboard, '/contacts': access.contacts, '/products': access.products, '/purchases': access.purchases,
+    '/sales': access.sales, '/transfers': access.transfers, '/reports': access.reports, '/audit': access.audit, '/settings': access.settings,
+  }
+  const visibleModules = MODULE_NAV.filter(item => allowed[item.href] !== false)
+  const visibleMain = MAIN_NAV.filter(item => allowed[item.href] !== false)
+  const visibleSystem = SYSTEM_NAV.filter(item => allowed[item.href] !== false)
 
   return (
     <aside className="sidebar">
@@ -168,7 +168,7 @@ export default function AppSidebar({ permissions = {}, xeroEnabled = false }: { 
       <nav className="sidebar-nav" style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
         {/* Dashboard */}
         <div>
-          {MAIN_NAV.map(item => <NavLink key={item.href} {...item} />)}
+          {visibleMain.map(item => <NavLink key={item.href} {...item} />)}
         </div>
 
         {/* Modules */}
@@ -179,7 +179,7 @@ export default function AppSidebar({ permissions = {}, xeroEnabled = false }: { 
         </div>
 
         {/* Integrations — only the ones installed for this organisation */}
-        {xeroEnabled && (
+        {xeroEnabled && access.xero && (
           <div style={{ marginTop: 4 }}>
             <div style={{ height: 13 }} />
             <div className="nav-section-label">Integrations</div>
@@ -194,7 +194,7 @@ export default function AppSidebar({ permissions = {}, xeroEnabled = false }: { 
         <div style={{ paddingBottom: 8 }}>
           <div style={{ height: 1, background: 'rgba(255,255,255,0.08)', margin: '8px 0 4px' }} />
           <div className="nav-section-label">System</div>
-          {SYSTEM_NAV.map(item => <NavLink key={item.href} {...item} />)}
+          {visibleSystem.map(item => <NavLink key={item.href} {...item} />)}
         </div>
       </nav>
     </aside>

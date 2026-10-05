@@ -1,6 +1,7 @@
 // src/app/api/integrations/xero/preferences/route.ts
 // GET — posting choices, schedule, last/next sync times and the organisation's time zone (any member).
 // PUT — save the choices (admin only). Changing the schedule restarts the countdown to the next automatic sync.
+// Changing "inventory tracked in Xero" starts a new cut-off: only stock adjustments completed after that moment are posted.
 import { NextResponse } from 'next/server'
 import { guardXero } from '@/lib/xero/guard'
 import { nextSyncFrom, normalizePrefs } from '@/lib/xero/prefs'
@@ -34,6 +35,8 @@ export async function PUT(req: Request) {
   if ('res' in g) return g.res
   const body = await req.json().catch(() => ({}))
   const prefs = normalizePrefs(body)
+  // the cut-off is the server's to set; the browser's copy is ignored
+  prefs.adjust_from = prefs.inventory_tracked !== g.prefs.inventory_tracked || !g.prefs.adjust_from ? new Date().toISOString() : g.prefs.adjust_from
 
   const patch: Record<string, unknown> = { preferences: prefs }
   if (prefs.schedule !== g.prefs.schedule) patch.next_sync_at = nextSyncFrom(prefs.schedule) // restart the countdown

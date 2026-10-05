@@ -1,24 +1,14 @@
 import { NextResponse } from 'next/server'
-import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/server'
+import { requirePerm } from '@/lib/auth/access'
 
 export async function POST(request: Request) {
-  const supabase = await createClient()
-  const { data: { user } } = await supabase.auth.getUser()
-  if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const g = await requirePerm('manage_users')
+  if ('res' in g) return g.res
+  const m = { org_id: g.access.orgId }
+  const supabase = g.access.db
 
-  const { data: membership } = await supabase
-    .from('org_members')
-    .select('role, org_id')
-    .eq('user_id', user.id)
-    .eq('invite_status', 'accepted')
-    .single()
-
-  const m = membership as { role: string; org_id: string } | null
-  if (!m || m.role !== 'admin') {
-    return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  }
-
-  const body = await request.json()
+  const body = await request.json().catch(() => ({}))
   const { role } = body
   const email = String(body.email ?? '').trim().toLowerCase()
   const str = (v: unknown, max: number) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null)
@@ -29,6 +19,17 @@ export async function POST(request: Request) {
   const validRoles = ['admin', 'manager', 'staff', 'read_only']
   if (!validRoles.includes(role)) {
     return NextResponse.json({ error: 'Invalid role' }, { status: 400 })
+  }
+  // only an Administrator can make another Administrator
+  if (role === 'admin' && !g.access.isAdmin) return NextResponse.json({ error: 'Only an Administrator can invite another Administrator.' }, { status: 403 })
+
+  // one of the organisation's own roles (the fixed role stays "staff" underneath)
+  let customRoleId: string | null = null
+  if (typeof body.custom_role_id === 'string' && body.custom_role_id) {
+    if (role === 'admin') return NextResponse.json({ error: 'An Administrator can’t have a custom role.' }, { status: 400 })
+    const { data: cr } = await supabase.from('org_roles').select('id').eq('id', body.custom_role_id).eq('org_id', m.org_id).maybeSingle()
+    if (!cr) return NextResponse.json({ error: 'That role no longer exists.' }, { status: 400 })
+    customRoleId = body.custom_role_id
   }
 
   const { data: existing } = await supabase
@@ -53,6 +54,7 @@ export async function POST(request: Request) {
     .insert({
       org_id: m.org_id,
       role,
+      custom_role_id: customRoleId,
       email,
       first_name: str(body.first_name, 80),
       last_name: str(body.last_name, 80),

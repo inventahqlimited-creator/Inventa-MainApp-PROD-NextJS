@@ -2,6 +2,8 @@
 // Audit log feed — filters: q, category, user, from, to (ISO). `format=csv` returns every matching row as a CSV file.
 import { NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { loadSecurity } from '@/lib/auth/security-settings'
+import { getAccess, can, denyResponse } from '@/lib/auth/access'
 
 const csvCell = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`
 
@@ -14,9 +16,11 @@ export async function GET(req: Request) {
   const { data: m } = await db.from('org_members').select('org_id, role').eq('user_id', user.id).eq('invite_status', 'accepted').limit(1).maybeSingle()
   if (!m) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
   const { org_id: orgId, role } = m as { org_id: string; role: string }
-  if (!['admin', 'owner'].includes(String(role).toLowerCase())) {
-    return NextResponse.json({ error: 'Only admins can view the audit log.' }, { status: 403 })
-  }
+  void role
+  const access = await getAccess()
+  if (!access || !can(access, 'view_audit_log')) return denyResponse('You don’t have permission to view the audit log.')
+  if (!(await loadSecurity(db, orgId)).audit_log_enabled) return denyResponse('The audit log is turned off for your organisation.')
+  if (new URL(req.url).searchParams.get('format') === 'csv' && !can(access, 'export_audit_log')) return denyResponse('You don’t have permission to export the audit log.')
 
   const sp = new URL(req.url).searchParams
   const page = Math.max(1, Number(sp.get('page')) || 1)

@@ -3,10 +3,13 @@
 // Allocates stock automatically (picking rule, FIFO by default; batch / serial / expiry / bin included) and closes the order.
 import { NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { requirePerm } from '@/lib/auth/access'
 
 type Params = { params: Promise<{ id: string }> }
 
 export async function POST(_req: Request, { params }: Params) {
+  const permGate = await requirePerm('close_sales')
+  if ('res' in permGate) return permGate.res
   const { id } = await params
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()

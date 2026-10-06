@@ -56,6 +56,7 @@ const TABS = [
   { key: 'transfers', label: 'Transfers' },
   { key: 'sales', label: 'Sales' },
   { key: 'users', label: 'Users' },
+  { key: 'notifications', label: 'Notifications' },
   { key: 'security', label: 'Security' },
   { key: 'integrations', label: 'Integrations' },
 ] as const
@@ -802,6 +803,322 @@ function ContactsTab({ taxRates, currencies, locations, priceLevels, orgId, show
 
 import XeroSettings, { type XeroConnection, type XeroFlash } from '@/components/app/xero-settings'
 import RolesModal from '@/components/app/roles-modal'
+import { normalizeSecurity, SESSION_TIMEOUT_OPTIONS, sessionTimeoutLabel, parseIpRule, isIpAllowed, MAX_IP_RULES, type SecuritySettings } from '@/lib/auth/security-settings'
+import { normalizeNotifications, type NotificationSettings, type OverdueRule } from '@/lib/notifications/config'
+import { useCan } from '@/components/app/permissions-provider'
+import { normalizePolicy, ROTATION_DAYS, MIN_LENGTH_FLOOR, MIN_LENGTH_CAP, type PasswordPolicy } from '@/lib/auth/password-policy'
+
+// ── Notifications ─────────────────────────────────────────────────────
+
+function NotificationsCard({ initial, canManage, showToast }: {
+  initial: unknown; canManage: boolean; showToast: (type: 'success' | 'error', msg: string) => void
+}) {
+  const [n, setN] = useState<NotificationSettings>(() => normalizeNotifications(initial))
+  const [warnTxt, setWarnTxt] = useState({ sales: String(n.sales_overdue.warn_days), purchase: String(n.purchase_overdue.warn_days) })
+  const [critTxt, setCritTxt] = useState({ sales: String(n.sales_overdue.critical_days), purchase: String(n.purchase_overdue.critical_days) })
+  const [saving, setSaving] = useState(false)
+
+  async function save() {
+    const build = (r: OverdueRule, w: string, c: string): OverdueRule => ({ ...r, warn_days: parseInt(w) || 1, critical_days: parseInt(c) || 5 })
+    const next: NotificationSettings = {
+      ...n,
+      sales_overdue: build(n.sales_overdue, warnTxt.sales, critTxt.sales),
+      purchase_overdue: build(n.purchase_overdue, warnTxt.purchase, critTxt.purchase),
+    }
+    for (const r of [next.sales_overdue, next.purchase_overdue]) {
+      if (r.critical_days < r.warn_days) { showToast('error', 'Critical days must be the same as or more than the first alert'); return }
+    }
+    setSaving(true)
+    const res = await fetch('/api/org/notification-settings', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notification_settings: next }),
+    })
+    setSaving(false)
+    if (res.ok) {
+      const d = await res.json().catch(() => null)
+      const saved = normalizeNotifications(d?.notification_settings ?? next)
+      setN(saved)
+      setWarnTxt({ sales: String(saved.sales_overdue.warn_days), purchase: String(saved.purchase_overdue.warn_days) })
+      setCritTxt({ sales: String(saved.sales_overdue.critical_days), purchase: String(saved.purchase_overdue.critical_days) })
+      showToast('success', 'Notification settings saved')
+    } else showToast('error', 'Failed to save')
+  }
+
+  const daysRow = (label: string, value: string, set: (v: string) => void) => (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'var(--white)', border: '1.5px solid var(--gray-200)', borderRadius: 9 }}>
+      <span style={{ fontSize: 13, color: 'var(--slate)' }}>{label}</span>
+      <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--gray-400)' }}>
+        <input className="modal-input" type="number" min={1} max={365} value={value} disabled={!canManage} onChange={e => set(e.target.value)} style={{ width: 80 }} /> days
+      </span>
+    </div>
+  )
+
+  const overdue = (key: 'sales' | 'purchase', label: string, sub: string) => {
+    const r = key === 'sales' ? n.sales_overdue : n.purchase_overdue
+    const field = key === 'sales' ? 'sales_overdue' : 'purchase_overdue'
+    return (
+      <>
+        <ToggleRow label={label} sub={sub} active={r.enabled} onChange={v => canManage && setN(p => ({ ...p, [field]: { ...p[field], enabled: v } }))} />
+        {r.enabled && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingLeft: 16 }}>
+            {daysRow('Send an alert when overdue by', warnTxt[key], v => setWarnTxt(t => ({ ...t, [key]: v })))}
+            {daysRow('Make it critical when overdue by', critTxt[key], v => setCritTxt(t => ({ ...t, [key]: v })))}
+          </div>
+        )}
+      </>
+    )
+  }
+
+  return (
+    <Card
+      title="Notifications"
+      subtitle="Choose which alerts appear under the bell"
+      action={canManage ? <SaveBtn onClick={save} saving={saving} /> : undefined}
+    >
+      <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 10, opacity: canManage ? 1 : 0.75 }}>
+        <ToggleRow
+          label="Low stock"
+          sub="Alert when a product's stock on hand falls below its minimum stock level (critical when it runs out)"
+          active={n.low_stock.enabled}
+          onChange={v => canManage && setN(p => ({ ...p, low_stock: { enabled: v } }))}
+        />
+        {overdue('sales', 'Overdue sales orders', 'Alert when an open sales order is past its delivery date')}
+        {overdue('purchase', 'Late purchase orders', 'Alert when a purchase order has not been received by its expected delivery date')}
+        <div style={{ fontSize: 12, color: 'var(--gray-400)', lineHeight: 1.5 }}>
+          Everyone sees the alerts for the areas they can access. Marking an alert as read only affects your own browser.
+          {!canManage && ' You need the "Manage company settings" permission to change this.'}
+        </div>
+      </div>
+    </Card>
+  )
+}
+
+
+// ── Security: password policy ─────────────────────────────────────────
+
+function PasswordPolicyCard({ initial, canManage, showToast }: {
+  initial: unknown; canManage: boolean; showToast: (type: 'success' | 'error', msg: string) => void
+}) {
+  const [policy, setPolicy] = useState<PasswordPolicy>(() => normalizePolicy(initial))
+  const [saving, setSaving] = useState(false)
+  const [lenText, setLenText] = useState(String(policy.strength.min_length))
+  const rot = policy.rotation
+  const str = policy.strength
+
+  function setStrength(patch: Partial<PasswordPolicy['strength']>) { setPolicy(p => ({ ...p, strength: { ...p.strength, ...patch } })) }
+  function setRotation(patch: Partial<PasswordPolicy['rotation']>) { setPolicy(p => ({ ...p, rotation: { ...p.rotation, ...patch } })) }
+
+  async function save() {
+    const len = Math.min(MIN_LENGTH_CAP, Math.max(MIN_LENGTH_FLOOR, parseInt(lenText) || MIN_LENGTH_FLOOR))
+    const next = { ...policy, strength: { ...policy.strength, min_length: len } }
+    setLenText(String(len))
+    setSaving(true)
+    const res = await fetch('/api/org/security', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password_policy: next }),
+    })
+    setSaving(false)
+    if (res.ok) {
+      const d = await res.json().catch(() => null)
+      setPolicy(normalizePolicy(d?.password_policy ?? next))
+      showToast('success', 'Password policy saved')
+    } else showToast('error', 'Failed to save')
+  }
+
+  const rowStyle = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'var(--gray-50)', border: '1.5px solid var(--gray-200)', borderRadius: 9, cursor: canManage ? 'pointer' : 'default' } as const
+  const checks: [keyof PasswordPolicy['strength'], string][] = [
+    ['upper', 'Require uppercase letter'], ['lower', 'Require lowercase letter'],
+    ['number', 'Require number'], ['special', 'Require special character'],
+  ]
+
+  return (
+    <Card
+      title="Password Policy"
+      subtitle="Enforce password strength and how often passwords change"
+      action={canManage ? <SaveBtn onClick={save} saving={saving} /> : undefined}
+    >
+      <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 10, opacity: canManage ? 1 : 0.75 }}>
+        <ToggleRow
+          label="Force new password"
+          sub={rot.enabled ? `Everyone must set a new password every ${rot.days} days` : 'Off — passwords never expire'}
+          active={rot.enabled}
+          onChange={v => canManage && setRotation({ enabled: v })}
+        />
+        {rot.enabled && (
+          <div style={{ ...rowStyle, cursor: 'default' }}>
+            <span style={{ fontSize: 13, color: 'var(--slate)' }}>Change password</span>
+            <div style={{ width: 180 }}>
+              <Select
+                value={String(rot.days)} disabled={!canManage}
+                onChange={v => setRotation({ days: Number(v) })}
+                options={ROTATION_DAYS.map(d => ({ value: String(d), label: `Every ${d} days` }))}
+              />
+            </div>
+          </div>
+        )}
+
+        <ToggleRow
+          label="Password strength requirements"
+          sub={str.enabled ? 'New passwords must meet the rules below' : 'Off — passwords only need 8 characters'}
+          active={str.enabled}
+          onChange={v => canManage && setStrength({ enabled: v })}
+        />
+        {str.enabled && (
+          <>
+            <div style={{ ...rowStyle, cursor: 'default' }}>
+              <span style={{ fontSize: 13, color: 'var(--slate)' }}>Minimum characters</span>
+              <input
+                className="modal-input" type="number" min={MIN_LENGTH_FLOOR} max={MIN_LENGTH_CAP}
+                value={lenText} disabled={!canManage}
+                onChange={e => setLenText(e.target.value)}
+                style={{ width: 90, background: 'var(--white)' }}
+              />
+            </div>
+            {checks.map(([key, label]) => (
+              <label key={key} style={rowStyle}>
+                <span style={{ fontSize: 13, color: 'var(--slate)' }}>{label}</span>
+                <input
+                  type="checkbox" checked={Boolean(str[key])} disabled={!canManage}
+                  onChange={e => setStrength({ [key]: e.target.checked })}
+                  style={{ accentColor: 'var(--teal)', width: 15, height: 15, cursor: canManage ? 'pointer' : 'default' }}
+                />
+              </label>
+            ))}
+          </>
+        )}
+        <div style={{ fontSize: 12, color: 'var(--gray-400)', lineHeight: 1.5 }}>
+          Applies when someone sets or resets a password. Existing passwords stay valid until they change them.
+          {!canManage && ' You need the "Manage security settings" permission to change this.'}
+        </div>
+      </div>
+    </Card>
+  )
+}
+
+
+// ── Security: sessions, audit log, IP restrictions ────────────────────
+
+async function saveSecurity(patch: Partial<SecuritySettings>): Promise<{ ok: boolean; error?: string; settings?: SecuritySettings }> {
+  const res = await fetch('/api/org/security', {
+    method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ security_settings: patch }),
+  })
+  const d = await res.json().catch(() => ({}))
+  return res.ok ? { ok: true, settings: normalizeSecurity(d.security_settings) } : { ok: false, error: d.error ?? 'Failed to save' }
+}
+
+function SessionsAuditCard({ router, settings, setSettings, canManage, showToast }: {
+  router: { refresh: () => void }; settings: SecuritySettings; setSettings: (s: SecuritySettings) => void; canManage: boolean
+  showToast: (type: 'success' | 'error', msg: string) => void
+}) {
+  async function change(patch: Partial<SecuritySettings>, okMsg: string) {
+    if (!canManage) return
+    const r = await saveSecurity(patch)
+    if (r.ok && r.settings) { setSettings(r.settings); showToast('success', okMsg); if ('audit_log_enabled' in patch) router.refresh() }
+    else showToast('error', r.error ?? 'Failed to save')
+  }
+  return (
+    <Card title="Sessions & Audit Log" subtitle="Manage sign-in sessions and activity tracking">
+      <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 10, opacity: canManage ? 1 : 0.75 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', background: 'var(--gray-50)', border: '1.5px solid var(--gray-200)', borderRadius: 10 }}>
+          <div>
+            <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--slate)', fontFamily: 'var(--font-display)' }}>Session Timeout</div>
+            <div style={{ fontSize: 12.5, color: 'var(--gray-400)', marginTop: 2 }}>Automatically sign people out after inactivity</div>
+          </div>
+          <div style={{ width: 160 }}>
+            <Select
+              value={String(settings.session_timeout_minutes)} disabled={!canManage}
+              onChange={v => change({ session_timeout_minutes: Number(v) }, 'Session timeout saved')}
+              options={SESSION_TIMEOUT_OPTIONS.map(m => ({ value: String(m), label: sessionTimeoutLabel(m) }))}
+            />
+          </div>
+        </div>
+        <ToggleRow
+          label="Audit Log"
+          sub={settings.audit_log_enabled ? 'On — the Audit Log page is available. Activity is always recorded.' : 'Off — the Audit Log is hidden from the menu and cannot be opened. Activity is still recorded.'}
+          active={settings.audit_log_enabled}
+          onChange={v => change({ audit_log_enabled: v }, v ? 'Audit log turned on' : 'Audit log turned off')}
+        />
+      </div>
+    </Card>
+  )
+}
+
+function IpRestrictionsCard({ settings, setSettings, canManage, currentIp, showToast }: {
+  settings: SecuritySettings; setSettings: (s: SecuritySettings) => void; canManage: boolean; currentIp: string
+  showToast: (type: 'success' | 'error', msg: string) => void
+}) {
+  const [adding, setAdding] = useState(false)
+  const [value, setValue] = useState('')
+  const [label, setLabel] = useState('')
+  const [busy, setBusy] = useState(false)
+  const rules = settings.ip_rules
+  const mineAllowed = isIpAllowed(settings, currentIp)
+
+  async function persist(next: SecuritySettings['ip_rules'], okMsg: string) {
+    setBusy(true)
+    const r = await saveSecurity({ ip_rules: next })
+    setBusy(false)
+    if (r.ok && r.settings) { setSettings(r.settings); showToast('success', okMsg); return true }
+    showToast('error', r.error ?? 'Failed to save')
+    return false
+  }
+  async function add() {
+    const v = parseIpRule(value)
+    if (!v) { showToast('error', 'Enter a valid IP address or range, e.g. 203.0.113.5 or 203.0.113.0/24'); return }
+    if (rules.length >= MAX_IP_RULES) { showToast('error', `At most ${MAX_IP_RULES} rules`); return }
+    if (rules.some(r => r.value === v)) { showToast('error', 'That address is already in the list'); return }
+    // The first rule switches restrictions on — it must include the person adding it
+    const ok = await persist([...rules, { value: v, label: label.trim(), added_at: new Date().toISOString() }], 'IP rule added')
+    if (ok) { setValue(''); setLabel(''); setAdding(false) }
+  }
+
+  return (
+    <Card
+      title="IP Restrictions"
+      subtitle="Limit access to specific IP addresses or ranges"
+      action={canManage ? <button className="btn btn-primary" style={{ height: 32, fontSize: 12.5 }} onClick={() => setAdding(a => !a)}>{adding ? 'Cancel' : '+ Add IP Rule'}</button> : undefined}
+    >
+      <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {adding && canManage && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1.4fr 1.4fr auto auto', gap: 8, alignItems: 'center' }}>
+            <input className="modal-input" placeholder="IP or range, e.g. 203.0.113.0/24" value={value} onChange={e => setValue(e.target.value)} />
+            <input className="modal-input" placeholder="Label (optional), e.g. Office" value={label} onChange={e => setLabel(e.target.value)} />
+            <button className="btn btn-outline" style={{ height: 36, fontSize: 12.5 }} onClick={() => setValue(currentIp)} type="button">Use my IP</button>
+            <button className="btn btn-primary" style={{ height: 36, fontSize: 12.5 }} onClick={add} disabled={busy} type="button">Add</button>
+          </div>
+        )}
+        {rules.length === 0 ? (
+          <div style={{ textAlign: 'center', padding: 28, color: 'var(--gray-400)', fontSize: 13 }}>
+            No IP restrictions configured. All IPs can access this workspace.
+          </div>
+        ) : (
+          rules.map(r => (
+            <div key={r.value} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'var(--gray-50)', border: '1.5px solid var(--gray-200)', borderRadius: 9 }}>
+              <div>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--slate)', fontFamily: 'monospace' }}>{r.value}</div>
+                {r.label && <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 1 }}>{r.label}</div>}
+              </div>
+              {canManage && (
+                <button
+                  type="button" disabled={busy}
+                  onClick={() => persist(rules.filter(x => x.value !== r.value), 'IP rule removed')}
+                  style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--gray-400)', fontSize: 12.5 }}
+                >Remove</button>
+              )}
+            </div>
+          ))
+        )}
+        <div style={{ fontSize: 12, color: 'var(--gray-400)', lineHeight: 1.5 }}>
+          Your current address: <span style={{ fontFamily: 'monospace' }}>{currentIp}</span>{rules.length > 0 && (mineAllowed ? ' — allowed' : ' — not on the list')}.
+          {' '}With one or more rules, only these addresses can sign in to or use this workspace. You can&apos;t save a list that excludes your own address.
+          {!canManage && ' You need the "Manage security settings" permission to change this.'}
+        </div>
+      </div>
+    </Card>
+  )
+}
+
 
 export default function SettingsClient({
   org,
@@ -816,6 +1133,7 @@ export default function SettingsClient({
   xeroConnection = null,
   initialXero = false,
   xeroFlash,
+  currentIp = 'unknown',
 }: {
   org: Org
   locations: Location[]
@@ -829,8 +1147,12 @@ export default function SettingsClient({
   xeroConnection?: XeroConnection
   initialXero?: boolean
   xeroFlash?: XeroFlash
+  currentIp?: string
 }) {
   const router = useRouter()
+  const canManageSecurity = useCan('manage_security')
+  const canManageCompany = useCan('manage_company')
+  const [security, setSecurity] = useState<SecuritySettings>(() => normalizeSecurity(org.security_settings))
   const [tab, setTab] = useState<Tab>((initialTab as Tab) ?? 'general')
   const xeroInstalled = Boolean(org.xero_enabled)
   const [xeroOpen, setXeroOpen] = useState(initialXero && Boolean(org.xero_enabled))
@@ -1003,7 +1325,7 @@ export default function SettingsClient({
 
   // Purchases settings
   const [allowOverReceive, setAllowOverReceive] = useState(Boolean(org.allow_over_receive))
-  const [landingCostMethod, setLandingCostMethod] = useState(String(org.landing_cost_method ?? 'value'))
+  const [landingCostMethod, setLandingCostMethod] = useState(org.landing_cost_method === 'quantity' ? 'quantity' : 'value')
   const [poPrefix, setPoPrefix] = useState(String(org.po_prefix ?? 'PO-'))
   const [poSuffix, setPoSuffix] = useState(String(org.po_suffix ?? ''))
   const [poStart, setPoStart] = useState(String(org.po_start ?? '1'))
@@ -1665,12 +1987,11 @@ export default function SettingsClient({
                 <div style={{ padding: '14px 16px', background: 'var(--gray-50)', border: '1.5px solid var(--gray-200)', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <div>
                     <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--slate)', fontFamily: 'var(--font-display)' }}>Landing Cost Allocation Method</div>
-                    <div style={{ fontSize: 12.5, color: 'var(--gray-400)', marginTop: 2 }}>How freight &amp; additional charges are spread across received lines</div>
+                    <div style={{ fontSize: 12.5, color: 'var(--gray-400)', marginTop: 2 }}>How a purchase order&apos;s additional costs (freight, duty, etc.) are spread across its lines to give each product its landed cost</div>
                   </div>
                   <select className="modal-input" value={landingCostMethod} onChange={e => setLandingCostMethod(e.target.value)} style={{ width: 180, cursor: 'pointer' }}>
                     <option value="value">By Value</option>
                     <option value="quantity">By Quantity</option>
-                    <option value="weight">By Weight / Volume</option>
                   </select>
                 </div>
               </div>
@@ -2054,11 +2375,18 @@ export default function SettingsClient({
           </Card>
         )}
 
+        {/* ── NOTIFICATIONS ── */}
+        {tab === 'notifications' && (
+          <NotificationsCard initial={org.notification_settings} canManage={canManageCompany} showToast={showToast} />
+        )}
+
         {/* ── SECURITY ── */}
         {tab === 'security' && (
-          <Card title="Security" subtitle="Account security settings">
-            <div style={{ padding: '20px', color: 'var(--gray-400)', fontSize: 13, textAlign: 'center' }}>Security settings coming soon.</div>
-          </Card>
+          <>
+            <SessionsAuditCard router={router} settings={security} setSettings={setSecurity} canManage={canManageSecurity} showToast={showToast} />
+            <IpRestrictionsCard settings={security} setSettings={setSecurity} canManage={canManageSecurity} currentIp={currentIp} showToast={showToast} />
+            <PasswordPolicyCard initial={org.password_policy} canManage={canManageSecurity} showToast={showToast} />
+          </>
         )}
 
         {/* ── INTEGRATIONS ── */}
@@ -2070,8 +2398,10 @@ export default function SettingsClient({
             <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
               {[
                 { name: 'Xero', sub: 'Sync invoices, bills and contacts with Xero accounting', icon: '💼', logo: '/integrations/xero.png', status: xeroInstalled ? 'Installed' : 'Talk to sales' },
-                { name: 'Starshipit', sub: 'Generate shipping labels and track parcels', icon: '📦', status: 'Coming soon' },
-                { name: 'Shopify', sub: 'Sync orders and inventory with your Shopify store', icon: '🛒', status: 'Coming soon' },
+                { name: 'Email Autobot', sub: 'InventaHQ’s native email automation bot to simplify workflows', icon: '🤖', logo: '/integrations/email-autobot.svg', status: 'Coming soon' },
+                { name: 'MYOB', sub: 'Sync invoices, bills and contacts with MYOB accounting', icon: '💼', logo: '/integrations/myob.png', status: 'Coming soon' },
+                { name: 'Starshipit', sub: 'Generate shipping labels and track parcels', icon: '📦', logo: '/integrations/starshipit.png', status: 'Coming soon' },
+                { name: 'Shopify', sub: 'Sync orders and inventory with your Shopify store', icon: '🛒', logo: '/integrations/shopify.svg', status: 'Coming soon' },
               ].map((int: { name: string; sub: string; icon: string; logo?: string; status: string }) => {
                 const isXero = int.name === 'Xero'
                 const open = isXero && xeroInstalled

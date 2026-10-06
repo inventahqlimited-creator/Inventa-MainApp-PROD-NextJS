@@ -2,8 +2,11 @@
 import { createAdminClient } from '@/lib/supabase/server'
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
+import { requirePerm } from '@/lib/auth/access'
 
 export async function POST(req: Request) {
+  const permGate = await requirePerm('manage_company')
+  if ('res' in permGate) return permGate.res
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

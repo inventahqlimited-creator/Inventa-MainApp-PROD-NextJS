@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { pick, badForeignKey, PRODUCT_FIELDS, PRODUCT_LINKS } from '@/lib/api/sanitize'
+import { requirePerm } from '@/lib/auth/access'
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -18,15 +20,20 @@ async function getOrg() {
 }
 
 export async function PATCH(request: Request, { params }: Params) {
+  const permGate = await requirePerm('edit_products')
+  if ('res' in permGate) return permGate.res
   const { id } = await params
   const ctx = await getOrg()
   if (!ctx) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  const body = await request.json()
+  const clean = pick(await request.json().catch(() => null), PRODUCT_FIELDS)
+  if (!clean) return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
+  const badFk = await badForeignKey(ctx.adminClient, ctx.org_id, clean, PRODUCT_LINKS)
+  if (badFk) return NextResponse.json({ error: `Invalid ${badFk}` }, { status: 400 })
   const { error } = await ctx.adminClient
     .from('products')
-    .update(body)
+    .update(clean)
     .eq('id', id)
     .eq('org_id', ctx.org_id)
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) { console.error('products update failed', error.message); return NextResponse.json({ error: 'Could not save the product' }, { status: 500 }) }
   return NextResponse.json({ success: true })
 }

@@ -6,6 +6,9 @@
 import { NextResponse } from 'next/server'
 import { redirect } from 'next/navigation'
 import { createAdminClient, createClient } from '@/lib/supabase/server'
+import { headers } from 'next/headers'
+import { clientIp } from '@/lib/rate-limit'
+import { isIpAllowed, loadSecurity } from '@/lib/auth/security-settings'
 import { homePath, resolvePermissions, type PermKey, type PermissionSet } from '@/lib/permissions'
 
 export type Access = {
@@ -19,7 +22,8 @@ export type Access = {
   db: ReturnType<typeof createAdminClient>
 }
 
-export async function getAccess(): Promise<Access | null> {
+/** Signed-in person and their permissions, without the network (IP) check. Use getAccess() everywhere else. */
+export async function getAccessUnchecked(): Promise<Access | null> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null
@@ -51,6 +55,20 @@ export async function getAccess(): Promise<Access | null> {
   }
 }
 
+/** Same as getAccessUnchecked, but returns null when the organisation limits access to certain IP addresses and this isn't one. */
+export async function getAccess(): Promise<Access | null> {
+  const a = await getAccessUnchecked()
+  if (!a) return null
+  if (!(await networkAllowed(a))) return null
+  return a
+}
+
+export async function networkAllowed(a: Pick<Access, 'orgId' | 'db'>): Promise<boolean> {
+  const sec = await loadSecurity(a.db, a.orgId)
+  if (!sec.ip_rules.length) return true
+  return isIpAllowed(sec, clientIp(await headers()))
+}
+
 export const can = (a: Pick<Access, 'perms'>, ...keys: PermKey[]) => keys.every(k => a.perms[k])
 export const canAny = (a: Pick<Access, 'perms'>, ...keys: PermKey[]) => keys.some(k => a.perms[k])
 
@@ -70,6 +88,23 @@ export async function requireAnyPerm(...keys: PermKey[]): Promise<{ access: Acce
   const access = await getAccess()
   if (!access) return { res: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) }
   if (!canAny(access, ...keys)) return { res: deny() }
+  return { access }
+}
+
+/**
+ * For PATCH routes that both edit an order and cancel it.
+ * A payload that only sets status "Cancelled" needs the cancel permission; anything else needs the edit permission.
+ * A payload that does both needs both. Reads a copy of the body, so the route can still read it.
+ */
+export async function requireEditOrCancel(request: Request, edit: PermKey, cancel: PermKey): Promise<{ access: Access } | { res: NextResponse }> {
+  const access = await getAccess()
+  if (!access) return { res: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) }
+  const body = (await request.clone().json().catch(() => null)) as Record<string, unknown> | null
+  const status = typeof body?.status === 'string' ? body.status.toLowerCase() : null
+  const cancelling = status === 'cancelled'
+  const editing = !cancelling || Object.keys(body ?? {}).some(k => k !== 'status')
+  if (cancelling && !can(access, cancel)) return { res: deny() }
+  if (editing && !can(access, edit)) return { res: deny() }
   return { access }
 }
 

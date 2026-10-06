@@ -1,6 +1,8 @@
 import { createAdminClient } from '@/lib/supabase/server'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
+import { headers } from 'next/headers'
+import { clientIp } from '@/lib/rate-limit'
 import SettingsClient from '@/components/app/settings-client'
 
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ tab?: string; xero?: string; xero_ok?: string; xero_error?: string }> }) {
@@ -97,6 +99,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
       orgId={m.org_id}
       isAdmin={m.role === 'admin'}
       initialTab={tab ?? 'general'}
+      currentIp={clientIp(await headers())}
       hasTxns={hasTxns}
       members={members}
       xeroConnection={(xeroRow as never) ?? null}

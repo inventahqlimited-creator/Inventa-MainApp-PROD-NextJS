@@ -2,6 +2,7 @@
 // Who is calling, which organisation they belong to, and whether they may manage Xero for it.
 import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { setActor } from './audit'
+import { getAccess, can } from '@/lib/auth/access'
 
 export type XeroAuth = {
   userId: string
@@ -9,6 +10,13 @@ export type XeroAuth = {
   isAdmin: boolean
   enabled: boolean // Xero switched on for this organisation (organisations.xero_enabled)
   db: ReturnType<typeof createAdminClient>
+}
+
+/** May this person see the Xero page and status? Admins always; others need "View Xero page and status". */
+export async function canViewXero(a: XeroAuth): Promise<boolean> {
+  if (a.isAdmin) return true
+  const access = await getAccess()
+  return !!access && can(access, 'xero_view')
 }
 
 export async function xeroAuth(): Promise<XeroAuth | null> {

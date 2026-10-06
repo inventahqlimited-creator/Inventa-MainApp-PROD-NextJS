@@ -1,6 +1,7 @@
 // src/app/api/org/purchase-settings/route.ts
 import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
+import { requirePerm } from '@/lib/auth/access'
 
 async function getAuth() {
   const supabase = await createClient()
@@ -24,6 +25,8 @@ const ALLOWED_KEYS = [
 ]
 
 export async function PATCH(req: Request) {
+  const permGate = await requirePerm('manage_purchase_settings')
+  if ('res' in permGate) return permGate.res
   const auth = await getAuth()
   if (!auth) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -31,6 +34,9 @@ export async function PATCH(req: Request) {
   const updates: Record<string, unknown> = {}
   for (const key of ALLOWED_KEYS) {
     if (body[key] !== undefined) updates[key] = body[key]
+  }
+  if ('landing_cost_method' in updates && !['value', 'quantity'].includes(String(updates.landing_cost_method))) {
+    return NextResponse.json({ error: 'Invalid landing cost method' }, { status: 400 })
   }
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: 'No valid fields' }, { status: 400 })

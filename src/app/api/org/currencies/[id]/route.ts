@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { requirePerm } from '@/lib/auth/access'
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -13,6 +14,8 @@ async function getOrg() {
 }
 
 export async function DELETE(_req: Request, { params }: Params) {
+  const permGate = await requirePerm('manage_company')
+  if ('res' in permGate) return permGate.res
   const { id } = await params
   const ctx = await getOrg()
   if (!ctx) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })

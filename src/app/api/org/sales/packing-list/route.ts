@@ -6,6 +6,7 @@ import { NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { loadPackingListPayload } from '@/lib/packing-list/data'
 import type { PackOverrides } from '@/lib/packing-list/types'
+import { requirePerm } from '@/lib/auth/access'
 
 async function build(ids: string[], overrides?: PackOverrides) {
   const supabase = await createClient()
@@ -29,11 +30,15 @@ async function build(ids: string[], overrides?: PackOverrides) {
 }
 
 export async function GET(req: Request) {
+  const permGate = await requirePerm('print_sales_pack')
+  if ('res' in permGate) return permGate.res
   const ids = (new URL(req.url).searchParams.get('ids') ?? '').split(',')
   return build(ids)
 }
 
 export async function POST(req: Request) {
+  const permGate = await requirePerm('print_sales_pack')
+  if ('res' in permGate) return permGate.res
   const body = (await req.json().catch(() => ({}))) as { ids?: unknown; overrides?: unknown }
   const ids = Array.isArray(body.ids) ? body.ids.map(String) : []
   const overrides = body.overrides && typeof body.overrides === 'object' ? (body.overrides as PackOverrides) : undefined

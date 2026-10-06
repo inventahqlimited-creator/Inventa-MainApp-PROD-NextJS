@@ -1,7 +1,10 @@
 import { NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { requirePerm } from '@/lib/auth/access'
 
 export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const permGate = await requirePerm('view_products')
+  if ('res' in permGate) return permGate.res
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

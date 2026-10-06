@@ -2,6 +2,7 @@
 // Price-level prices for one product, with quantity breaks: [{ level_id, price, break_qty }].
 import { NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { requirePerm } from '@/lib/auth/access'
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -15,6 +16,8 @@ async function getAuth() {
 }
 
 export async function GET(_req: Request, { params }: Params) {
+  const permGate = await requirePerm('view_pricing')
+  if ('res' in permGate) return permGate.res
   const { id } = await params
   const auth = await getAuth()
   if (!auth) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -32,6 +35,8 @@ export async function GET(_req: Request, { params }: Params) {
 //  'all'    (default) — the rows become the product's complete set of price-level prices
 //  'levels' — only the levels that appear in `rows` are replaced (used by CSV import)
 export async function POST(req: Request, { params }: Params) {
+  const permGate = await requirePerm('edit_products')
+  if ('res' in permGate) return permGate.res
   const { id } = await params
   const auth = await getAuth()
   if (!auth) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

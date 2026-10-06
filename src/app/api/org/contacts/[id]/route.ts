@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { pick, badForeignKey, CONTACT_FIELDS, CONTACT_LINKS } from '@/lib/api/sanitize'
+import { requirePerm } from '@/lib/auth/access'
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -17,24 +19,31 @@ async function getMembership(supabase: Awaited<ReturnType<typeof createClient>>,
 }
 
 export async function PATCH(request: Request, { params }: Params) {
+  const permGate = await requirePerm('edit_contacts')
+  if ('res' in permGate) return permGate.res
   const { id } = await params
   const supabase = await createClient()
   const adminClient = createAdminClient()
   const caller = await getMembership(supabase, adminClient)
   if (!caller) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
-  const body = await request.json()
+  const clean = pick(await request.json().catch(() => null), CONTACT_FIELDS)
+  if (!clean) return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
+  const badFk = await badForeignKey(adminClient, caller.membership.org_id, clean, CONTACT_LINKS)
+  if (badFk) return NextResponse.json({ error: `Invalid ${badFk}` }, { status: 400 })
   const { error } = await adminClient
     .from('contacts')
-    .update(body)
+    .update(clean)
     .eq('id', id)
     .eq('org_id', caller.membership.org_id)
 
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  if (error) { console.error('contacts update failed', error.message); return NextResponse.json({ error: 'Could not save the contact' }, { status: 500 }) }
   return NextResponse.json({ success: true })
 }
 
 export async function DELETE(_request: Request, { params }: Params) {
+  const permGate = await requirePerm('edit_contacts')
+  if ('res' in permGate) return permGate.res
   const { id } = await params
   const supabase = await createClient()
   const adminClient = createAdminClient()

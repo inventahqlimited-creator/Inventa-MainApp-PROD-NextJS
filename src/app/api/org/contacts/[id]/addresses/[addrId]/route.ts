@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { pick, ADDRESS_FIELDS } from '@/lib/api/sanitize'
+import { requireAnyPerm } from '@/lib/auth/access'
 
 type Params = { params: Promise<{ id: string; addrId: string }> }
 
@@ -13,16 +15,21 @@ async function getOrg() {
 }
 
 export async function PATCH(req: Request, { params }: Params) {
+  const permGate = await requireAnyPerm('create_contacts', 'edit_contacts')
+  if ('res' in permGate) return permGate.res
   const { addrId } = await params
   const ctx = await getOrg()
   if (!ctx) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
-  const body = await req.json()
-  const { error } = await ctx.adminClient.from('contact_addresses').update(body).eq('id', addrId).eq('org_id', ctx.org_id)
-  if (error) return NextResponse.json({ error: error.message }, { status: 500 })
+  const clean = pick(await req.json().catch(() => null), ADDRESS_FIELDS)
+  if (!clean) return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
+  const { error } = await ctx.adminClient.from('contact_addresses').update(clean).eq('id', addrId).eq('org_id', ctx.org_id)
+  if (error) { console.error('address update failed', error.message); return NextResponse.json({ error: 'Could not save the address' }, { status: 500 }) }
   return NextResponse.json({ success: true })
 }
 
 export async function DELETE(_req: Request, { params }: Params) {
+  const permGate = await requireAnyPerm('create_contacts', 'edit_contacts')
+  if ('res' in permGate) return permGate.res
   const { addrId } = await params
   const ctx = await getOrg()
   if (!ctx) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })

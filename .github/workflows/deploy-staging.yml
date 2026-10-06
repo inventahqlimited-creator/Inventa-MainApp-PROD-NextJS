@@ -1,0 +1,34 @@
+name: Deploy to staging
+
+# Runs every time something is merged into the staging branch.
+on:
+  push:
+    branches: [staging]
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-staging
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    name: Deploy to Fly (inventa-staging-nextjs)
+    runs-on: ubuntu-latest
+    env:
+      FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN_STAGING }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+
+      # Creates the staging app the first time; does nothing if it already exists.
+      - name: Create app if missing
+        run: flyctl apps list | grep -q "inventa-staging-nextjs" || flyctl apps create inventa-staging-nextjs
+
+      # Keeps the staging secrets in sync with the GitHub secrets.
+      - name: Set app secrets
+        run: flyctl secrets set --stage --app inventa-staging-nextjs SUPABASE_SERVICE_ROLE_KEY="$SUPABASE_SERVICE_ROLE_KEY"
+        env:
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE_KEY_STAGING }}
+
+      - name: Deploy
+        run: flyctl deploy --config fly.staging.toml --remote-only

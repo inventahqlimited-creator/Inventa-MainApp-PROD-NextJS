@@ -1,6 +1,7 @@
 // src/app/api/org/movements/route.ts
 import { NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { requirePerm } from '@/lib/auth/access'
 
 async function getOrgId(): Promise<string | null> {
   const supabase = await createClient()
@@ -17,6 +18,8 @@ async function getOrgId(): Promise<string | null> {
 }
 
 export async function GET(request: Request) {
+  const permGate = await requirePerm('view_movements')
+  if ('res' in permGate) return permGate.res
   const orgId = await getOrgId()
   if (!orgId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 

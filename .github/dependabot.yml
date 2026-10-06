@@ -1,0 +1,34 @@
+# Dependabot opens a pull request when a package has a security fix or a new version.
+# Updates are grouped so you get one tidy PR per week instead of dozens.
+version: 2
+updates:
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+      time: "06:00"
+      timezone: Pacific/Auckland
+    target-branch: staging
+    open-pull-requests-limit: 5
+    groups:
+      minor-and-patch:
+        update-types: [minor, patch]
+    labels: [dependencies]
+
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
+    target-branch: staging
+    groups:
+      actions:
+        patterns: ["*"]
+    labels: [dependencies]
+
+  - package-ecosystem: docker
+    directory: /
+    schedule:
+      interval: monthly
+    target-branch: staging
+    labels: [dependencies]

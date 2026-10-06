@@ -2,6 +2,7 @@
 import { createAdminClient } from '@/lib/supabase/server'
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
+import { requirePerm } from '@/lib/auth/access'
 
 async function getOrgId() {
   const supabase = await createClient()
@@ -20,6 +21,8 @@ async function getOrgId() {
 }
 
 export async function POST(req: Request) {
+  const permGate = await requirePerm('manage_company')
+  if ('res' in permGate) return permGate.res
   const orgId = await getOrgId()
   if (!orgId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 

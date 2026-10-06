@@ -1,19 +1,14 @@
 import { createAdminClient } from '@/lib/supabase/server'
 import Link from 'next/link'
+import { fmtAud, fmtDate, planLabel } from '@/lib/hub/constants'
 
 export const metadata = { title: 'Organisations — inventaHQ Hub' }
 export const dynamic = 'force-dynamic'
 
 type Org = {
-  id: string
-  org_number: string
-  name: string
-  email: string | null
-  phone: string | null
-  base_currency: string
-  timezone: string
-  status: 'active' | 'inactive' | 'suspended'
-  created_at: string
+  id: string; org_number: string | null; name: string; email: string | null; phone: string | null
+  country: string | null; status: 'active' | 'inactive' | 'suspended'; created_at: string
+  subscription_plan: string | null; user_limit: number | null; subscription_amount: number | null
 }
 
 const statusStyle: Record<string, { bg: string; color: string }> = {
@@ -22,16 +17,21 @@ const statusStyle: Record<string, { bg: string; color: string }> = {
   suspended: { bg: 'rgba(245,158,11,0.15)', color: '#FCD34D' },
 }
 
-export default async function OrganisationsPage() {
+const ctl: React.CSSProperties = {
+  height: '40px', padding: '0 12px', border: '1.5px solid var(--gray-200)', borderRadius: '10px', background: 'var(--hub-card)',
+  color: 'var(--gray-900)', fontFamily: 'var(--font-ui)', fontSize: '13.5px', outline: 'none',
+}
+
+export default async function OrganisationsPage({ searchParams }: { searchParams: Promise<{ q?: string; country?: string; status?: string }> }) {
+  const sp = await searchParams
+  const q = (sp.q ?? '').trim().toLowerCase()
+  const countryF = sp.country ?? ''
+  const statusF = sp.status ?? ''
+
   // Layout has already verified platform admin; admin client bypasses RLS to span all orgs.
   const supabase = createAdminClient()
-
-  const { data: orgs, error } = await supabase
-    .from('organisations')
-    .select('id, org_number, name, email, phone, base_currency, timezone, status, created_at')
-    .order('created_at', { ascending: false })
-
-  const orgList = (orgs ?? []) as Org[]
+  const { data: orgs, error } = await supabase.from('organisations').select('*').order('created_at', { ascending: false })
+  const all = (orgs ?? []) as Org[]
 
   const { data: mem } = await supabase.from('org_members').select('org_id, invite_status')
   const counts: Record<string, { active: number; pending: number }> = {}
@@ -41,87 +41,99 @@ export default async function OrganisationsPage() {
     else if (m.invite_status === 'pending') c.pending++
   }
 
+  const countries = [...new Set(all.map(o => o.country).filter((c): c is string => !!c))].sort()
+  const orgList = all.filter(o =>
+    (!countryF || o.country === countryF) &&
+    (!statusF || o.status === statusF) &&
+    (!q || [o.org_number, o.name, o.email, o.phone, o.country].some(v => (v ?? '').toLowerCase().includes(q))))
+  const filtered = Boolean(q || countryF || statusF)
+
   return (
     <div>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '28px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '22px', gap: '12px', flexWrap: 'wrap' }}>
         <div>
-          <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '22px', fontWeight: 800, color: 'var(--slate)', letterSpacing: '-0.02em' }}>
-            Organisations
-          </h1>
+          <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '22px', fontWeight: 800, color: 'var(--slate)', letterSpacing: '-0.02em' }}>Organisations</h1>
           <p style={{ fontSize: '13px', color: 'var(--gray-400)', marginTop: '2px' }}>
-            {orgList.length} organisation{orgList.length !== 1 ? 's' : ''} total
+            {filtered ? `${orgList.length} of ${all.length}` : all.length} organisation{all.length !== 1 ? 's' : ''}{filtered ? ' match' : ' total'}
           </p>
         </div>
         <Link href="/admin/organisations/new" style={{
-          display: 'inline-flex', alignItems: 'center', gap: '7px',
-          background: 'var(--teal)', color: 'white', textDecoration: 'none',
-          padding: '0 18px', height: '40px', borderRadius: '10px',
-          fontFamily: 'var(--font-display)', fontSize: '13.5px', fontWeight: 700,
+          display: 'inline-flex', alignItems: 'center', gap: '7px', background: 'var(--teal)', color: 'white', textDecoration: 'none',
+          padding: '0 18px', height: '40px', borderRadius: '10px', fontFamily: 'var(--font-display)', fontSize: '13.5px', fontWeight: 700,
           boxShadow: '0 4px 14px rgba(139,92,246,0.25)',
-        }}>
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
-          New Organisation
-        </Link>
+        }}>+ New Organisation</Link>
       </div>
+
+      <form method="get" style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', marginBottom: '18px' }}>
+        <input name="q" defaultValue={sp.q ?? ''} placeholder="Search by org number, name, email, phone…" style={{ ...ctl, flex: '1 1 280px', minWidth: 0 }} />
+        <select name="country" defaultValue={countryF} style={ctl}>
+          <option value="">All countries</option>
+          {countries.map(c => <option key={c} value={c}>{c}</option>)}
+        </select>
+        <select name="status" defaultValue={statusF} style={ctl}>
+          <option value="">All statuses</option>
+          <option value="active">Active</option><option value="inactive">Inactive</option><option value="suspended">Suspended</option>
+        </select>
+        <button type="submit" style={{ ...ctl, background: 'var(--teal)', color: 'white', border: 'none', fontWeight: 700, cursor: 'pointer', padding: '0 18px' }}>Search</button>
+        {filtered && <Link href="/admin/organisations" style={{ ...ctl, display: 'inline-flex', alignItems: 'center', textDecoration: 'none', color: 'var(--gray-400)' }}>Clear</Link>}
+      </form>
 
       {error && (
         <div style={{ background: 'rgba(239,68,68,0.12)', border: '1.5px solid rgba(239,68,68,0.35)', borderRadius: '10px', padding: '14px 16px', color: '#FCA5A5', fontSize: '13px', marginBottom: '20px' }}>
-          Error loading organisations. Run the database migration first.
+          Error loading organisations.
         </div>
       )}
 
       <div style={{ background: 'var(--hub-card)', borderRadius: '14px', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
         {orgList.length === 0 ? (
           <div style={{ padding: '64px', textAlign: 'center' }}>
-            <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: 'var(--gray-100)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px', color: 'var(--gray-400)' }}>
-              <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+            <div style={{ fontFamily: 'var(--font-display)', fontSize: '15px', fontWeight: 700, color: 'var(--slate)', marginBottom: '6px' }}>
+              {filtered ? 'No organisations match' : 'No organisations yet'}
             </div>
-            <div style={{ fontFamily: 'var(--font-display)', fontSize: '15px', fontWeight: 700, color: 'var(--slate)', marginBottom: '6px' }}>No organisations yet</div>
-            <div style={{ fontSize: '13px', color: 'var(--gray-400)' }}>Create your first organisation to get started.</div>
+            <div style={{ fontSize: '13px', color: 'var(--gray-400)' }}>{filtered ? 'Try a different search or clear the filters.' : 'Create your first organisation to get started.'}</div>
           </div>
         ) : (
-          <div style={{ overflowX: 'auto' }}><table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--gray-100)' }}>
-                {['Org #', 'Name', 'Email', 'Phone', 'Currency', 'Timezone', 'Users', 'Status', 'Created', ''].map(h => (
-                  <th key={h} style={{ padding: '11px 16px', textAlign: 'left', fontSize: '11px', fontWeight: 700, color: 'var(--gray-400)', letterSpacing: '0.06em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {orgList.map((org, i) => (
-                <tr key={org.id} style={{ borderBottom: i < orgList.length - 1 ? '1px solid var(--gray-100)' : 'none' }}>
-                  <td style={{ padding: '13px 16px', fontFamily: 'monospace', fontSize: '12.5px', fontWeight: 700, color: 'var(--teal)' }}>{org.org_number ?? '—'}</td>
-                  <td style={{ padding: '13px 16px', fontWeight: 600, color: 'var(--slate)', fontSize: '13.5px' }}>{org.name}</td>
-                  <td style={{ padding: '13px 16px', color: 'var(--gray-400)', fontSize: '13px' }}>{org.email ?? '—'}</td>
-                  <td style={{ padding: '13px 16px', color: 'var(--gray-400)', fontSize: '13px' }}>{org.phone ?? '—'}</td>
-                  <td style={{ padding: '13px 16px', color: 'var(--gray-400)', fontSize: '13px' }}>{org.base_currency}</td>
-                  <td style={{ padding: '13px 16px', color: 'var(--gray-400)', fontSize: '13px', whiteSpace: 'nowrap' }}>{org.timezone}</td>
-                  <td style={{ padding: '13px 16px', color: 'var(--slate)', fontSize: '13px', whiteSpace: 'nowrap' }}>
-                    {counts[org.id]?.active ?? 0}
-                    {(counts[org.id]?.pending ?? 0) > 0 && <span style={{ color: 'var(--gray-400)' }}> · {counts[org.id].pending} pending</span>}
-                  </td>
-                  <td style={{ padding: '13px 16px' }}>
-                    <span style={{
-                      display: 'inline-block', padding: '3px 10px', borderRadius: '999px', fontSize: '12px', fontWeight: 600,
-                      background: statusStyle[org.status]?.bg ?? 'rgba(148,163,184,0.15)',
-                      color: statusStyle[org.status]?.color ?? '#CBD5E1',
-                    }}>
-                      {org.status.charAt(0).toUpperCase() + org.status.slice(1)}
-                    </span>
-                  </td>
-                  <td style={{ padding: '13px 16px', color: 'var(--gray-400)', fontSize: '13px' }}>
-                    {new Date(org.created_at).toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: 'numeric' })}
-                  </td>
-                  <td style={{ padding: '13px 16px', textAlign: 'right' }}>
-                    <Link href={`/admin/organisations/${org.id}`} style={{ color: 'var(--teal)', fontSize: '13px', fontWeight: 600, textDecoration: 'none' }}>
-                      View →
-                    </Link>
-                  </td>
+          <div style={{ overflowX: 'auto' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+              <thead>
+                <tr style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--gray-100)' }}>
+                  {['Org #', 'Name', 'Email', 'Country', 'Plan', 'Users', 'Amount (AUD)', 'Status', 'Created', ''].map(h => (
+                    <th key={h} style={{ padding: '11px 16px', textAlign: h === 'Amount (AUD)' ? 'right' : 'left', fontSize: '11px', fontWeight: 700, color: 'var(--gray-400)', letterSpacing: '0.06em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
+                  ))}
                 </tr>
-              ))}
-            </tbody>
-          </table></div>
+              </thead>
+              <tbody>
+                {orgList.map((org, i) => {
+                  const c = counts[org.id]
+                  const used = (c?.active ?? 0) + (c?.pending ?? 0)
+                  const td: React.CSSProperties = { padding: '13px 16px', color: 'var(--gray-400)', fontSize: '13px', whiteSpace: 'nowrap' }
+                  return (
+                    <tr key={org.id} style={{ borderBottom: i < orgList.length - 1 ? '1px solid var(--gray-100)' : 'none' }}>
+                      <td style={{ ...td, fontFamily: 'monospace', fontSize: '12.5px', fontWeight: 700, color: 'var(--teal)' }}>{org.org_number ?? '—'}</td>
+                      <td style={{ ...td, fontWeight: 600, color: 'var(--slate)', fontSize: '13.5px' }}>{org.name}</td>
+                      <td style={td}>{org.email ?? '—'}</td>
+                      <td style={td}>{org.country ?? '—'}</td>
+                      <td style={td}>{planLabel(org.subscription_plan)}</td>
+                      <td style={{ ...td, color: 'var(--slate)' }}>
+                        {used}{org.user_limit ? ` / ${org.user_limit}` : ''}
+                        {(c?.pending ?? 0) > 0 && <span style={{ color: 'var(--gray-400)' }}> · {c.pending} pending</span>}
+                      </td>
+                      <td style={{ ...td, textAlign: 'right', color: 'var(--slate)', fontVariantNumeric: 'tabular-nums' }}>{fmtAud(org.subscription_amount)}</td>
+                      <td style={td}>
+                        <span style={{ display: 'inline-block', padding: '3px 10px', borderRadius: '999px', fontSize: '12px', fontWeight: 600, background: statusStyle[org.status]?.bg, color: statusStyle[org.status]?.color }}>
+                          {org.status.charAt(0).toUpperCase() + org.status.slice(1)}
+                        </span>
+                      </td>
+                      <td style={td}>{fmtDate(org.created_at)}</td>
+                      <td style={{ ...td, textAlign: 'right' }}>
+                        <Link href={`/admin/organisations/${org.id}`} style={{ color: 'var(--teal)', fontSize: '13px', fontWeight: 600, textDecoration: 'none' }}>View →</Link>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
         )}
       </div>
     </div>

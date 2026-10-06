@@ -4,6 +4,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { getAccess, can } from '@/lib/auth/access'
+import { checkSeatLimit } from '@/lib/hub/seats'
 
 type Params = { params: Promise<{ id: string }> }
 const ROLES = ['admin', 'manager', 'staff', 'read_only']
@@ -92,7 +93,11 @@ export async function PATCH(request: Request, { params }: Params) {
     if (isSelf) return NextResponse.json({ error: 'You cannot deactivate yourself' }, { status: 400 })
     if (t.invite_status === 'pending') return NextResponse.json({ error: 'This user has not accepted their invite yet' }, { status: 400 })
     if (want === 'inactive' && t.invite_status !== 'inactive') { update.invite_status = 'inactive'; banChange = 'ban' }
-    if (want === 'active' && t.invite_status === 'inactive') { update.invite_status = 'accepted'; banChange = 'unban' }
+    if (want === 'active' && t.invite_status === 'inactive') {
+      const seat = await checkSeatLimit(c.db, c.orgId)
+      if (!seat.ok) return NextResponse.json({ error: seat.message, code: 'user_limit' }, { status: 403 })
+      update.invite_status = 'accepted'; banChange = 'unban'
+    }
   }
 
   // email — only while the invite is still pending; the invite goes to the new address

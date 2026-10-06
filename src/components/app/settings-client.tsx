@@ -2399,8 +2399,9 @@ export default function SettingsClient({
             <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
               {[
                 { name: 'Xero', sub: 'Sync invoices, bills and contacts with Xero accounting', icon: '💼', logo: '/integrations/xero.png', status: xeroInstalled ? 'Installed' : 'Talk to sales' },
-                { name: 'Starshipit', sub: 'Generate shipping labels and track parcels', icon: '📦', status: 'Coming soon' },
-                { name: 'Shopify', sub: 'Sync orders and inventory with your Shopify store', icon: '🛒', status: 'Coming soon' },
+                { name: 'MYOB', sub: 'Sync invoices, bills and contacts with MYOB accounting', icon: '💼', logo: '/integrations/myob.png', status: 'Coming soon' },
+                { name: 'Starshipit', sub: 'Generate shipping labels and track parcels', icon: '📦', logo: '/integrations/starshipit.png', status: 'Coming soon' },
+                { name: 'Shopify', sub: 'Sync orders and inventory with your Shopify store', icon: '🛒', logo: '/integrations/shopify.svg', status: 'Coming soon' },
               ].map((int: { name: string; sub: string; icon: string; logo?: string; status: string }) => {
                 const isXero = int.name === 'Xero'
                 const open = isXero && xeroInstalled

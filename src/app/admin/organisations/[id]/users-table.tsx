@@ -29,11 +29,11 @@ export default function UsersTable(props: { members: any[], orgId: string }) {
     }
   }
 
-  const statusBg: any = { pending: '#EFF6FF', accepted: '#D1FAE5' }
-  const statusColor: any = { pending: '#1E40AF', accepted: '#065F46' }
+  const statusBg: any = { pending: 'rgba(59,130,246,0.15)', accepted: 'rgba(16,185,129,0.15)' }
+  const statusColor: any = { pending: '#93C5FD', accepted: '#6EE7B7' }
 
   return (
-    <div style={{ background: 'white', borderRadius: '14px', boxShadow: 'var(--shadow-sm)', overflow: 'hidden', marginTop: '20px' }}>
+    <div style={{ background: 'var(--hub-card)', borderRadius: '14px', boxShadow: 'var(--shadow-sm)', overflow: 'hidden', marginTop: '20px' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '18px 24px', borderBottom: '1px solid var(--gray-100)' }}>
         <div>
           <div style={{ fontFamily: 'var(--font-display)', fontSize: '15px', fontWeight: 700, color: 'var(--slate)' }}>Users</div>
@@ -52,7 +52,7 @@ export default function UsersTable(props: { members: any[], orgId: string }) {
         </Link>
       </div>
       {error && (
-        <div style={{ padding: '12px 24px', background: '#FEF2F2', borderBottom: '1px solid #FECACA', fontSize: '13px', color: '#B91C1C' }}>
+        <div style={{ padding: '12px 24px', background: 'rgba(239,68,68,0.12)', borderBottom: '1px solid rgba(239,68,68,0.35)', fontSize: '13px', color: '#FCA5A5' }}>
           {error}
         </div>
       )}
@@ -85,7 +85,7 @@ export default function UsersTable(props: { members: any[], orgId: string }) {
                     </span>
                   </td>
                   <td style={{ padding: '13px 16px' }}>
-                    <span style={{ fontSize: '12px', fontWeight: 600, padding: '3px 10px', borderRadius: '999px', background: statusBg[m.invite_status] ?? '#F3F4F6', color: statusColor[m.invite_status] ?? '#6B7280' }}>
+                    <span style={{ fontSize: '12px', fontWeight: 600, padding: '3px 10px', borderRadius: '999px', background: statusBg[m.invite_status] ?? 'rgba(148,163,184,0.15)', color: statusColor[m.invite_status] ?? '#CBD5E1' }}>
                       {m.invite_status.charAt(0).toUpperCase() + m.invite_status.slice(1)}
                     </span>
                   </td>
@@ -96,9 +96,9 @@ export default function UsersTable(props: { members: any[], orgId: string }) {
                     {isPending && (
                       <button onClick={() => handleResend(m)} disabled={!!isResending} style={{
                         height: '30px', padding: '0 12px', borderRadius: '7px',
-                        border: isResent ? '1.5px solid #0D9488' : '1.5px solid var(--gray-200)',
-                        background: isResent ? '#F0FAFA' : 'white',
-                        color: isResent ? '#0D9488' : '#9CA3AF',
+                        border: isResent ? '1.5px solid #8B5CF6' : '1.5px solid var(--gray-200)',
+                        background: isResent ? 'rgba(139,92,246,0.12)' : 'var(--hub-card)',
+                        color: isResent ? '#8B5CF6' : '#9CA3AF',
                         fontSize: '12px', fontWeight: 600, cursor: isResending ? 'not-allowed' : 'pointer',
                         fontFamily: 'var(--font-ui)', transition: 'all 150ms', opacity: isResending ? 0.6 : 1,
                       }}>

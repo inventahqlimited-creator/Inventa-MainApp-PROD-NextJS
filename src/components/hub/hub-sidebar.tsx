@@ -48,7 +48,7 @@ export default function HubSidebar({ userName, userEmail }: Props) {
   return (
     <aside style={{
       width: '256px',
-      background: '#0A1628',
+      background: '#060A12',
       display: 'flex',
       flexDirection: 'column',
       height: '100vh',
@@ -67,20 +67,20 @@ export default function HubSidebar({ userName, userEmail }: Props) {
             <mask id="slm"><rect width="480" height="76" fill="white"/><rect x="3" y="0" width="20" height="17" fill="black"/></mask>
           </defs>
           <text x="3" y="60" fontFamily="'Plus Jakarta Sans',sans-serif" fontSize="54" fontWeight="800" letterSpacing="-2" fill="rgba(255,255,255,0.22)" clipPath="url(#sll)" mask="url(#slm)">inventaHQ</text>
-          <text x="3" y="60" fontFamily="'Plus Jakarta Sans',sans-serif" fontSize="54" fontWeight="800" letterSpacing="-2" fill="#5EEAD4" clipPath="url(#slr)" mask="url(#slm)">inventaHQ</text>
+          <text x="3" y="60" fontFamily="'Plus Jakarta Sans',sans-serif" fontSize="54" fontWeight="800" letterSpacing="-2" fill="#C4B5FD" clipPath="url(#slr)" mask="url(#slm)">inventaHQ</text>
         </svg>
 
         {/* Hub badge */}
         <div style={{
           display: 'inline-flex', alignItems: 'center', gap: '7px',
-          background: 'rgba(13,148,136,0.12)',
-          border: '1px solid rgba(13,148,136,0.25)',
+          background: 'rgba(139,92,246,0.12)',
+          border: '1px solid rgba(139,92,246,0.25)',
           borderRadius: '7px', padding: '5px 10px',
         }}>
-          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#5EEAD4" strokeWidth="2.5">
+          <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#C4B5FD" strokeWidth="2.5">
             <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
           </svg>
-          <span style={{ fontSize: '10.5px', fontWeight: 700, color: '#5EEAD4', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
+          <span style={{ fontSize: '10.5px', fontWeight: 700, color: '#C4B5FD', letterSpacing: '0.1em', textTransform: 'uppercase' }}>
             Hub
           </span>
           <span style={{ fontSize: '10px', color: 'rgba(94,234,212,0.5)', fontWeight: 500 }}>
@@ -102,12 +102,12 @@ export default function HubSidebar({ userName, userEmail }: Props) {
           <a key={item.href} href={item.href} style={{
             display: 'flex', alignItems: 'center', gap: '10px',
             padding: '9px 10px', borderRadius: '8px', marginBottom: '2px',
-            background: isActive(item.href) ? 'rgba(13,148,136,0.12)' : 'transparent',
-            color: isActive(item.href) ? '#5EEAD4' : 'rgba(255,255,255,0.5)',
+            background: isActive(item.href) ? 'rgba(139,92,246,0.12)' : 'transparent',
+            color: isActive(item.href) ? '#C4B5FD' : 'rgba(255,255,255,0.5)',
             textDecoration: 'none', fontSize: '13px',
             fontWeight: isActive(item.href) ? 600 : 400,
             transition: 'background 150ms, color 150ms',
-            borderLeft: isActive(item.href) ? '2px solid #0D9488' : '2px solid transparent',
+            borderLeft: isActive(item.href) ? '2px solid #8B5CF6' : '2px solid transparent',
           }}>
             {item.icon}
             {item.label}
@@ -135,11 +135,11 @@ export default function HubSidebar({ userName, userEmail }: Props) {
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', marginBottom: '10px' }}>
           <div style={{
             width: '34px', height: '34px', borderRadius: '8px',
-            background: 'rgba(13,148,136,0.15)',
-            color: '#5EEAD4',
+            background: 'rgba(139,92,246,0.15)',
+            color: '#C4B5FD',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
             fontSize: '11px', fontWeight: 700, flexShrink: 0,
-            border: '1px solid rgba(13,148,136,0.2)',
+            border: '1px solid rgba(139,92,246,0.2)',
           }}>
             {userName.split(' ').map((w: string) => w[0]).join('').toUpperCase().slice(0, 2)}
           </div>

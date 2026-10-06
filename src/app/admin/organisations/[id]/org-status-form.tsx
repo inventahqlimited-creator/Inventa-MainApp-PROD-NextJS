@@ -21,7 +21,7 @@ export default function OrgStatusForm({ orgId, currentStatus }: { orgId: string;
   }
 
   return (
-    <div style={{ background: 'white', borderRadius: '14px', boxShadow: 'var(--shadow-sm)', padding: '20px 24px' }}>
+    <div style={{ background: 'var(--hub-card)', borderRadius: '14px', boxShadow: 'var(--shadow-sm)', padding: '20px 24px' }}>
       <div style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--gray-400)', marginBottom: '14px' }}>
         Account Status
       </div>
@@ -29,7 +29,7 @@ export default function OrgStatusForm({ orgId, currentStatus }: { orgId: string;
         <select
           value={status}
           onChange={e => setStatus(e.target.value)}
-          style={{ height: '40px', padding: '0 12px', border: '1.5px solid var(--gray-200)', borderRadius: '9px', fontFamily: 'var(--font-ui)', fontSize: '13.5px', color: 'var(--gray-900)', background: 'white', cursor: 'pointer', outline: 'none' }}
+          style={{ height: '40px', padding: '0 12px', border: '1.5px solid var(--gray-200)', borderRadius: '9px', fontFamily: 'var(--font-ui)', fontSize: '13.5px', color: 'var(--gray-900)', background: 'var(--hub-card)', cursor: 'pointer', outline: 'none' }}
         >
           <option value="active">Active</option>
           <option value="inactive">Inactive</option>
@@ -40,7 +40,7 @@ export default function OrgStatusForm({ orgId, currentStatus }: { orgId: string;
           disabled={saving || status === currentStatus}
           style={{
             height: '40px', padding: '0 18px', borderRadius: '9px', border: 'none',
-            background: saved ? '#D1FAE5' : 'var(--teal)', color: saved ? '#065F46' : 'white',
+            background: saved ? 'rgba(16,185,129,0.15)' : 'var(--teal)', color: saved ? '#6EE7B7' : 'white',
             fontSize: '13px', fontWeight: 600, fontFamily: 'var(--font-ui)',
             cursor: saving || status === currentStatus ? 'not-allowed' : 'pointer',
             opacity: status === currentStatus ? 0.5 : 1, transition: 'background 200ms',

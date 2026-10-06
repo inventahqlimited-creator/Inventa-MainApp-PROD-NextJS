@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/server'
 import Link from 'next/link'
 
 export const metadata = { title: 'Organisations — inventaHQ Hub' }
@@ -17,13 +17,14 @@ type Org = {
 }
 
 const statusStyle: Record<string, { bg: string; color: string }> = {
-  active:    { bg: '#D1FAE5', color: '#065F46' },
-  inactive:  { bg: '#F3F4F6', color: '#6B7280' },
-  suspended: { bg: '#FEF3C7', color: '#92400E' },
+  active:    { bg: 'rgba(16,185,129,0.15)', color: '#6EE7B7' },
+  inactive:  { bg: 'rgba(148,163,184,0.15)', color: '#CBD5E1' },
+  suspended: { bg: 'rgba(245,158,11,0.15)', color: '#FCD34D' },
 }
 
 export default async function OrganisationsPage() {
-  const supabase = await createClient()
+  // Layout has already verified platform admin; admin client bypasses RLS to span all orgs.
+  const supabase = createAdminClient()
 
   const { data: orgs, error } = await supabase
     .from('organisations')
@@ -31,6 +32,14 @@ export default async function OrganisationsPage() {
     .order('created_at', { ascending: false })
 
   const orgList = (orgs ?? []) as Org[]
+
+  const { data: mem } = await supabase.from('org_members').select('org_id, invite_status')
+  const counts: Record<string, { active: number; pending: number }> = {}
+  for (const m of (mem ?? []) as { org_id: string; invite_status: string }[]) {
+    const c = (counts[m.org_id] ??= { active: 0, pending: 0 })
+    if (m.invite_status === 'accepted') c.active++
+    else if (m.invite_status === 'pending') c.pending++
+  }
 
   return (
     <div>
@@ -48,7 +57,7 @@ export default async function OrganisationsPage() {
           background: 'var(--teal)', color: 'white', textDecoration: 'none',
           padding: '0 18px', height: '40px', borderRadius: '10px',
           fontFamily: 'var(--font-display)', fontSize: '13.5px', fontWeight: 700,
-          boxShadow: '0 4px 14px rgba(13,148,136,0.25)',
+          boxShadow: '0 4px 14px rgba(139,92,246,0.25)',
         }}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
           New Organisation
@@ -56,12 +65,12 @@ export default async function OrganisationsPage() {
       </div>
 
       {error && (
-        <div style={{ background: '#FEF2F2', border: '1.5px solid #FECACA', borderRadius: '10px', padding: '14px 16px', color: '#B91C1C', fontSize: '13px', marginBottom: '20px' }}>
+        <div style={{ background: 'rgba(239,68,68,0.12)', border: '1.5px solid rgba(239,68,68,0.35)', borderRadius: '10px', padding: '14px 16px', color: '#FCA5A5', fontSize: '13px', marginBottom: '20px' }}>
           Error loading organisations. Run the database migration first.
         </div>
       )}
 
-      <div style={{ background: 'white', borderRadius: '14px', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
+      <div style={{ background: 'var(--hub-card)', borderRadius: '14px', boxShadow: 'var(--shadow-sm)', overflow: 'hidden' }}>
         {orgList.length === 0 ? (
           <div style={{ padding: '64px', textAlign: 'center' }}>
             <div style={{ width: '48px', height: '48px', borderRadius: '12px', background: 'var(--gray-100)', display: 'flex', alignItems: 'center', justifyContent: 'center', margin: '0 auto 14px', color: 'var(--gray-400)' }}>
@@ -71,10 +80,10 @@ export default async function OrganisationsPage() {
             <div style={{ fontSize: '13px', color: 'var(--gray-400)' }}>Create your first organisation to get started.</div>
           </div>
         ) : (
-          <table style={{ width: '100%', borderCollapse: 'collapse' }}>
+          <div style={{ overflowX: 'auto' }}><table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr style={{ background: 'var(--gray-50)', borderBottom: '1px solid var(--gray-100)' }}>
-                {['Org #', 'Name', 'Email', 'Currency', 'Status', 'Created', ''].map(h => (
+                {['Org #', 'Name', 'Email', 'Phone', 'Currency', 'Timezone', 'Users', 'Status', 'Created', ''].map(h => (
                   <th key={h} style={{ padding: '11px 16px', textAlign: 'left', fontSize: '11px', fontWeight: 700, color: 'var(--gray-400)', letterSpacing: '0.06em', textTransform: 'uppercase', whiteSpace: 'nowrap' }}>{h}</th>
                 ))}
               </tr>
@@ -85,12 +94,18 @@ export default async function OrganisationsPage() {
                   <td style={{ padding: '13px 16px', fontFamily: 'monospace', fontSize: '12.5px', fontWeight: 700, color: 'var(--teal)' }}>{org.org_number ?? '—'}</td>
                   <td style={{ padding: '13px 16px', fontWeight: 600, color: 'var(--slate)', fontSize: '13.5px' }}>{org.name}</td>
                   <td style={{ padding: '13px 16px', color: 'var(--gray-400)', fontSize: '13px' }}>{org.email ?? '—'}</td>
+                  <td style={{ padding: '13px 16px', color: 'var(--gray-400)', fontSize: '13px' }}>{org.phone ?? '—'}</td>
                   <td style={{ padding: '13px 16px', color: 'var(--gray-400)', fontSize: '13px' }}>{org.base_currency}</td>
+                  <td style={{ padding: '13px 16px', color: 'var(--gray-400)', fontSize: '13px', whiteSpace: 'nowrap' }}>{org.timezone}</td>
+                  <td style={{ padding: '13px 16px', color: 'var(--slate)', fontSize: '13px', whiteSpace: 'nowrap' }}>
+                    {counts[org.id]?.active ?? 0}
+                    {(counts[org.id]?.pending ?? 0) > 0 && <span style={{ color: 'var(--gray-400)' }}> · {counts[org.id].pending} pending</span>}
+                  </td>
                   <td style={{ padding: '13px 16px' }}>
                     <span style={{
                       display: 'inline-block', padding: '3px 10px', borderRadius: '999px', fontSize: '12px', fontWeight: 600,
-                      background: statusStyle[org.status]?.bg ?? '#F3F4F6',
-                      color: statusStyle[org.status]?.color ?? '#6B7280',
+                      background: statusStyle[org.status]?.bg ?? 'rgba(148,163,184,0.15)',
+                      color: statusStyle[org.status]?.color ?? '#CBD5E1',
                     }}>
                       {org.status.charAt(0).toUpperCase() + org.status.slice(1)}
                     </span>
@@ -106,7 +121,7 @@ export default async function OrganisationsPage() {
                 </tr>
               ))}
             </tbody>
-          </table>
+          </table></div>
         )}
       </div>
     </div>

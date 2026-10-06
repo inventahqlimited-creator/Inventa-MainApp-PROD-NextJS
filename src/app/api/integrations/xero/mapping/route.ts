@@ -2,7 +2,7 @@
 // GET: Xero accounts and tax rates, this organisation's tax rates, saved settings and suggestions.
 // PUT: save the account and tax mapping (admin only).
 import { NextResponse } from 'next/server'
-import { xeroAuth } from '@/lib/xero/auth'
+import { xeroAuth, canViewXero } from '@/lib/xero/auth'
 import { cleanSettings, fetchXeroLists, loadInventaTaxRates, suggestAccounts, suggestTax, type XeroSettings } from '@/lib/xero/mapping'
 
 export const dynamic = 'force-dynamic'
@@ -31,6 +31,7 @@ export async function GET(req: Request) {
   const a = await xeroAuth()
   if (!a) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   if (!a.enabled) return NextResponse.json({ error: 'Xero isn’t switched on for your organisation.' }, { status: 403 })
+  if (!(await canViewXero(a))) return NextResponse.json({ error: 'You don’t have permission to view Xero.' }, { status: 403 })
   const row = await connected(a)
   if (!row) return NextResponse.json({ error: 'Connect Xero first.' }, { status: 409 })
 

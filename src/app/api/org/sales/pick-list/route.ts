@@ -4,8 +4,11 @@
 import { NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { loadPickListPayload } from '@/lib/pick-list/data'
+import { requirePerm } from '@/lib/auth/access'
 
 export async function GET(req: Request) {
+  const permGate = await requirePerm('print_sales_pick')
+  if ('res' in permGate) return permGate.res
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

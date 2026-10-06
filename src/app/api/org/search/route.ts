@@ -2,6 +2,7 @@
 // Global top-bar search: contacts, products, sales, purchases, transfers (never reports / settings).
 import { NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { getAccess, can } from '@/lib/auth/access'
 
 const LIMIT = 5
 
@@ -26,49 +27,36 @@ export async function GET(req: Request) {
   const q = clean(new URL(req.url).searchParams.get('q') ?? '')
   if (q.length < 1) return NextResponse.json({ results: [] })
 
-  const db = createAdminClient()
-  const { data: m } = await db
-    .from('org_members')
-    .select('org_id, role, custom_role_id')
-    .eq('user_id', user.id)
-    .eq('invite_status', 'accepted')
-    .single()
-  if (!m) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-  const mem = m as { org_id: string; role: string; custom_role_id: string | null }
-  const orgId = mem.org_id
-
-  // Same rule as the sidebar: Products only for people allowed to view them
-  let canViewProducts = true
-  if (mem.role !== 'admin') {
-    if (mem.custom_role_id) {
-      const { data: r } = await db.from('org_roles').select('permissions').eq('id', mem.custom_role_id).eq('org_id', orgId).single()
-      canViewProducts = (r?.permissions as Record<string, boolean> | null)?.view_products === true
-    } else {
-      canViewProducts = false
-    }
-  }
+  // Same rule as the sidebar: each group is only searched if the person may view that module.
+  const access = await getAccess()
+  if (!access) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const db = access.db
+  const orgId = access.orgId
+  const none = Promise.resolve({ data: [] as never[] })
 
   const like = `%${q}%`
   const results: SearchHit[] = []
 
   const [contacts, products, sales, purchases, transfers] = await Promise.all([
-    db.from('contacts').select('id, name, type, email, phone')
-      .eq('org_id', orgId).or(`name.ilike.${like},email.ilike.${like},phone.ilike.${like}`)
-      .order('name').limit(LIMIT),
-    canViewProducts
+    can(access, 'view_contacts')
+      ? db.from('contacts').select('id, name, type, email, phone')
+          .eq('org_id', orgId).or(`name.ilike.${like},email.ilike.${like},phone.ilike.${like}`)
+          .order('name').limit(LIMIT)
+      : none,
+    can(access, 'view_products')
       ? db.from('products').select('id, name, sku, type, barcode')
           .eq('org_id', orgId).or(`name.ilike.${like},sku.ilike.${like},barcode.ilike.${like}`)
           .order('name').limit(LIMIT)
-      : Promise.resolve({ data: [] as never[] }),
-    db.from('sales_orders').select('id, so_number, customer_name, status, reference')
+      : none,
+    can(access, 'view_sales') ? db.from('sales_orders').select('id, so_number, customer_name, status, reference')
       .eq('org_id', orgId).or(`so_number.ilike.${like},customer_name.ilike.${like},reference.ilike.${like}`)
-      .order('created_at', { ascending: false }).limit(LIMIT),
-    db.from('purchase_orders').select('id, po_number, supplier_name, status, reference')
+      .order('created_at', { ascending: false }).limit(LIMIT) : none,
+    can(access, 'view_purchases') ? db.from('purchase_orders').select('id, po_number, supplier_name, status, reference')
       .eq('org_id', orgId).or(`po_number.ilike.${like},supplier_name.ilike.${like},reference.ilike.${like}`)
-      .order('created_at', { ascending: false }).limit(LIMIT),
-    db.from('transfer_orders').select('id, tr_number, from_location_name, to_location_name, status')
+      .order('created_at', { ascending: false }).limit(LIMIT) : none,
+    can(access, 'view_transfers') ? db.from('transfer_orders').select('id, tr_number, from_location_name, to_location_name, status')
       .eq('org_id', orgId).or(`tr_number.ilike.${like},from_location_name.ilike.${like},to_location_name.ilike.${like}`)
-      .order('created_at', { ascending: false }).limit(LIMIT),
+      .order('created_at', { ascending: false }).limit(LIMIT) : none,
   ])
 
   for (const c of (contacts.data ?? []) as { id: string; name: string; type: string | null; email: string | null; phone: string | null }[]) {

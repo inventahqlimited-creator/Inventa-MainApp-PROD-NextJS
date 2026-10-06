@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { pick, ADDRESS_FIELDS } from '@/lib/api/sanitize'
+import { requireAnyPerm } from '@/lib/auth/access'
 
 type Params = { params: Promise<{ id: string; addrId: string }> }
 
@@ -14,6 +15,8 @@ async function getOrg() {
 }
 
 export async function PATCH(req: Request, { params }: Params) {
+  const permGate = await requireAnyPerm('create_contacts', 'edit_contacts')
+  if ('res' in permGate) return permGate.res
   const { addrId } = await params
   const ctx = await getOrg()
   if (!ctx) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
@@ -25,6 +28,8 @@ export async function PATCH(req: Request, { params }: Params) {
 }
 
 export async function DELETE(_req: Request, { params }: Params) {
+  const permGate = await requireAnyPerm('create_contacts', 'edit_contacts')
+  if ('res' in permGate) return permGate.res
   const { addrId } = await params
   const ctx = await getOrg()
   if (!ctx) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })

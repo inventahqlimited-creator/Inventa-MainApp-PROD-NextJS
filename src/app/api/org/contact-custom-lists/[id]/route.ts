@@ -1,6 +1,7 @@
 // src/app/api/org/contact-custom-lists/[id]/route.ts
 import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
+import { requirePerm } from '@/lib/auth/access'
 
 async function getAuth() {
   const supabase = await createClient()
@@ -12,6 +13,8 @@ async function getAuth() {
 }
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const permGate = await requirePerm('manage_contact_settings')
+  if ('res' in permGate) return permGate.res
   const { id } = await params
   const auth = await getAuth()
   if (!auth) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -22,6 +25,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 }
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const permGate = await requirePerm('manage_contact_settings')
+  if ('res' in permGate) return permGate.res
   const { id } = await params
   const auth = await getAuth()
   if (!auth) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

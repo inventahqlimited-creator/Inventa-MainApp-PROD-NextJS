@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { cleanAdjustment, checkOwnership } from '@/lib/adjustments/validate'
+import { getAccess, can, denyResponse } from '@/lib/auth/access'
+import { requirePerm } from '@/lib/auth/access'
 
 async function getOrgId(userId: string) {
   const adminClient = createAdminClient()
@@ -202,6 +204,14 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const { id } = await params
   const body = (await request.json().catch(() => ({}))) as { status?: unknown; skip_xero?: unknown }
 
+  // What they are doing decides which permission is needed.
+  const access = await getAccess()
+  if (!access) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  const needed = body.status === undefined && typeof body.skip_xero === 'boolean' ? 'xero_skip_adjustments'
+    : body.status === 'Cancelled' ? 'cancel_adjustments'
+    : 'create_adjustments' // completing an adjustment
+  if (!can(access, needed)) return denyResponse()
+
   // "Don't send to Xero" can be changed until the adjustment has been posted
   if (body.status === undefined && typeof body.skip_xero === 'boolean') {
     const { data: rec } = await adminClient.from('xero_sync_records').select('status').eq('org_id', orgId).eq('entity', 'adjustment').eq('entity_id', id).maybeSingle()
@@ -247,6 +257,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
 // PUT: update draft adjustment details + lines
 export async function PUT(request: Request, { params }: { params: Promise<{ id: string }> }) {
+  const permGate = await requirePerm('edit_adjustments')
+  if ('res' in permGate) return permGate.res
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

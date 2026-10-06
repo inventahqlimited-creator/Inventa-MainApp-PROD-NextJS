@@ -1,5 +1,6 @@
 import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { NextRequest, NextResponse } from 'next/server'
+import { requirePerm } from '@/lib/auth/access'
 
 async function getOrgId() {
   const supabase = await createClient()
@@ -17,6 +18,8 @@ async function getOrgId() {
 
 // GET: return how many products with this tracking on also have stock (locked count)
 export async function GET(request: NextRequest) {
+  const permGate = await requirePerm('manage_product_settings')
+  if ('res' in permGate) return permGate.res
   const orgId = await getOrgId()
   if (!orgId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -53,6 +56,8 @@ export async function GET(request: NextRequest) {
 
 // POST: turn off global setting + turn off product-level tracking for products with NO stock
 export async function POST(request: NextRequest) {
+  const permGate = await requirePerm('manage_product_settings')
+  if ('res' in permGate) return permGate.res
   const orgId = await getOrgId()
   if (!orgId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 

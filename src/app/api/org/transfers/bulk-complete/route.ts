@@ -2,8 +2,11 @@
 // Complete several transfers at once. Only transfers that are Picked are completed — everything else is left alone.
 import { NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { requirePerm } from '@/lib/auth/access'
 
 export async function POST(req: Request) {
+  const permGate = await requirePerm('complete_transfers')
+  if ('res' in permGate) return permGate.res
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

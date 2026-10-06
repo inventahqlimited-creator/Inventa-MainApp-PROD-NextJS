@@ -2,10 +2,13 @@
 // Confirm Pack — saves cartons + shipping details and marks the order Packed (closing is a separate step).
 import { NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { requirePerm } from '@/lib/auth/access'
 
 type Params = { params: Promise<{ id: string }> }
 
 export async function POST(req: Request, { params }: Params) {
+  const permGate = await requirePerm('pack_sales')
+  if ('res' in permGate) return permGate.res
   const { id } = await params
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()

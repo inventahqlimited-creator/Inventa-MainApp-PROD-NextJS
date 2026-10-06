@@ -73,6 +73,23 @@ export async function requireAnyPerm(...keys: PermKey[]): Promise<{ access: Acce
   return { access }
 }
 
+/**
+ * For PATCH routes that both edit an order and cancel it.
+ * A payload that only sets status "Cancelled" needs the cancel permission; anything else needs the edit permission.
+ * A payload that does both needs both. Reads a copy of the body, so the route can still read it.
+ */
+export async function requireEditOrCancel(request: Request, edit: PermKey, cancel: PermKey): Promise<{ access: Access } | { res: NextResponse }> {
+  const access = await getAccess()
+  if (!access) return { res: NextResponse.json({ error: 'Unauthorized' }, { status: 401 }) }
+  const body = (await request.clone().json().catch(() => null)) as Record<string, unknown> | null
+  const status = typeof body?.status === 'string' ? body.status.toLowerCase() : null
+  const cancelling = status === 'cancelled'
+  const editing = !cancelling || Object.keys(body ?? {}).some(k => k !== 'status')
+  if (cancelling && !can(access, cancel)) return { res: deny() }
+  if (editing && !can(access, edit)) return { res: deny() }
+  return { access }
+}
+
 /** For API routes that are admin only (connecting Xero, for instance). */
 export async function requireAdmin(): Promise<{ access: Access } | { res: NextResponse }> {
   const access = await getAccess()

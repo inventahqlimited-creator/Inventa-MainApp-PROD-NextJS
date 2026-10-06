@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { pick, badForeignKey, CONTACT_FIELDS, CONTACT_LINKS } from '@/lib/api/sanitize'
+import { requirePerm } from '@/lib/auth/access'
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -18,6 +19,8 @@ async function getMembership(supabase: Awaited<ReturnType<typeof createClient>>,
 }
 
 export async function PATCH(request: Request, { params }: Params) {
+  const permGate = await requirePerm('edit_contacts')
+  if ('res' in permGate) return permGate.res
   const { id } = await params
   const supabase = await createClient()
   const adminClient = createAdminClient()
@@ -39,6 +42,8 @@ export async function PATCH(request: Request, { params }: Params) {
 }
 
 export async function DELETE(_request: Request, { params }: Params) {
+  const permGate = await requirePerm('edit_contacts')
+  if ('res' in permGate) return permGate.res
   const { id } = await params
   const supabase = await createClient()
   const adminClient = createAdminClient()

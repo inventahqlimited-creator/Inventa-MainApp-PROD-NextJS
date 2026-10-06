@@ -6,7 +6,14 @@
 // exchange. The implicit flow puts the tokens in the link itself, so it always works.
 import { createClient } from '@supabase/supabase-js'
 
-export async function sendResetEmail(email: string, origin: string) {
+/** The site address reset links point at. Never taken from request headers, which an attacker controls. */
+export function trustedOrigin(fallback: string): string {
+  const configured = (process.env.NEXT_PUBLIC_APP_URL || '').trim().replace(/\/+$/, '')
+  return configured || fallback
+}
+
+export async function sendResetEmail(email: string, requestOrigin: string) {
+  const origin = trustedOrigin(requestOrigin)
   const supabase = createClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,

@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { requirePerm } from '@/lib/auth/access'
+import { checkSeatLimit } from '@/lib/hub/seats'
 
 export async function POST(request: Request) {
   const g = await requirePerm('manage_users')
@@ -46,6 +47,9 @@ export async function POST(request: Request) {
       : 'This email is already a member of your organisation'
     return NextResponse.json({ error: msg }, { status: 409 })
   }
+
+  const seat = await checkSeatLimit(supabase, m.org_id)
+  if (!seat.ok) return NextResponse.json({ error: seat.message, code: 'user_limit' }, { status: 403 })
 
   const adminClient = createAdminClient()
 

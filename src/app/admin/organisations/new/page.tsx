@@ -2,16 +2,15 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createClient } from '@/lib/supabase/client'
+import { COUNTRIES } from '@/lib/hub/constants'
 
 export default function NewOrganisationPage() {
   const router = useRouter()
-  const supabase = createClient()
 
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
   const [form, setForm] = useState({
-    name: '', email: '', phone: '', address: '',
+    name: '', email: '', phone: '', address: '', country: 'New Zealand',
     base_currency: 'NZD', timezone: 'Pacific/Auckland', status: 'active',
   })
 
@@ -25,23 +24,12 @@ export default function NewOrganisationPage() {
     if (!form.name.trim()) { setError('Organisation name is required.'); return }
     setLoading(true)
 
-    const { data, error: insertErr } = await (supabase as any)
-      .from('organisations')
-      .insert({
-        name:          form.name.trim(),
-        slug:          form.name.trim().toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, ''),
-        email:         form.email.trim() || null,
-        phone:         form.phone.trim() || null,
-        address:       form.address.trim() || null,
-        base_currency: form.base_currency,
-        timezone:      form.timezone,
-        status:        form.status,
-      })
-      .select('id')
-      .single()
-
+    const res = await fetch('/api/admin/orgs', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form),
+    })
+    const data = await res.json().catch(() => ({}))
     setLoading(false)
-    if (insertErr) { setError(insertErr.message); return }
+    if (!res.ok) { setError(data.error || 'Could not create the organisation.'); return }
     router.push(`/admin/organisations/${data.id}`)
   }
 
@@ -95,6 +83,13 @@ export default function NewOrganisationPage() {
             <div style={{ gridColumn: 'span 2' }}>
               <label style={labelStyle}>Address</label>
               <input style={inputStyle} value={form.address} onChange={e => set('address', e.target.value)} placeholder="Street, City, Postcode, Country" />
+            </div>
+            <div>
+              <label style={labelStyle}>Country</label>
+              <select style={selectStyle} value={form.country} onChange={e => set('country', e.target.value)}>
+                <option value="">—</option>
+                {COUNTRIES.map(c => <option key={c}>{c}</option>)}
+              </select>
             </div>
             <div>
               <label style={labelStyle}>Base Currency</label>

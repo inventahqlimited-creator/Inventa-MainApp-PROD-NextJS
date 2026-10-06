@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { checkSeatLimit } from '@/lib/hub/seats'
 import { isPlatformAdmin, isUuid, isEmail, isFixedRole } from '@/lib/auth/platform-admin'
 
 export async function POST(request: Request) {
@@ -25,6 +26,9 @@ export async function POST(request: Request) {
 
   const { data: org } = await admin.from('organisations').select('id').eq('id', orgId).maybeSingle()
   if (!org) return NextResponse.json({ error: 'Organisation not found' }, { status: 404 })
+
+  const seat = await checkSeatLimit(admin, orgId as string)
+  if (!seat.ok) return NextResponse.json({ error: `${seat.used} of ${seat.limit} users already used. Raise the user limit on the organisation first.` }, { status: 403 })
 
   const { error: memberErr } = await admin
     .from('org_members')

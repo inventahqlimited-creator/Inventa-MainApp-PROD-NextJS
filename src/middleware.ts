@@ -59,9 +59,15 @@ export async function middleware(request: NextRequest) {
   )
 
   const { data: { user } } = await supabase.auth.getUser()
-  const { pathname, hostname } = request.nextUrl
+  const { pathname } = request.nextUrl
 
-  const isHub = hostname === 'hub.inventahq.com'
+  // Which site was asked for. Behind Fly's proxy request.nextUrl shows the app's own internal address (0.0.0.0),
+  // so read the Host header the browser actually used instead.
+  const host = (request.headers.get('host') ?? request.nextUrl.hostname).split(':')[0].toLowerCase()
+  const hubHosts = (process.env.HUB_HOSTS || 'hub.inventahq.com').split(',').map(h => h.trim().toLowerCase()).filter(Boolean)
+  const isHub = hubHosts.includes(host)
+  const proto = request.headers.get('x-forwarded-proto') ?? request.nextUrl.protocol.replace(':', '')
+  const go = (path: string) => NextResponse.redirect(new URL(path, `${proto}://${request.headers.get('host') ?? request.nextUrl.host}`))
 
   const isPublic =
     pathname.startsWith('/login') ||
@@ -70,17 +76,17 @@ export async function middleware(request: NextRequest) {
 
   if (isPublic) {
     if (user && pathname === '/login') {
-      return NextResponse.redirect(new URL(isHub ? '/admin' : '/', request.url))
+      return go(isHub ? '/admin' : '/')
     }
     return supabaseResponse
   }
 
   if (isHub) {
     if (!user) {
-      return NextResponse.redirect(new URL('/login', request.url))
+      return go('/login')
     }
     if (!pathname.startsWith('/admin') && !pathname.startsWith('/api/admin')) {
-      return NextResponse.redirect(new URL('/admin', request.url))
+      return go('/admin')
     }
     const { data: members } = await supabase
       .from('org_members')
@@ -91,17 +97,17 @@ export async function middleware(request: NextRequest) {
     const isAdmin = memberList.some(m => m.role === 'admin' && m.invite_status === 'accepted')
     if (!isAdmin) {
       await supabase.auth.signOut()
-      return NextResponse.redirect(new URL('/login', request.url))
+      return go('/login')
     }
     return supabaseResponse
   }
 
   if (pathname.startsWith('/admin')) {
-    return NextResponse.redirect(new URL('/dashboard', request.url))
+    return go('/dashboard')
   }
 
   if (!user) {
-    const loginUrl = new URL('/login', request.url)
+    const loginUrl = new URL('/login', `${proto}://${request.headers.get('host') ?? request.nextUrl.host}`)
     loginUrl.searchParams.set('redirectTo', pathname)
     return NextResponse.redirect(loginUrl)
   }

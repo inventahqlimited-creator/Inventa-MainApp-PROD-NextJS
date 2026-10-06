@@ -48,7 +48,7 @@ export default function NewOrganisationPage() {
   const inputStyle = {
     width: '100%', height: '44px', padding: '0 13px',
     border: '1.5px solid var(--gray-200)', borderRadius: '10px',
-    background: 'white', fontFamily: 'var(--font-ui)', fontSize: '14px',
+    background: 'var(--hub-card)', fontFamily: 'var(--font-ui)', fontSize: '14px',
     color: 'var(--gray-900)', outline: 'none',
   }
   const selectStyle = { ...inputStyle, cursor: 'pointer' }
@@ -70,12 +70,12 @@ export default function NewOrganisationPage() {
 
       <form onSubmit={handleSubmit}>
         {error && (
-          <div style={{ background: '#FEF2F2', border: '1.5px solid #FECACA', borderRadius: '10px', padding: '12px 14px', color: '#B91C1C', fontSize: '13px', marginBottom: '20px' }}>
+          <div style={{ background: 'rgba(239,68,68,0.12)', border: '1.5px solid rgba(239,68,68,0.35)', borderRadius: '10px', padding: '12px 14px', color: '#FCA5A5', fontSize: '13px', marginBottom: '20px' }}>
             {error}
           </div>
         )}
 
-        <div style={{ background: 'white', borderRadius: '14px', boxShadow: 'var(--shadow-sm)', padding: '24px', marginBottom: '16px' }}>
+        <div style={{ background: 'var(--hub-card)', borderRadius: '14px', boxShadow: 'var(--shadow-sm)', padding: '24px', marginBottom: '16px' }}>
           <div style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--gray-400)', marginBottom: '18px' }}>
             Organisation Details
           </div>
@@ -133,14 +133,14 @@ export default function NewOrganisationPage() {
         <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end' }}>
           <a href="/admin/organisations" style={{
             height: '42px', padding: '0 20px', borderRadius: '10px', border: '1.5px solid var(--gray-200)',
-            background: 'white', color: 'var(--gray-400)', fontSize: '13.5px', fontWeight: 600,
+            background: 'var(--hub-card)', color: 'var(--gray-400)', fontSize: '13.5px', fontWeight: 600,
             display: 'inline-flex', alignItems: 'center', textDecoration: 'none',
           }}>Cancel</a>
           <button type="submit" disabled={loading} style={{
             height: '42px', padding: '0 24px', borderRadius: '10px', border: 'none',
             background: 'var(--teal)', color: 'white', fontSize: '13.5px', fontWeight: 700,
             fontFamily: 'var(--font-display)', cursor: loading ? 'not-allowed' : 'pointer',
-            opacity: loading ? 0.7 : 1, boxShadow: '0 4px 14px rgba(13,148,136,0.25)',
+            opacity: loading ? 0.7 : 1, boxShadow: '0 4px 14px rgba(139,92,246,0.25)',
           }}>
             {loading ? 'Creating…' : 'Create Organisation'}
           </button>

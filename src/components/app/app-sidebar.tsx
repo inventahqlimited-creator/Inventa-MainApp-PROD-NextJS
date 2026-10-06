@@ -137,12 +137,12 @@ function NavLink({ href, label, icon }: { href: string; label: string; icon: Rea
   )
 }
 
-export default function AppSidebar({ perms = fullSet(), xeroEnabled = false }: { perms?: PermissionSet; xeroEnabled?: boolean }) {
+export default function AppSidebar({ perms = fullSet(), xeroEnabled = false, auditEnabled = true }: { perms?: PermissionSet; xeroEnabled?: boolean; auditEnabled?: boolean }) {
   // Only the entries this person may open
   const access = menuAccess(perms)
   const allowed: Record<string, boolean> = {
     '/dashboard': access.dashboard, '/contacts': access.contacts, '/products': access.products, '/purchases': access.purchases,
-    '/sales': access.sales, '/transfers': access.transfers, '/reports': access.reports, '/audit': access.audit, '/settings': access.settings,
+    '/sales': access.sales, '/transfers': access.transfers, '/reports': access.reports, '/audit': access.audit && auditEnabled, '/settings': access.settings,
   }
   const visibleModules = MODULE_NAV.filter(item => allowed[item.href] !== false)
   const visibleMain = MAIN_NAV.filter(item => allowed[item.href] !== false)

@@ -106,6 +106,14 @@ export async function middleware(request: NextRequest) {
     return NextResponse.redirect(loginUrl)
   }
 
+  // Remember when this person last opened a page — the app layout uses it to enforce the session timeout.
+  // Background API calls don't count as activity.
+  if (!pathname.startsWith('/api/')) {
+    supabaseResponse.cookies.set('inv_la', String(Date.now()), {
+      httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', path: '/', maxAge: 60 * 60 * 24 * 7,
+    })
+  }
+
   return supabaseResponse
 }
 

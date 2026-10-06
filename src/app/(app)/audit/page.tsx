@@ -1,6 +1,8 @@
 // src/app/(app)/audit/page.tsx
 import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
+import { getAccess } from '@/lib/auth/access'
+import { loadSecurity } from '@/lib/auth/security-settings'
 import AuditLog from '@/components/app/audit-log'
 
 export default async function AuditPage() {
@@ -13,5 +15,9 @@ export default async function AuditPage() {
   if (!m) redirect('/login')
   const allowed = ['admin', 'owner'].includes(String((m as { role: string }).role).toLowerCase())
 
-  return <AuditLog allowed={allowed} />
+  // The organisation can switch the audit log off — then nobody can open it
+  const access = await getAccess()
+  const enabled = access ? (await loadSecurity(adminClient, access.orgId)).audit_log_enabled : false
+
+  return <AuditLog allowed={allowed && enabled} disabled={!enabled} />
 }

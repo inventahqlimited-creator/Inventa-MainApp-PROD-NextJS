@@ -2,6 +2,7 @@
 // Audit log feed — filters: q, category, user, from, to (ISO). `format=csv` returns every matching row as a CSV file.
 import { NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { loadSecurity } from '@/lib/auth/security-settings'
 import { getAccess, can, denyResponse } from '@/lib/auth/access'
 
 const csvCell = (v: unknown) => `"${String(v ?? '').replace(/"/g, '""')}"`
@@ -18,6 +19,7 @@ export async function GET(req: Request) {
   void role
   const access = await getAccess()
   if (!access || !can(access, 'view_audit_log')) return denyResponse('You don’t have permission to view the audit log.')
+  if (!(await loadSecurity(db, orgId)).audit_log_enabled) return denyResponse('The audit log is turned off for your organisation.')
   if (new URL(req.url).searchParams.get('format') === 'csv' && !can(access, 'export_audit_log')) return denyResponse('You don’t have permission to export the audit log.')
 
   const sp = new URL(req.url).searchParams

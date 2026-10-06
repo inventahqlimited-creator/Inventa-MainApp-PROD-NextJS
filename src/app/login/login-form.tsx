@@ -9,6 +9,7 @@ const LINK_ERRORS: Record<string, string> = {
   invalid_link: 'That link is invalid or has already been used. Please request a new one.',
   session_failed: 'That link has expired or was already used. Please request a new one.',
   auth_callback_failed: 'We could not sign you in from that link. Please request a new one.',
+  session_timeout: 'You were signed out because of inactivity. Please sign in again.',
   otp_expired: 'That link has expired. Please request a new one.',
   access_denied: 'That link has expired or was already used. Please request a new one.',
 }

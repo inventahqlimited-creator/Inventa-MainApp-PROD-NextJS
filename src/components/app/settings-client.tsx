@@ -802,6 +802,110 @@ function ContactsTab({ taxRates, currencies, locations, priceLevels, orgId, show
 
 import XeroSettings, { type XeroConnection, type XeroFlash } from '@/components/app/xero-settings'
 import RolesModal from '@/components/app/roles-modal'
+import { useCan } from '@/components/app/permissions-provider'
+import { normalizePolicy, ROTATION_DAYS, MIN_LENGTH_FLOOR, MIN_LENGTH_CAP, type PasswordPolicy } from '@/lib/auth/password-policy'
+
+// ── Security: password policy ─────────────────────────────────────────
+
+function PasswordPolicyCard({ initial, canManage, showToast }: {
+  initial: unknown; canManage: boolean; showToast: (type: 'success' | 'error', msg: string) => void
+}) {
+  const [policy, setPolicy] = useState<PasswordPolicy>(() => normalizePolicy(initial))
+  const [saving, setSaving] = useState(false)
+  const [lenText, setLenText] = useState(String(policy.strength.min_length))
+  const rot = policy.rotation
+  const str = policy.strength
+
+  function setStrength(patch: Partial<PasswordPolicy['strength']>) { setPolicy(p => ({ ...p, strength: { ...p.strength, ...patch } })) }
+  function setRotation(patch: Partial<PasswordPolicy['rotation']>) { setPolicy(p => ({ ...p, rotation: { ...p.rotation, ...patch } })) }
+
+  async function save() {
+    const len = Math.min(MIN_LENGTH_CAP, Math.max(MIN_LENGTH_FLOOR, parseInt(lenText) || MIN_LENGTH_FLOOR))
+    const next = { ...policy, strength: { ...policy.strength, min_length: len } }
+    setLenText(String(len))
+    setSaving(true)
+    const res = await fetch('/api/org/security', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password_policy: next }),
+    })
+    setSaving(false)
+    if (res.ok) {
+      const d = await res.json().catch(() => null)
+      setPolicy(normalizePolicy(d?.password_policy ?? next))
+      showToast('success', 'Password policy saved')
+    } else showToast('error', 'Failed to save')
+  }
+
+  const rowStyle = { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'var(--gray-50)', border: '1.5px solid var(--gray-200)', borderRadius: 9, cursor: canManage ? 'pointer' : 'default' } as const
+  const checks: [keyof PasswordPolicy['strength'], string][] = [
+    ['upper', 'Require uppercase letter'], ['lower', 'Require lowercase letter'],
+    ['number', 'Require number'], ['special', 'Require special character'],
+  ]
+
+  return (
+    <Card
+      title="Password Policy"
+      subtitle="Enforce password strength and how often passwords change"
+      action={canManage ? <SaveBtn onClick={save} saving={saving} /> : undefined}
+    >
+      <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 10, opacity: canManage ? 1 : 0.75 }}>
+        <ToggleRow
+          label="Force new password"
+          sub={rot.enabled ? `Everyone must set a new password every ${rot.days} days` : 'Off — passwords never expire'}
+          active={rot.enabled}
+          onChange={v => canManage && setRotation({ enabled: v })}
+        />
+        {rot.enabled && (
+          <div style={{ ...rowStyle, cursor: 'default' }}>
+            <span style={{ fontSize: 13, color: 'var(--slate)' }}>Change password</span>
+            <div style={{ width: 180 }}>
+              <Select
+                value={String(rot.days)} disabled={!canManage}
+                onChange={v => setRotation({ days: Number(v) })}
+                options={ROTATION_DAYS.map(d => ({ value: String(d), label: `Every ${d} days` }))}
+              />
+            </div>
+          </div>
+        )}
+
+        <ToggleRow
+          label="Password strength requirements"
+          sub={str.enabled ? 'New passwords must meet the rules below' : 'Off — passwords only need 8 characters'}
+          active={str.enabled}
+          onChange={v => canManage && setStrength({ enabled: v })}
+        />
+        {str.enabled && (
+          <>
+            <div style={{ ...rowStyle, cursor: 'default' }}>
+              <span style={{ fontSize: 13, color: 'var(--slate)' }}>Minimum characters</span>
+              <input
+                className="modal-input" type="number" min={MIN_LENGTH_FLOOR} max={MIN_LENGTH_CAP}
+                value={lenText} disabled={!canManage}
+                onChange={e => setLenText(e.target.value)}
+                style={{ width: 90, background: 'var(--white)' }}
+              />
+            </div>
+            {checks.map(([key, label]) => (
+              <label key={key} style={rowStyle}>
+                <span style={{ fontSize: 13, color: 'var(--slate)' }}>{label}</span>
+                <input
+                  type="checkbox" checked={Boolean(str[key])} disabled={!canManage}
+                  onChange={e => setStrength({ [key]: e.target.checked })}
+                  style={{ accentColor: 'var(--teal)', width: 15, height: 15, cursor: canManage ? 'pointer' : 'default' }}
+                />
+              </label>
+            ))}
+          </>
+        )}
+        <div style={{ fontSize: 12, color: 'var(--gray-400)', lineHeight: 1.5 }}>
+          Applies when someone sets or resets a password. Existing passwords stay valid until they change them.
+          {!canManage && ' You need the "Manage security settings" permission to change this.'}
+        </div>
+      </div>
+    </Card>
+  )
+}
+
 
 export default function SettingsClient({
   org,
@@ -831,6 +935,7 @@ export default function SettingsClient({
   xeroFlash?: XeroFlash
 }) {
   const router = useRouter()
+  const canManageSecurity = useCan('manage_security')
   const [tab, setTab] = useState<Tab>((initialTab as Tab) ?? 'general')
   const xeroInstalled = Boolean(org.xero_enabled)
   const [xeroOpen, setXeroOpen] = useState(initialXero && Boolean(org.xero_enabled))
@@ -2056,9 +2161,7 @@ export default function SettingsClient({
 
         {/* ── SECURITY ── */}
         {tab === 'security' && (
-          <Card title="Security" subtitle="Account security settings">
-            <div style={{ padding: '20px', color: 'var(--gray-400)', fontSize: 13, textAlign: 'center' }}>Security settings coming soon.</div>
-          </Card>
+          <PasswordPolicyCard initial={org.password_policy} canManage={canManageSecurity} showToast={showToast} />
         )}
 
         {/* ── INTEGRATIONS ── */}

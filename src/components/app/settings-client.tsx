@@ -1325,7 +1325,7 @@ export default function SettingsClient({
 
   // Purchases settings
   const [allowOverReceive, setAllowOverReceive] = useState(Boolean(org.allow_over_receive))
-  const [landingCostMethod, setLandingCostMethod] = useState(String(org.landing_cost_method ?? 'value'))
+  const [landingCostMethod, setLandingCostMethod] = useState(org.landing_cost_method === 'quantity' ? 'quantity' : 'value')
   const [poPrefix, setPoPrefix] = useState(String(org.po_prefix ?? 'PO-'))
   const [poSuffix, setPoSuffix] = useState(String(org.po_suffix ?? ''))
   const [poStart, setPoStart] = useState(String(org.po_start ?? '1'))
@@ -1987,12 +1987,11 @@ export default function SettingsClient({
                 <div style={{ padding: '14px 16px', background: 'var(--gray-50)', border: '1.5px solid var(--gray-200)', borderRadius: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                   <div>
                     <div style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--slate)', fontFamily: 'var(--font-display)' }}>Landing Cost Allocation Method</div>
-                    <div style={{ fontSize: 12.5, color: 'var(--gray-400)', marginTop: 2 }}>How freight &amp; additional charges are spread across received lines</div>
+                    <div style={{ fontSize: 12.5, color: 'var(--gray-400)', marginTop: 2 }}>How a purchase order&apos;s additional costs (freight, duty, etc.) are spread across its lines to give each product its landed cost</div>
                   </div>
                   <select className="modal-input" value={landingCostMethod} onChange={e => setLandingCostMethod(e.target.value)} style={{ width: 180, cursor: 'pointer' }}>
                     <option value="value">By Value</option>
                     <option value="quantity">By Quantity</option>
-                    <option value="weight">By Weight / Volume</option>
                   </select>
                 </div>
               </div>

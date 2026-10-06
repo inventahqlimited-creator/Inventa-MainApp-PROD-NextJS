@@ -1,6 +1,7 @@
 // src/app/api/org/stocktake/route.ts
 import { NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { requirePerm } from '@/lib/auth/access'
 
 const MAX_STOCKTAKE_ROWS = 5000
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
@@ -32,6 +33,8 @@ async function getOrgId(): Promise<string | null> {
 
 // GET — download stock tick CSV
 export async function GET(_request: Request) {
+  const permGate = await requirePerm('create_adjustments')
+  if ('res' in permGate) return permGate.res
   const orgId = await getOrgId()
   if (!orgId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
@@ -128,6 +131,8 @@ export async function GET(_request: Request) {
 
 // POST — import stock tick CSV and apply quantities
 export async function POST(request: Request) {
+  const permGate = await requirePerm('create_adjustments')
+  if ('res' in permGate) return permGate.res
   const orgId = await getOrgId()
   if (!orgId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 

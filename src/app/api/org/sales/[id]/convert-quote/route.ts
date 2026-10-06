@@ -5,6 +5,7 @@
 import { NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { lineRow, costLineRow, nextSoNumber } from '../../shared'
+import { requirePerm } from '@/lib/auth/access'
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -23,6 +24,8 @@ function today(tz: string): { iso: string; label: string } {
 }
 
 export async function POST(request: Request, { params }: Params) {
+  const permGate = await requirePerm('edit_sales')
+  if ('res' in permGate) return permGate.res
   const { id } = await params
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()

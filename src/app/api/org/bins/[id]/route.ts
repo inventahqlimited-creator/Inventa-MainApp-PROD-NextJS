@@ -2,6 +2,7 @@
 import { createAdminClient } from '@/lib/supabase/server'
 import { createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
+import { requirePerm } from '@/lib/auth/access'
 
 async function getOrgId() {
   const supabase = await createClient()
@@ -14,6 +15,8 @@ async function getOrgId() {
 }
 
 export async function PATCH(req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const permGate = await requirePerm('manage_company')
+  if ('res' in permGate) return permGate.res
   const { id } = await params
   const auth = await getOrgId()
   if (!auth) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
@@ -30,6 +33,8 @@ export async function PATCH(req: Request, { params }: { params: Promise<{ id: st
 }
 
 export async function DELETE(_req: Request, { params }: { params: Promise<{ id: string }> }) {
+  const permGate = await requirePerm('manage_company')
+  if ('res' in permGate) return permGate.res
   const { id } = await params
   const auth = await getOrgId()
   if (!auth) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })

@@ -1,6 +1,7 @@
 // src/app/api/org/sales-settings/route.ts
 import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
+import { requirePerm } from '@/lib/auth/access'
 
 async function getAuth() {
   const supabase = await createClient()
@@ -31,6 +32,8 @@ const ALLOWED_KEYS = [
 ]
 
 export async function PATCH(req: Request) {
+  const permGate = await requirePerm('manage_sales_settings')
+  if ('res' in permGate) return permGate.res
   const auth = await getAuth()
   if (!auth) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 

@@ -2,6 +2,7 @@
 import { NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { pickTR, lineRow, validateTransfer } from '../shared'
+import { requireEditOrCancel } from '@/lib/auth/access'
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -26,6 +27,8 @@ const FULFILLING = ['picking', 'picked']
 type DbLine = { id: string; quantity: number; quantity_picked: number | null; product_id: string | null; from_bin_id: string | null }
 
 export async function PATCH(request: Request, { params }: Params) {
+  const permGate = await requireEditOrCancel(request, 'edit_transfers', 'cancel_transfers')
+  if ('res' in permGate) return permGate.res
   const { id } = await params
   const ctx = await getOrg()
   if (!ctx) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })

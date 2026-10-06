@@ -1,8 +1,10 @@
 // src/app/api/org/history/route.ts
 // GET ?type=sales|purchase|transfer&id=<order id> — every Audit Log entry for one order: created, edited, picked, packed,
-// received, closed, cancelled, and posted to Xero. Any member of the organisation can see it (the full Audit Log is admin only).
+// received, closed, cancelled, and posted to Xero. Needs the "View Order History" permission for that kind of order.
 import { NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { getAccess, can, denyResponse } from '@/lib/auth/access'
+import type { PermKey } from '@/lib/permissions'
 
 export const dynamic = 'force-dynamic'
 
@@ -19,6 +21,10 @@ export async function GET(req: Request) {
 
   const sp = new URL(req.url).searchParams
   const kind = KINDS[(sp.get('type') ?? '') as keyof typeof KINDS]
+  const histPerm: Record<string, PermKey> = { sales: 'view_sales_history', purchase: 'view_purchase_history', transfer: 'view_transfer_history' }
+  const access = await getAccess()
+  if (!access) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
+  if (!can(access, histPerm[sp.get('type') ?? ''] ?? 'view_audit_log')) return denyResponse()
   const id = sp.get('id') ?? ''
   if (!kind || !/^[0-9a-f-]{36}$/i.test(id)) return NextResponse.json({ error: 'Invalid request.' }, { status: 400 })
 

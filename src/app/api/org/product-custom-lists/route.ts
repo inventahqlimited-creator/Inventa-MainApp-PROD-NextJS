@@ -1,6 +1,7 @@
 // src/app/api/org/product-custom-lists/route.ts
 import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
+import { requirePerm } from '@/lib/auth/access'
 
 async function getAuth() {
   const supabase = await createClient()
@@ -24,6 +25,8 @@ export async function GET() {
 }
 
 export async function POST(req: Request) {
+  const permGate = await requirePerm('manage_product_settings')
+  if ('res' in permGate) return permGate.res
   const auth = await getAuth()
   if (!auth) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const { name, sort_order } = await req.json()

@@ -4,10 +4,13 @@
 // public.receive_purchase_order(...)
 import { NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { requirePerm } from '@/lib/auth/access'
 
 type Params = { params: Promise<{ id: string }> }
 
 export async function POST(request: Request, { params }: Params) {
+  const permGate = await requirePerm('receive_purchases')
+  if ('res' in permGate) return permGate.res
   const { id } = await params
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()

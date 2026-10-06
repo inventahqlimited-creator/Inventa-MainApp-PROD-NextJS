@@ -1,6 +1,7 @@
 // src/app/api/org/settings/route.ts
 import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
+import { requirePerm } from '@/lib/auth/access'
 
 const ALLOWED_KEYS = [
   'serial_tracking', 'batch_tracking', 'expiry_tracking',
@@ -17,6 +18,8 @@ async function getAuth() {
 }
 
 export async function PATCH(req: Request) {
+  const permGate = await requirePerm('manage_product_settings')
+  if ('res' in permGate) return permGate.res
   const auth = await getAuth()
   if (!auth) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
   const body = await req.json()

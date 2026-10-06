@@ -112,7 +112,7 @@ export async function loadInvoicePayload(db: Db, orgId: string, ids: string[]): 
   const [{ data: org }, { data: costs }, { data: contacts }] = await Promise.all([
     db.from('organisations').select('name, trading_name, abn_nzbn, gst_number, logo_url, phone, email, contact_phone, contact_email, address, address_line1, address_line2, city, state, postcode, country, currency, base_currency, decimal_places, timezone, so_prefix, so_suffix, invoice_settings').eq('id', orgId).single(),
     orderIds.length ? db.from('sales_order_cost_lines').select('so_id, product_name, description, amount, tax_rate, sort_order').in('so_id', orderIds).order('sort_order') : none,
-    customerIds.length ? db.from('contacts').select('id, name, email, address, city, country, bill_name, bill_email, bill_street, bill_city, bill_postcode, bill_country, ship_name, ship_street, ship_city, ship_postcode, ship_country').in('id', customerIds) : none,
+    customerIds.length ? db.from('contacts').select('id, name, email, address, city, country, bill_name, bill_email, bill_street, bill_city, bill_postcode, bill_country, ship_name, ship_street, ship_city, ship_postcode, ship_country').eq('org_id', orgId).in('id', customerIds) : none,
   ])
   const orgRow = (org ?? {}) as OrgDb
   const config = normalizeInvoiceConfig(orgRow.invoice_settings)

@@ -1,5 +1,6 @@
 import { redirect } from 'next/navigation'
-import { createClient } from '@/lib/supabase/server'
+import { createClient, createAdminClient } from '@/lib/supabase/server'
+import { PLATFORM_ORG_ID, isPlatformAdmin } from '@/lib/auth/platform-admin'
 import HubSidebar from '@/components/hub/hub-sidebar'
 
 export const dynamic = 'force-dynamic'
@@ -13,11 +14,15 @@ export default async function AdminLayout({ children }: { children: React.ReactN
     .from('org_members')
     .select('role, first_name, last_name, email')
     .eq('user_id', user.id)
-    .single()
+    .eq('org_id', PLATFORM_ORG_ID)
+    .eq('role', 'admin')
+    .eq('invite_status', 'accepted')
+    .limit(1)
+    .maybeSingle()
 
   const m = membership as { role: string; first_name: string | null; last_name: string | null; email: string | null } | null
 
-  if (!m || m.role !== 'admin') redirect('/')
+  if (!m || !(await isPlatformAdmin(createAdminClient(), user.id))) redirect('/')
 
   const name = [m.first_name, m.last_name].filter(Boolean).join(' ') || user.email || 'Admin'
 

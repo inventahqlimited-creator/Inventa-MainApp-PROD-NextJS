@@ -49,6 +49,7 @@ export async function middleware(request: NextRequest) {
       .from('org_members')
       .select('role, invite_status')
       .eq('user_id', user.id)
+      .eq('org_id', process.env.PLATFORM_ORG_ID || '00000000-0000-0000-0000-000000000001')
     const memberList = (members ?? []) as { role: string; invite_status: string }[]
     const isAdmin = memberList.some(m => m.role === 'admin' && m.invite_status === 'accepted')
     if (!isAdmin) {

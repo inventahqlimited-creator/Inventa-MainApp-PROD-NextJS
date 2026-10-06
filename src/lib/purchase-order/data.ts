@@ -45,8 +45,8 @@ export async function loadPurchaseOrderPayload(db: Db, orgId: string, ids: strin
   const [{ data: org }, { data: costs }, { data: contacts }, { data: locations }] = await Promise.all([
     db.from('organisations').select('name, trading_name, abn_nzbn, gst_number, logo_url, phone, email, contact_phone, contact_email, address, address_line1, address_line2, city, state, postcode, country, currency, base_currency, decimal_places, timezone, purchase_order_settings').eq('id', orgId).single(),
     orderIds.length ? db.from('purchase_order_cost_lines').select('po_id, product_name, description, amount, tax_rate, sort_order').in('po_id', orderIds).order('sort_order') : none,
-    supplierIds.length ? db.from('contacts').select('id, name, email, address, city, country, bill_name, bill_email, bill_street, bill_city, bill_postcode, bill_country, ship_name, ship_street, ship_city, ship_postcode, ship_country').in('id', supplierIds) : none,
-    locationIds.length ? db.from('locations').select('id, name, address, city, country, phone, email').in('id', locationIds) : none,
+    supplierIds.length ? db.from('contacts').select('id, name, email, address, city, country, bill_name, bill_email, bill_street, bill_city, bill_postcode, bill_country, ship_name, ship_street, ship_city, ship_postcode, ship_country').eq('org_id', orgId).in('id', supplierIds) : none,
+    locationIds.length ? db.from('locations').select('id, name, address, city, country, phone, email').eq('org_id', orgId).in('id', locationIds) : none,
   ])
   const orgRow = (org ?? {}) as OrgDb & { purchase_order_settings?: unknown }
   const config = toInvoiceConfig(normalizePurchaseOrderConfig(orgRow.purchase_order_settings))

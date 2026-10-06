@@ -2,6 +2,20 @@
 import { NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 
+const MAX_STOCKTAKE_ROWS = 5000
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+type StocktakeRow = {
+  product_id: string
+  location_id: string | null
+  quantity: number
+  batch_number: string | null
+  serial_number: string | null
+  expiry_date: string | null
+  serial_tracking: boolean
+  batch_tracking: boolean
+  expiry_tracking: boolean
+}
+
 async function getOrgId(): Promise<string | null> {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
@@ -117,25 +131,58 @@ export async function POST(request: Request) {
   const orgId = await getOrgId()
   if (!orgId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  const body = await request.json() as { rows: {
-    product_id: string
-    product_name: string
-    sku: string
-    location_id: string | null
-    quantity: number
-    batch_number: string | null
-    serial_number: string | null
-    expiry_date: string | null
-    serial_tracking: boolean
-    batch_tracking: boolean
-    expiry_tracking: boolean
-  }[] }
-
-  if (!body.rows || body.rows.length === 0) {
+  const raw = await request.json().catch(() => null) as { rows?: unknown } | null
+  if (!raw || !Array.isArray(raw.rows) || raw.rows.length === 0) {
     return NextResponse.json({ error: 'No rows provided' }, { status: 400 })
+  }
+  if (raw.rows.length > MAX_STOCKTAKE_ROWS) {
+    return NextResponse.json({ error: `A stocktake can have at most ${MAX_STOCKTAKE_ROWS} rows` }, { status: 400 })
   }
 
   const adminClient = createAdminClient()
+
+  // Check every row, and take the product's tracking settings from the database rather than from the upload.
+  const str = (v: unknown, max = 200) => (typeof v === 'string' && v.trim() ? v.trim().slice(0, max) : null)
+  const rowsIn = raw.rows as Record<string, unknown>[]
+  const productIds = [...new Set(rowsIn.map(r => r?.product_id).filter((x): x is string => typeof x === 'string' && UUID_RE.test(x)))]
+  const locationIds = [...new Set(rowsIn.map(r => r?.location_id).filter((x): x is string => typeof x === 'string' && UUID_RE.test(x)))]
+  const [{ data: prodRows }, { data: locRows }] = await Promise.all([
+    productIds.length ? adminClient.from('products').select('id, serial_tracking, batch_tracking, expiry_tracking').eq('org_id', orgId).in('id', productIds) : Promise.resolve({ data: [] }),
+    locationIds.length ? adminClient.from('locations').select('id').eq('org_id', orgId).in('id', locationIds) : Promise.resolve({ data: [] }),
+  ])
+  type ProdRow = { id: string; serial_tracking: boolean | null; batch_tracking: boolean | null; expiry_tracking: boolean | null }
+  const prodMap = new Map<string, ProdRow>(((prodRows ?? []) as ProdRow[]).map(p => [p.id, p]))
+  const locSet = new Set((locRows ?? []).map((l: { id: string }) => l.id))
+
+  const cleanRows: StocktakeRow[] = []
+  for (let i = 0; i < rowsIn.length; i++) {
+    const r = rowsIn[i]
+    const pid = r?.product_id
+    const prod = typeof pid === 'string' ? prodMap.get(pid) : undefined
+    if (!prod) return NextResponse.json({ error: `Row ${i + 1}: product not found` }, { status: 400 })
+    const loc = r.location_id
+    if (loc !== null && loc !== undefined && loc !== '' && (typeof loc !== 'string' || !locSet.has(loc))) {
+      return NextResponse.json({ error: `Row ${i + 1}: location not found` }, { status: 400 })
+    }
+    const qty = r.quantity
+    if (typeof qty !== 'number' || !Number.isFinite(qty) || qty < 0 || qty > 1e9) {
+      return NextResponse.json({ error: `Row ${i + 1}: quantity must be a number of 0 or more` }, { status: 400 })
+    }
+    const expiry = str(r.expiry_date, 30)
+    if (expiry && Number.isNaN(Date.parse(expiry))) return NextResponse.json({ error: `Row ${i + 1}: invalid expiry date` }, { status: 400 })
+    cleanRows.push({
+      product_id: pid as string,
+      location_id: typeof loc === 'string' && loc ? loc : null,
+      quantity: qty,
+      batch_number: str(r.batch_number),
+      serial_number: str(r.serial_number),
+      expiry_date: expiry,
+      serial_tracking: !!prod.serial_tracking,
+      batch_tracking: !!prod.batch_tracking,
+      expiry_tracking: !!prod.expiry_tracking,
+    })
+  }
+  const body = { rows: cleanRows }
 
   // Apply each row: upsert stock_groups and update stock_levels
   for (const row of body.rows) {
@@ -168,6 +215,7 @@ export async function POST(request: Request) {
           .from('stock_groups')
           .update({ quantity: row.quantity })
           .eq('id', existing.id)
+          .eq('org_id', orgId)
       } else {
         await adminClient
           .from('stock_groups')

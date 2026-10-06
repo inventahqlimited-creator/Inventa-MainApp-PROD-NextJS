@@ -4,6 +4,7 @@ import { getAccess } from '@/lib/auth/access'
 import { PermissionsProvider } from '@/components/app/permissions-provider'
 import AppSidebar from '@/components/app/app-sidebar'
 import AppTopbar from '@/components/app/app-topbar'
+import { normalizePolicy, isPasswordExpired } from '@/lib/auth/password-policy'
 import ToastProvider from '@/components/app/toast'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
@@ -31,6 +32,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     .select('name, xero_enabled')
     .eq('id', m.org_id)
     .single()
+
+  // Password rotation: if the organisation requires a periodic change and it is due, send them to set a new one.
+  // Both lookups tolerate the columns not existing yet (before the SQL is run) — then nothing is enforced.
+  const [{ data: pwOrg }, { data: pwMember }] = await Promise.all([
+    adminClient.from('organisations').select('password_policy').eq('id', m.org_id).single(),
+    adminClient.from('org_members').select('password_changed_at').eq('user_id', access.userId).eq('org_id', m.org_id).single(),
+  ])
+  const policy = normalizePolicy((pwOrg as { password_policy?: unknown } | null)?.password_policy)
+  if (isPasswordExpired(policy, (pwMember as { password_changed_at?: string | null } | null)?.password_changed_at)) {
+    redirect('/auth/update-password?expired=1')
+  }
 
   const displayName = [m.first_name, m.last_name].filter(Boolean).join(' ') || user.email || 'User'
   const initials = displayName.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2)

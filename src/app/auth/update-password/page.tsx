@@ -1,8 +1,7 @@
 'use client'
 
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { useRouter } from 'next/navigation'
-import { createBrowserClient } from '@supabase/ssr'
 
 export default function UpdatePasswordPage() {
   const router = useRouter()
@@ -11,28 +10,32 @@ export default function UpdatePasswordPage() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const supabase = createBrowserClient(
-    process.env.NEXT_PUBLIC_SUPABASE_URL!,
-    process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-  )
+  const [requirements, setRequirements] = useState('')
+  const [expired, setExpired] = useState(false)
+
+  useEffect(() => {
+    setExpired(new URLSearchParams(window.location.search).get('expired') === '1')
+    fetch('/auth/password').then(r => r.ok ? r.json() : null).then(d => { if (d?.requirements) setRequirements(d.requirements) }).catch(() => {})
+  }, [])
 
   async function handleSubmit() {
     setError(null)
-    if (password.length < 8) {
-      setError('Password must be at least 8 characters')
-      return
-    }
     if (password !== confirm) {
       setError('Passwords do not match')
       return
     }
     setLoading(true)
-    const { error } = await supabase.auth.updateUser({ password })
+    // The server checks the password against the organisation's policy and records the change date
+    const res = await fetch('/auth/password', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ password }),
+    })
     setLoading(false)
-    if (error) {
-      setError(error.message)
-    } else {
+    if (res.ok) {
       router.replace('/dashboard')
+    } else {
+      const d = await res.json().catch(() => ({}))
+      setError(d.error ?? 'Could not set password')
     }
   }
 
@@ -43,7 +46,9 @@ export default function UpdatePasswordPage() {
           <h1 className="text-2xl font-semibold text-white" style={{ fontFamily: 'var(--font-display)' }}>
             Set your password
           </h1>
-          <p className="mt-1 text-sm text-slate-400">Choose a password to secure your account.</p>
+          <p className="mt-1 text-sm text-slate-400">
+            {expired ? 'Your password has expired. Choose a new one to continue.' : 'Choose a password to secure your account.'}
+          </p>
         </div>
 
         <div className="mb-4">
@@ -52,10 +57,11 @@ export default function UpdatePasswordPage() {
             type="password"
             value={password}
             onChange={e => setPassword(e.target.value)}
-            placeholder="At least 8 characters"
+            placeholder="New password"
             className="w-full rounded-lg px-3 py-2.5 text-sm text-white border border-white/10 bg-white/5 focus:outline-none focus:border-teal-500 placeholder:text-slate-600"
           />
         </div>
+        {requirements && <p className="mb-4 text-xs text-slate-500">Must include: {requirements}.</p>}
         <div className="mb-5">
           <label className="block text-xs text-slate-400 mb-1.5">Confirm password</label>
           <input

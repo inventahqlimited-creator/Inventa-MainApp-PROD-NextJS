@@ -4,6 +4,7 @@ import { useState, useMemo, useRef, useEffect, useCallback, Fragment } from 'rea
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { toast } from '@/components/app/toast'
+import { allocateLandedCost, type LandedMethod } from '@/lib/purchases/landed-cost'
 
 type PO = {
   id: string
@@ -281,6 +282,7 @@ export default function ViewPurchaseOrder({
   returnTo,
   allowOverReceive = false,
   nextBackorderNumber,
+  landingMethod = 'value',
 }: {
   po: PO
   lines: Line[]
@@ -291,6 +293,7 @@ export default function ViewPurchaseOrder({
   startInReceive?: boolean   // open straight into Receive Stock (used by /purchases/[id]/receive)
   returnTo?: string          // where to go after receiving or cancelling the receipt
   allowOverReceive?: boolean // Settings → Purchases → Allow Over-Receiving
+  landingMethod?: LandedMethod // Settings → Purchases → Landing Cost Allocation Method
   nextBackorderNumber?: string // what the next backorder of this PO will be called, e.g. PO-0001A
 }) {
   const router = useRouter()
@@ -337,6 +340,11 @@ export default function ViewPurchaseOrder({
   const subtotal = lines.reduce((sum, l) => sum + l.quantity_ordered * l.unit_cost * (1 - (l.discount ?? 0) / 100), 0)
   const additionalCostsTotal = costLines.reduce((sum, l) => sum + l.amount, 0)
   const preDiscountTotal = subtotal + additionalCostsTotal
+
+  // Landed cost: the additional costs spread over the lines (by value or quantity, per Settings)
+  const landed = new Map(allocateLandedCost(landingMethod, additionalCostsTotal, lines.map(l => ({
+    id: l.id, qty: l.quantity_ordered, unitCost: l.unit_cost, discount: l.discount,
+  }))).map(r => [r.id, r]))
   const orderDiscountAmount = po.order_discount_amount ?? 0
   const discountedBase = preDiscountTotal - orderDiscountAmount
   const gstTotal = lines.reduce((sum, l) => {
@@ -1105,11 +1113,12 @@ export default function ViewPurchaseOrder({
                       <th className="li-th" style={{ width: 60, textAlign: 'right' }}>Disc %</th>
                       <th className="li-th" style={{ width: 55, textAlign: 'right' }}>Tax</th>
                       <th className="li-th" style={{ width: 100, textAlign: 'right' }}>Line Total</th>
+                      {additionalCostsTotal > 0 && <th className="li-th" style={{ width: 130, textAlign: 'right' }} title={`Additional costs shared across lines ${landingMethod === 'quantity' ? 'by quantity' : 'by value'}`}>Landed / unit</th>}
                     </tr>
                   </thead>
                   <tbody>
                     {lines.length === 0 && (
-                      <tr><td colSpan={10} style={{ textAlign: 'center', padding: '24px 0', color: 'var(--gray-400)', fontSize: 13 }}>No line items.</td></tr>
+                      <tr><td colSpan={11} style={{ textAlign: 'center', padding: '24px 0', color: 'var(--gray-400)', fontSize: 13 }}>No line items.</td></tr>
                     )}
                     {lines.map(l => {
                       const received = l.quantity_received ?? 0
@@ -1140,6 +1149,16 @@ export default function ViewPurchaseOrder({
                           <td className="li-td" style={{ textAlign: 'right', color: 'var(--gray-400)' }}>{l.discount ? `${l.discount}%` : '—'}</td>
                           <td className="li-td" style={{ textAlign: 'right', color: 'var(--gray-400)' }}>{l.tax_name ?? (l.tax_rate ? `${l.tax_rate}%` : '—')}</td>
                           <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: 'var(--slate)', fontFamily: 'var(--font-display)' }}>{`$${lt.toFixed(2)}`}</td>
+                          {additionalCostsTotal > 0 && (() => {
+                            const a = landed.get(l.id)
+                            const unitBase = l.quantity_ordered > 0 ? lt / l.quantity_ordered : 0
+                            return (
+                              <td className="li-td" style={{ textAlign: 'right' }}>
+                                <div style={{ fontWeight: 600, color: 'var(--slate)', fontFamily: 'var(--font-display)' }}>{`$${(unitBase + (a && l.quantity_ordered > 0 ? a.allocated / l.quantity_ordered : 0)).toFixed(2)}`}</div>
+                                <div style={{ fontSize: 11, color: 'var(--gray-400)' }}>{`+$${(a?.allocated ?? 0).toFixed(2)} extra`}</div>
+                              </td>
+                            )
+                          })()}
                         </tr>
                       )
                     })}

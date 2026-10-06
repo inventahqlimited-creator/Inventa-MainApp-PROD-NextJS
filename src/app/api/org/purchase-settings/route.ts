@@ -35,6 +35,9 @@ export async function PATCH(req: Request) {
   for (const key of ALLOWED_KEYS) {
     if (body[key] !== undefined) updates[key] = body[key]
   }
+  if ('landing_cost_method' in updates && !['value', 'quantity'].includes(String(updates.landing_cost_method))) {
+    return NextResponse.json({ error: 'Invalid landing cost method' }, { status: 400 })
+  }
   if (Object.keys(updates).length === 0) {
     return NextResponse.json({ error: 'No valid fields' }, { status: 400 })
   }

@@ -1,6 +1,7 @@
 // src/app/(app)/purchases/[id]/receive/page.tsx
 import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
+import { normalizeMethod } from '@/lib/purchases/landed-cost'
 import ViewPurchaseOrder from '@/components/app/view-purchase-order'
 
 export default async function ReceivePurchaseOrderPage({ params }: { params: Promise<{ id: string }> }) {
@@ -47,11 +48,11 @@ export default async function ReceivePurchaseOrderPage({ params }: { params: Pro
   const [{ data: contacts }, { data: locations }, { data: org }] = await Promise.all([
     adminClient.from('contacts').select('id, name, email, phone, bill_street, bill_city, bill_country, terms, currency').eq('org_id', m.org_id).eq('type', 'supplier'),
     adminClient.from('locations').select('id, name').eq('org_id', m.org_id),
-    adminClient.from('organisations').select('serial_tracking, batch_tracking, expiry_tracking, allow_over_receive').eq('id', m.org_id).single(),
+    adminClient.from('organisations').select('serial_tracking, batch_tracking, expiry_tracking, allow_over_receive, landing_cost_method').eq('id', m.org_id).single(),
   ])
 
   // Tracking applies only when switched on for both the product and the organisation
-  const orgT = (org ?? {}) as { allow_over_receive?: boolean | null; serial_tracking?: boolean | null; batch_tracking?: boolean | null; expiry_tracking?: boolean | null }
+  const orgT = (org ?? {}) as { landing_cost_method?: string | null; allow_over_receive?: boolean | null; serial_tracking?: boolean | null; batch_tracking?: boolean | null; expiry_tracking?: boolean | null }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const raw = po as any
   const lines = (raw.purchase_order_lines ?? [])
@@ -95,6 +96,7 @@ export default async function ReceivePurchaseOrderPage({ params }: { params: Pro
       orgId={m.org_id}
       startInReceive
       allowOverReceive={!!orgT.allow_over_receive}
+      landingMethod={normalizeMethod(orgT.landing_cost_method)}
       nextBackorderNumber={nextBackorderNumber}
       returnTo={`/purchases/${id}`}
     />

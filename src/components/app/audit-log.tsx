@@ -35,7 +35,7 @@ function linkFor(e: Ev): string | null {
 const dayStart = (d: string) => new Date(`${d}T00:00:00`).toISOString()
 const dayEnd = (d: string) => new Date(`${d}T23:59:59.999`).toISOString()
 
-export default function AuditLog({ allowed }: { allowed: boolean }) {
+export default function AuditLog({ allowed, disabled = false }: { allowed: boolean; disabled?: boolean }) {
   const router = useRouter()
   const [events, setEvents] = useState<Ev[]>([])
   const [total, setTotal] = useState(0)
@@ -101,7 +101,7 @@ export default function AuditLog({ allowed }: { allowed: boolean }) {
   if (!allowed) {
     return (
       <div style={{ padding: 48, textAlign: 'center', color: 'var(--gray-400)', fontSize: 14 }}>
-        Only admins can view the audit log.
+        {disabled ? 'Access denied — the audit log is turned off for your organisation.' : 'Only admins can view the audit log.'}
       </div>
     )
   }

@@ -3,6 +3,7 @@
 // which email addresses have accounts.
 import { NextResponse } from 'next/server'
 import { sendResetEmail } from '@/lib/auth/send-reset'
+import { rateLimit } from '@/lib/rate-limit'
 
 export async function POST(request: Request) {
   let email = ''
@@ -15,7 +16,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Please enter a valid email address.' }, { status: 400 })
   }
 
-  const origin = request.headers.get('origin') ?? new URL(request.url).origin
+  // At most 3 reset emails per address per hour, so nobody can flood someone's inbox.
+  // Answer "ok" either way so this can't be used to probe which addresses exist.
+  if (!rateLimit(`forgot-email:${email.toLowerCase()}`, 3, 60 * 60_000).ok) return NextResponse.json({ ok: true })
+
+  const origin = new URL(request.url).origin
   const { error } = await sendResetEmail(email, origin)
   // Rate-limit errors are worth showing; anything else stays silent.
   if (error && /rate limit|too many/i.test(error.message)) {

@@ -3,11 +3,11 @@ import { addMonths, planLabel } from '@/lib/hub/constants'
 import { checkSeatLimit } from '@/lib/hub/seats'
 
 // minimal fake of the two queries checkSeatLimit makes
-function fakeDb(limit: number | null, used: number) {
+function fakeDb(limit: number | null, used: number, support = 0) {
   return {
     from: (t: string) => t === 'organisations'
       ? { select: () => ({ eq: () => ({ maybeSingle: async () => ({ data: limit === null ? null : { user_limit: limit }, error: limit === null ? { message: 'no column' } : null }) }) }) }
-      : { select: () => ({ eq: () => ({ in: async () => ({ count: used }) }) }) },
+      : { select: () => ({ eq: () => ({ in: async () => ({ data: [...Array(used).fill({ email: 'a@b.co' }), ...Array(support).fill({ email: 'hs-1@support.inventahq.com' })] }) }) }) },
   }
 }
 
@@ -23,6 +23,9 @@ describe('hub helpers', () => {
     const r = await checkSeatLimit(fakeDb(3, 3), 'o')
     expect(r.ok).toBe(false)
     if (!r.ok) expect(r.message).toBe('Your plan only allows 3 users. Please contact sales to add more.')
+  })
+  it('does not count hidden support identities as seats', async () => {
+    expect((await checkSeatLimit(fakeDb(3, 2, 4), 'o')).ok).toBe(true)
   })
   it('allows below the limit, and when the column is missing', async () => {
     expect((await checkSeatLimit(fakeDb(3, 2), 'o')).ok).toBe(true)

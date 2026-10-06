@@ -2,7 +2,9 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { DetailsCard, SubscriptionCard, type OrgData } from './org-panels'
+import OpenAppButton from './open-app-button'
 import UsersTable, { type MemberRow } from './users-table'
+import { isSupportEmail } from '@/lib/hub/support'
 import { fmtDate, fmtDateTime } from '@/lib/hub/constants'
 
 export const dynamic = 'force-dynamic'
@@ -36,7 +38,7 @@ export default async function OrgDetailPage({ params }: { params: Promise<{ id: 
     .select('id, user_id, first_name, last_name, email, role, invite_status, invited_at')
     .eq('org_id', id)
     .order('invited_at', { ascending: false })
-  const base = (members ?? []) as (Omit<MemberRow, 'last_login'> & { user_id: string | null })[]
+  const base = ((members ?? []) as (Omit<MemberRow, 'last_login'> & { user_id: string | null })[]).filter(m => !isSupportEmail(m.email))
 
   // last sign-in lives on the login account, not the membership row
   const memberList: MemberRow[] = await Promise.all(base.map(async ({ user_id, ...m }) => {
@@ -66,9 +68,12 @@ export default async function OrgDetailPage({ params }: { params: Promise<{ id: 
           <h1 style={{ fontFamily: 'var(--font-display)', fontSize: '22px', fontWeight: 800, color: 'var(--slate)', letterSpacing: '-0.02em' }}>{o.name}</h1>
           <p style={{ fontSize: '13px', color: 'var(--gray-400)', marginTop: '2px' }}>Created {fmtDate(o.created_at)}</p>
         </div>
-        <span style={{ display: 'inline-block', padding: '4px 12px', borderRadius: '999px', fontSize: '12px', fontWeight: 600, background: statusStyle[o.status]?.bg, color: statusStyle[o.status]?.color }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px', flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+          <span style={{ display: 'inline-block', padding: '4px 12px', borderRadius: '999px', fontSize: '12px', fontWeight: 600, background: statusStyle[o.status]?.bg, color: statusStyle[o.status]?.color }}>
           {o.status.charAt(0).toUpperCase() + o.status.slice(1)}
         </span>
+          <OpenAppButton orgId={o.id} />
+        </div>
       </div>
 
       <DetailsCard org={o} />

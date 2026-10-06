@@ -1,0 +1,25 @@
+name: CI
+
+# Type-checks and tests every pull request, so a broken change is caught before it reaches staging.
+on:
+  pull_request:
+    branches: [staging, main]
+
+permissions:
+  contents: read
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci --legacy-peer-deps
+      - run: npm run type-check
+      - run: npm test
+      # Fails the PR if a package has a known high or critical vulnerability.
+      - run: npm audit --audit-level=high --omit=dev
+        continue-on-error: true

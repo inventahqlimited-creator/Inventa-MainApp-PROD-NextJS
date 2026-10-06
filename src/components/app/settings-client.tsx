@@ -56,6 +56,7 @@ const TABS = [
   { key: 'transfers', label: 'Transfers' },
   { key: 'sales', label: 'Sales' },
   { key: 'users', label: 'Users' },
+  { key: 'notifications', label: 'Notifications' },
   { key: 'security', label: 'Security' },
   { key: 'integrations', label: 'Integrations' },
 ] as const
@@ -803,8 +804,95 @@ function ContactsTab({ taxRates, currencies, locations, priceLevels, orgId, show
 import XeroSettings, { type XeroConnection, type XeroFlash } from '@/components/app/xero-settings'
 import RolesModal from '@/components/app/roles-modal'
 import { normalizeSecurity, SESSION_TIMEOUT_OPTIONS, sessionTimeoutLabel, parseIpRule, isIpAllowed, MAX_IP_RULES, type SecuritySettings } from '@/lib/auth/security-settings'
+import { normalizeNotifications, type NotificationSettings, type OverdueRule } from '@/lib/notifications/config'
 import { useCan } from '@/components/app/permissions-provider'
 import { normalizePolicy, ROTATION_DAYS, MIN_LENGTH_FLOOR, MIN_LENGTH_CAP, type PasswordPolicy } from '@/lib/auth/password-policy'
+
+// ── Notifications ─────────────────────────────────────────────────────
+
+function NotificationsCard({ initial, canManage, showToast }: {
+  initial: unknown; canManage: boolean; showToast: (type: 'success' | 'error', msg: string) => void
+}) {
+  const [n, setN] = useState<NotificationSettings>(() => normalizeNotifications(initial))
+  const [warnTxt, setWarnTxt] = useState({ sales: String(n.sales_overdue.warn_days), purchase: String(n.purchase_overdue.warn_days) })
+  const [critTxt, setCritTxt] = useState({ sales: String(n.sales_overdue.critical_days), purchase: String(n.purchase_overdue.critical_days) })
+  const [saving, setSaving] = useState(false)
+
+  async function save() {
+    const build = (r: OverdueRule, w: string, c: string): OverdueRule => ({ ...r, warn_days: parseInt(w) || 1, critical_days: parseInt(c) || 5 })
+    const next: NotificationSettings = {
+      ...n,
+      sales_overdue: build(n.sales_overdue, warnTxt.sales, critTxt.sales),
+      purchase_overdue: build(n.purchase_overdue, warnTxt.purchase, critTxt.purchase),
+    }
+    for (const r of [next.sales_overdue, next.purchase_overdue]) {
+      if (r.critical_days < r.warn_days) { showToast('error', 'Critical days must be the same as or more than the first alert'); return }
+    }
+    setSaving(true)
+    const res = await fetch('/api/org/notification-settings', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ notification_settings: next }),
+    })
+    setSaving(false)
+    if (res.ok) {
+      const d = await res.json().catch(() => null)
+      const saved = normalizeNotifications(d?.notification_settings ?? next)
+      setN(saved)
+      setWarnTxt({ sales: String(saved.sales_overdue.warn_days), purchase: String(saved.purchase_overdue.warn_days) })
+      setCritTxt({ sales: String(saved.sales_overdue.critical_days), purchase: String(saved.purchase_overdue.critical_days) })
+      showToast('success', 'Notification settings saved')
+    } else showToast('error', 'Failed to save')
+  }
+
+  const daysRow = (label: string, value: string, set: (v: string) => void) => (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '10px 14px', background: 'var(--white)', border: '1.5px solid var(--gray-200)', borderRadius: 9 }}>
+      <span style={{ fontSize: 13, color: 'var(--slate)' }}>{label}</span>
+      <span style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12.5, color: 'var(--gray-400)' }}>
+        <input className="modal-input" type="number" min={1} max={365} value={value} disabled={!canManage} onChange={e => set(e.target.value)} style={{ width: 80 }} /> days
+      </span>
+    </div>
+  )
+
+  const overdue = (key: 'sales' | 'purchase', label: string, sub: string) => {
+    const r = key === 'sales' ? n.sales_overdue : n.purchase_overdue
+    const field = key === 'sales' ? 'sales_overdue' : 'purchase_overdue'
+    return (
+      <>
+        <ToggleRow label={label} sub={sub} active={r.enabled} onChange={v => canManage && setN(p => ({ ...p, [field]: { ...p[field], enabled: v } }))} />
+        {r.enabled && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8, paddingLeft: 16 }}>
+            {daysRow('Send an alert when overdue by', warnTxt[key], v => setWarnTxt(t => ({ ...t, [key]: v })))}
+            {daysRow('Make it critical when overdue by', critTxt[key], v => setCritTxt(t => ({ ...t, [key]: v })))}
+          </div>
+        )}
+      </>
+    )
+  }
+
+  return (
+    <Card
+      title="Notifications"
+      subtitle="Choose which alerts appear under the bell"
+      action={canManage ? <SaveBtn onClick={save} saving={saving} /> : undefined}
+    >
+      <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 10, opacity: canManage ? 1 : 0.75 }}>
+        <ToggleRow
+          label="Low stock"
+          sub="Alert when a product's stock on hand falls below its minimum stock level (critical when it runs out)"
+          active={n.low_stock.enabled}
+          onChange={v => canManage && setN(p => ({ ...p, low_stock: { enabled: v } }))}
+        />
+        {overdue('sales', 'Overdue sales orders', 'Alert when an open sales order is past its delivery date')}
+        {overdue('purchase', 'Late purchase orders', 'Alert when a purchase order has not been received by its expected delivery date')}
+        <div style={{ fontSize: 12, color: 'var(--gray-400)', lineHeight: 1.5 }}>
+          Everyone sees the alerts for the areas they can access. Marking an alert as read only affects your own browser.
+          {!canManage && ' You need the "Manage company settings" permission to change this.'}
+        </div>
+      </div>
+    </Card>
+  )
+}
+
 
 // ── Security: password policy ─────────────────────────────────────────
 
@@ -1063,6 +1151,7 @@ export default function SettingsClient({
 }) {
   const router = useRouter()
   const canManageSecurity = useCan('manage_security')
+  const canManageCompany = useCan('manage_company')
   const [security, setSecurity] = useState<SecuritySettings>(() => normalizeSecurity(org.security_settings))
   const [tab, setTab] = useState<Tab>((initialTab as Tab) ?? 'general')
   const xeroInstalled = Boolean(org.xero_enabled)
@@ -2285,6 +2374,11 @@ export default function SettingsClient({
               )
             })}
           </Card>
+        )}
+
+        {/* ── NOTIFICATIONS ── */}
+        {tab === 'notifications' && (
+          <NotificationsCard initial={org.notification_settings} canManage={canManageCompany} showToast={showToast} />
         )}
 
         {/* ── SECURITY ── */}

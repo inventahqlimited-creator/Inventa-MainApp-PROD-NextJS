@@ -1,4 +1,4 @@
-import { createClient } from '@/lib/supabase/server'
+import { createAdminClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import OrgStatusForm from './org-status-form'
@@ -31,14 +31,14 @@ export type Member = {
 }
 
 const statusStyle: Record<string, { bg: string; color: string }> = {
-  active:    { bg: '#D1FAE5', color: '#065F46' },
-  inactive:  { bg: '#F3F4F6', color: '#6B7280' },
-  suspended: { bg: '#FEF3C7', color: '#92400E' },
+  active:    { bg: 'rgba(16,185,129,0.15)', color: '#6EE7B7' },
+  inactive:  { bg: 'rgba(148,163,184,0.15)', color: '#CBD5E1' },
+  suspended: { bg: 'rgba(245,158,11,0.15)', color: '#FCD34D' },
 }
 
 export default async function OrgDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
-  const supabase = await createClient()
+  const supabase = createAdminClient() // layout verified platform admin
 
   const { data: org, error: orgErr } = await supabase
     .from('organisations').select('*').eq('id', id).single()
@@ -76,7 +76,7 @@ export default async function OrgDetailPage({ params }: { params: Promise<{ id: 
         </span>
       </div>
 
-      <div style={{ background: 'white', borderRadius: '14px', boxShadow: 'var(--shadow-sm)', padding: '24px', marginBottom: '20px' }}>
+      <div style={{ background: 'var(--hub-card)', borderRadius: '14px', boxShadow: 'var(--shadow-sm)', padding: '24px', marginBottom: '20px' }}>
         <div style={{ fontSize: '11px', fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase', color: 'var(--gray-400)', marginBottom: '18px' }}>
           Organisation Details
         </div>

@@ -1,3 +1,4 @@
+import { isSupportEmail } from '@/lib/hub/support'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import MembersTable from '@/components/app/members-table'
@@ -41,7 +42,7 @@ export default async function UsersSettingsPage() {
         </p>
       </div>
       <MembersTable
-        members={members ?? []}
+        members={(members ?? []).filter((x: { email: string | null }) => !isSupportEmail(x.email))}
         currentUserId={user.id}
         isAdmin={m.role === 'admin'}
       />

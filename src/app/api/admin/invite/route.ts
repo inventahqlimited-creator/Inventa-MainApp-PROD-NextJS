@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { isSupportEmail } from '@/lib/hub/support'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { checkSeatLimit } from '@/lib/hub/seats'
 import { isPlatformAdmin, isUuid, isEmail, isFixedRole } from '@/lib/auth/platform-admin'
@@ -18,6 +19,7 @@ export async function POST(request: Request) {
   if (!isEmail(email) || !isUuid(orgId)) {
     return NextResponse.json({ error: 'A valid email and organisation are required' }, { status: 400 })
   }
+  if (isSupportEmail(String(email))) return NextResponse.json({ error: 'That address can’t be invited.' }, { status: 400 })
   const memberRole = role === undefined || role === '' ? 'staff' : role
   if (!isFixedRole(memberRole)) {
     return NextResponse.json({ error: 'Invalid role' }, { status: 400 })

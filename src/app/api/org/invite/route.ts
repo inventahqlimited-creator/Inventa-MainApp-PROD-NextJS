@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { isSupportEmail } from '@/lib/hub/support'
 import { createAdminClient } from '@/lib/supabase/server'
 import { requirePerm } from '@/lib/auth/access'
 import { checkSeatLimit } from '@/lib/hub/seats'
@@ -17,6 +18,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'email and role are required' }, { status: 400 })
   }
 
+  if (isSupportEmail(String(email))) return NextResponse.json({ error: 'That address can’t be invited.' }, { status: 400 })
   const validRoles = ['admin', 'manager', 'staff', 'read_only']
   if (!validRoles.includes(role)) {
     return NextResponse.json({ error: 'Invalid role' }, { status: 400 })

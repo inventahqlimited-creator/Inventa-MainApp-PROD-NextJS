@@ -8,6 +8,8 @@ import { printPackingList } from '@/lib/packing-list/print'
 import { printInvoice } from '@/lib/invoice/print'
 import { XeroColumnMenuItem, XeroPostNotice, XeroStatusBadge, useXeroColumn, usePostToXero, type XeroTableInfo } from '@/components/app/xero-sync-ui'
 import { toast } from '@/components/app/toast'
+import EmailComposer from '@/components/app/email/email-composer'
+import { useCan } from '@/components/app/permissions-provider'
 
 type Order = {
   id: string
@@ -145,6 +147,8 @@ export default function SalesTable({
   fulfilmentMode?: string
 }) {
   const router = useRouter()
+  const canEmail = useCan('send_emails')
+  const [emailId, setEmailId] = useState<string | null>(null)
   const [xeroRecords, setXeroRecords] = useState(xero?.records ?? {})
   const xeroCol = useXeroColumn('sales_xero_col')
   const showXero = Boolean(xero?.show) && xeroCol.on
@@ -557,6 +561,8 @@ export default function SalesTable({
         </div>
       </div>
       {/* Row actions menu */}
+      {emailId && <EmailComposer module="sales" id={emailId} onClose={() => setEmailId(null)} />}
+
       {menu && menuOrder && (() => {
         const o = menuOrder
         const k = statusKey(o.status)
@@ -632,7 +638,7 @@ export default function SalesTable({
                   : null}
               </div>
             )}
-            {item('Email', null, { soon: true, icon: ic('M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM22 6l-10 7L2 6') })}
+            {canEmail && item('Email', () => { const id = o.id; setMenu(null); setEmailId(id) }, { icon: ic('M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM22 6l-10 7L2 6') })}
             {k !== 'quote' && item('Create Credit Note', null, { soon: true, icon: ic('M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M9 15h6') })}
             {!closedLike && <>{sep('s3')}{item('Cancel Order', () => { setMenu(null); setDialog({ kind: 'cancel', order: o }) }, { danger: true, icon: ic('M18 6 6 18M6 6l12 12') })}</>}
           </div>

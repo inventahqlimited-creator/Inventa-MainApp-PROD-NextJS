@@ -82,7 +82,7 @@ export default function EmailSettingsTab() {
   const statusColour = s.domain_status === 'verified' ? '#047857' : s.domain_status === 'failed' ? '#B91C1C' : '#92400E'
 
   return (
-    <div style={{ maxWidth: 860 }}>
+    <div>
       {msg && <div style={{ marginBottom: 14, padding: '9px 14px', borderRadius: 9, fontSize: 13, background: msg.ok ? '#ECFDF5' : '#FEF2F2', color: msg.ok ? '#065F46' : '#991B1B' }}>{msg.text}</div>}
       {!configured && <div style={{ marginBottom: 14, padding: '9px 14px', borderRadius: 9, fontSize: 13, background: '#FEF3C7', color: '#92400E' }}>Sending email hasn’t been switched on for this platform yet, so emails can’t be sent. Contact InventaHQ support.</div>}
 

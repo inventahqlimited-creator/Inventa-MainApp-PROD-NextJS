@@ -30,6 +30,7 @@ export default function EmailSettingsTab() {
   const [log, setLog] = useState<LogRow[]>([])
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [busy, setBusy] = useState(false)
+  const [domainMsg, setDomainMsg] = useState<{ ok: boolean; text: string } | null>(null)
   const [sigEdit, setSigEdit] = useState<(Partial<Sig> & { n: number }) | null>(null)
   const [tplEdit, setTplEdit] = useState<(Partial<Tpl> & { n: number }) | null>(null)
 
@@ -45,17 +46,21 @@ export default function EmailSettingsTab() {
 
   async function saveSender() {
     setBusy(true)
-    const r = await api<{ settings: EmailSettings }>('/api/org/email/settings', 'PATCH', { from_name: s!.from_name, from_local: s!.from_local, reply_to: s!.reply_to, default_cc: cc })
+    const r = await api<{ settings: EmailSettings }>('/api/org/email/settings', 'PATCH', { from_name: s!.from_name, from_local: s!.from_local, reply_to: s!.reply_to, default_cc: cc, default_recipient: s!.default_recipient })
     setBusy(false)
     if (r.error) return flash(false, r.error)
     await load(); flash(true, 'Email settings saved.')
   }
   async function domainAction(method: 'POST' | 'PUT' | 'DELETE') {
-    setBusy(true)
-    const r = await api<{ settings: EmailSettings }>('/api/org/email/domain', method, method === 'POST' ? { domain } : undefined)
+    setBusy(true); setDomainMsg(null)
+    let r: { settings: EmailSettings; error?: string }
+    try { r = await api<{ settings: EmailSettings }>('/api/org/email/domain', method, method === 'POST' ? { domain: domain.trim() } : undefined) }
+    catch { r = { settings: s!, error: 'Could not reach the server. Try again.' } }
     setBusy(false)
-    if (r.error) return flash(false, r.error)
+    if (r.error) { setDomainMsg({ ok: false, text: r.error }); return flash(false, r.error) }
     await load()
+    const text = (method === 'PUT' ? (r.settings.domain_status === 'verified' ? 'Domain verified. Emails now send from your own address.' : 'Not verified yet. DNS changes can take a while — try again shortly.') : method === 'DELETE' ? 'Domain removed.' : 'Domain added. Add the DNS records below, then press Check now.')
+    setDomainMsg({ ok: true, text })
     flash(true, method === 'PUT' ? (r.settings.domain_status === 'verified' ? 'Domain verified. Emails now send from your own address.' : 'Not verified yet. DNS changes can take a while — try again shortly.') : method === 'DELETE' ? 'Domain removed.' : 'Domain added. Add the DNS records below, then press Check.')
   }
   async function saveSig() {
@@ -88,11 +93,17 @@ export default function EmailSettingsTab() {
           <div className="modal-field"><label className="modal-label">Reply-to address</label><input className="modal-input" type="email" value={s.reply_to} onChange={e => set('reply_to', e.target.value)} placeholder="sales@acme.co.nz" /></div>
           <div className="modal-field"><label className="modal-label">Default CC <span style={{ fontWeight: 400, color: 'var(--gray-400)' }}>(comma separated)</span></label><input className="modal-input" value={cc} onChange={e => setCc(e.target.value)} placeholder="accounts@acme.co.nz" /></div>
           <div className="modal-field"><label className="modal-label">Sending address</label>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-              <input className="modal-input" style={{ width: 120 }} value={s.from_local} onChange={e => set('from_local', e.target.value)} disabled={s.domain_status !== 'verified'} />
-              <span style={{ fontSize: 13, color: 'var(--gray-500)' }}>@{s.domain_status === 'verified' ? s.domain : '…'}</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 4, opacity: s.domain_status === 'verified' ? 1 : 0.55 }}>
+              <input className="modal-input" value={s.from_local} onChange={e => set('from_local', e.target.value)} disabled={s.domain_status !== 'verified'} style={{ width: 120, background: s.domain_status === 'verified' ? undefined : 'var(--gray-100)', color: s.domain_status === 'verified' ? undefined : 'var(--gray-400)', cursor: s.domain_status === 'verified' ? undefined : 'not-allowed' }} />
+              <span style={{ fontSize: 13, color: 'var(--gray-400)' }}>@{s.domain_status === 'verified' ? s.domain : '…'}</span>
             </div>
           </div>
+          <div className="modal-field"><label className="modal-label">Send to this contact address by default</label>
+            <select className="modal-input" value={s.default_recipient} onChange={e => setS(p => p ? { ...p, default_recipient: e.target.value as EmailSettings['default_recipient'] } : p)}>
+              <option value="billing">Billing email</option><option value="shipping">Shipping email</option><option value="main">Main contact email</option>
+            </select>
+          </div>
+          <div />
           <div style={{ gridColumn: 'span 2', fontSize: 12.5, color: 'var(--gray-500)' }}>
             {sender ? <>Emails currently send from <b>{sender.address}</b>{sender.verified ? '' : ' (shared InventaHQ address — verify your own domain below so they come from you and avoid spam folders)'}.</> : 'No sending address available yet.'}
           </div>
@@ -106,13 +117,14 @@ export default function EmailSettingsTab() {
           <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
             <input className="modal-input" style={{ maxWidth: 260 }} value={domain} onChange={e => setDomain(e.target.value)} placeholder="acme.co.nz" disabled={!!s.domain_id} />
             {!s.domain_id
-              ? <button className="btn btn-primary" style={{ height: 32, fontSize: 12.5 }} onClick={() => domainAction('POST')} disabled={busy || !domain}>Add domain</button>
+              ? <button className="btn btn-primary" style={{ height: 32, fontSize: 12.5 }} onClick={() => domainAction('POST')} disabled={busy || !domain.trim()}>{busy ? 'Adding…' : 'Add domain'}</button>
               : <>
                   <span style={{ fontSize: 12.5, fontWeight: 700, color: statusColour }}>{s.domain_status === 'verified' ? '✓ Verified' : s.domain_status === 'failed' ? 'Failed — check the records' : 'Waiting for DNS'}</span>
                   {s.domain_status !== 'verified' && <button className="btn btn-outline" style={{ height: 32, fontSize: 12.5 }} onClick={() => domainAction('PUT')} disabled={busy}>Check now</button>}
                   <button className="btn btn-outline" style={{ height: 32, fontSize: 12.5 }} onClick={() => { if (confirm('Remove this domain? Emails go back to the shared address.')) domainAction('DELETE') }} disabled={busy}>Remove</button>
                 </>}
           </div>
+          {domainMsg && <div style={{ marginTop: 10, fontSize: 13, color: domainMsg.ok ? '#065F46' : '#B91C1C' }}>{domainMsg.text}</div>}
           {s.domain_id && s.domain_records.length > 0 && s.domain_status !== 'verified' && (
             <div style={{ overflowX: 'auto', marginTop: 14 }}>
               <table style={{ width: '100%', fontSize: 12, borderCollapse: 'collapse' }}>

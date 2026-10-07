@@ -3,7 +3,7 @@ import { loadInvoicePayload } from '@/lib/invoice/data'
 import { loadPurchaseOrderPayload } from '@/lib/purchase-order/data'
 import type { DocType } from '@/lib/pdf'
 import type { PermKey } from '@/lib/permissions'
-import { isEmail } from './config'
+import { pickRecipient, type EmailSettings } from './config'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = any
@@ -28,7 +28,7 @@ export type EmailContext = {
   dueDate: string
 }
 
-export async function loadEmailContext(db: Db, orgId: string, module: EmailModule, id: string): Promise<EmailContext | null> {
+export async function loadEmailContext(db: Db, orgId: string, module: EmailModule, id: string, pref: EmailSettings['default_recipient'] = 'billing'): Promise<EmailContext | null> {
   if (module === 'sales') {
     const { data: o } = await db.from('sales_orders').select('id, so_number, status, customer_id, customer_name').eq('id', id).eq('org_id', orgId).maybeSingle()
     if (!o) return null
@@ -36,14 +36,14 @@ export async function loadEmailContext(db: Db, orgId: string, module: EmailModul
     try {
       const p = await loadInvoicePayload(db, orgId, [id])
       const ord = p.orders[0]
-      if (ord) { email = ord.bill_to?.email ?? ''; total = `${ord.currency} ${ord.total.toFixed(p.decimals)}`; due = ord.due_date ?? '' }
+      if (ord) { total = `${ord.currency} ${ord.total.toFixed(p.decimals)}`; due = ord.due_date ?? '' }
     } catch { /* the composer still works without these */ }
-    if (!email && o.customer_id) {
-      const { data: c } = await db.from('contacts').select('email').eq('id', o.customer_id).eq('org_id', orgId).maybeSingle()
-      email = c?.email ?? ''
+    if (o.customer_id) {
+      const { data: c } = await db.from('contacts').select('email, bill_email, ship_email').eq('id', o.customer_id).eq('org_id', orgId).maybeSingle()
+      email = pickRecipient(c, pref)
     }
     const quote = String(o.status).toLowerCase() === 'quote'
-    return { ref: o.so_number ?? '', docLabel: quote ? 'Quote' : 'Sales order', recipientName: o.customer_name ?? '', recipientEmail: isEmail(email) ? email : '', total, dueDate: due }
+    return { ref: o.so_number ?? '', docLabel: quote ? 'Quote' : 'Sales order', recipientName: o.customer_name ?? '', recipientEmail: email, total, dueDate: due }
   }
   if (module === 'purchases') {
     const { data: o } = await db.from('purchase_orders').select('id, po_number, supplier_id, supplier_name').eq('id', id).eq('org_id', orgId).maybeSingle()
@@ -52,13 +52,13 @@ export async function loadEmailContext(db: Db, orgId: string, module: EmailModul
     try {
       const p = await loadPurchaseOrderPayload(db, orgId, [id])
       const ord = p.orders[0]
-      if (ord) { email = ord.bill_to?.email ?? ''; total = `${ord.currency} ${ord.total.toFixed(p.decimals)}`; due = ord.due_date ?? '' }
+      if (ord) { total = `${ord.currency} ${ord.total.toFixed(p.decimals)}`; due = ord.due_date ?? '' }
     } catch { /* optional */ }
-    if (!email && o.supplier_id) {
-      const { data: c } = await db.from('contacts').select('email').eq('id', o.supplier_id).eq('org_id', orgId).maybeSingle()
-      email = c?.email ?? ''
+    if (o.supplier_id) {
+      const { data: c } = await db.from('contacts').select('email, bill_email, ship_email').eq('id', o.supplier_id).eq('org_id', orgId).maybeSingle()
+      email = pickRecipient(c, pref)
     }
-    return { ref: o.po_number ?? '', docLabel: 'Purchase order', recipientName: o.supplier_name ?? '', recipientEmail: isEmail(email) ? email : '', total, dueDate: due }
+    return { ref: o.po_number ?? '', docLabel: 'Purchase order', recipientName: o.supplier_name ?? '', recipientEmail: email, total, dueDate: due }
   }
   const { data: t } = await db.from('transfer_orders').select('id, tr_number, to_location_id, expected_date').eq('id', id).eq('org_id', orgId).maybeSingle()
   if (!t) return null
@@ -67,5 +67,5 @@ export async function loadEmailContext(db: Db, orgId: string, module: EmailModul
     const { data: l } = await db.from('locations').select('name, email').eq('id', t.to_location_id).eq('org_id', orgId).maybeSingle()
     email = l?.email ?? ''; name = l?.name ?? ''
   }
-  return { ref: t.tr_number ?? '', docLabel: 'Transfer', recipientName: name, recipientEmail: isEmail(email) ? email : '', total: '', dueDate: t.expected_date ?? '' }
+  return { ref: t.tr_number ?? '', docLabel: 'Transfer', recipientName: name, recipientEmail: email, total: '', dueDate: t.expected_date ?? '' }
 }

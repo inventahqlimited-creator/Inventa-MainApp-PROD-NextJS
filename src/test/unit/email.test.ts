@@ -36,13 +36,13 @@ describe('default recipient', () => {
   it('starts with the chosen address and falls back to the others', () => {
     expect(pickRecipient(c, 'billing')).toBe('bill@x.com')
     expect(pickRecipient(c, 'shipping')).toBe('ship@x.com')
-    expect(pickRecipient(c, 'main')).toBe('main@x.com')
     expect(pickRecipient({ email: 'main@x.com', bill_email: '', ship_email: null }, 'shipping')).toBe('main@x.com')
+    expect(pickRecipient({ email: 'main@x.com', bill_email: 'bill@x.com', ship_email: null }, 'shipping')).toBe('bill@x.com')
     expect(pickRecipient(null, 'billing')).toBe('')
   })
   it('keeps the setting when saved', () => {
     expect(validateSettingsInput({ default_recipient: 'shipping' })).toMatchObject({ value: { default_recipient: 'shipping' } })
-    expect(validateSettingsInput({ default_recipient: 'zzz' })).toMatchObject({ value: { default_recipient: 'billing' } })
+    expect(validateSettingsInput({ default_recipient: 'main' })).toMatchObject({ value: { default_recipient: 'billing' } })
   })
 })
 

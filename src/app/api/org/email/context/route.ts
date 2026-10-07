@@ -15,14 +15,14 @@ export async function GET(req: Request) {
   if (!isEmailModule(module) || !id) return NextResponse.json({ error: 'Bad request' }, { status: 400 })
   if (!can(access, MODULE_VIEW_PERM[module])) return NextResponse.json({ error: 'Forbidden' }, { status: 403 })
 
-  const [ctx, { data: org }, { data: signatures }, { data: templates }] = await Promise.all([
-    loadEmailContext(access.db, access.orgId, module, id),
-    access.db.from('organisations').select('name, trading_name, email_settings').eq('id', access.orgId).single(),
+  const { data: org } = await access.db.from('organisations').select('name, trading_name, email_settings').eq('id', access.orgId).single()
+  const s = readSettings(org?.email_settings)
+  const [ctx, { data: signatures }, { data: templates }] = await Promise.all([
+    loadEmailContext(access.db, access.orgId, module, id, s.default_recipient),
     access.db.from('email_signatures').select('id, name, body_html, is_default').eq('org_id', access.orgId).order('name'),
     access.db.from('email_templates').select('id, name, module, subject, body_html, signature_id, is_default').eq('org_id', access.orgId).in('module', ['any', module]).order('name'),
   ])
   if (!ctx) return NextResponse.json({ error: 'Not found' }, { status: 404 })
-  const s = readSettings(org?.email_settings)
   const companyName = org?.trading_name || org?.name || ''
   const from = effectiveFrom(s, companyName)
   return NextResponse.json({

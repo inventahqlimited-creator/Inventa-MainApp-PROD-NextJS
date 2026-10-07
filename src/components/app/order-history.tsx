@@ -8,7 +8,7 @@ type Ev = { id: string; created_at: string; category: string; action: string; re
 
 const TONE: Record<string, [string, string]> = {
   Sales: ['#DBEAFE', '#1E40AF'], Purchases: ['#EDE9FE', '#5B21B6'], Inventory: ['#D1FAE5', '#065F46'],
-  Transfers: ['#FEF3C7', '#92400E'], Xero: ['#CFFAFE', '#155E75'],
+  Transfers: ['#FEF3C7', '#92400E'], Xero: ['#CFFAFE', '#155E75'], Email: ['#FFEDD5', '#9A3412'],
 }
 const FAILED = ['#FEE2E2', '#B91C1C'] as [string, string]
 
@@ -54,7 +54,7 @@ export default function OrderHistory({ type, id, label, onClose }: { type: 'sale
           {!error && !events && <div style={{ padding: '28px 0', fontSize: 13, color: 'var(--gray-400)', textAlign: 'center' }}>Loading…</div>}
           {events && events.length === 0 && <div style={{ padding: '28px 0', fontSize: 13, color: 'var(--gray-400)', textAlign: 'center' }}>No history has been recorded for this order yet.</div>}
           {events?.map(e => {
-            const [bg, color] = /Failed/.test(e.action) ? FAILED : TONE[e.category] ?? ['#F1F5F9', '#475569']
+            const [bg, color] = /failed/i.test(e.action) ? FAILED : TONE[e.category] ?? ['#F1F5F9', '#475569']
             const d = new Date(e.created_at)
             return (
               <div key={e.id} style={{ display: 'grid', gridTemplateColumns: '112px 1fr', gap: 14, padding: '13px 0', borderBottom: '1px solid var(--gray-50)' }}>

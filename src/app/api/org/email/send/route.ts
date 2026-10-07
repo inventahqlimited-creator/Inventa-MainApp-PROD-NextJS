@@ -41,12 +41,10 @@ export async function POST(req: Request) {
   const subjectRaw = String(form.get('subject') ?? '').replace(/[\r\n]+/g, ' ').trim()
   if (!subjectRaw) return NextResponse.json({ error: 'Add a subject.' }, { status: 400 })
 
-  const [ctx, { data: org }] = await Promise.all([
-    loadEmailContext(access.db, access.orgId, module, id),
-    access.db.from('organisations').select('name, trading_name, email_settings').eq('id', access.orgId).single(),
-  ])
-  if (!ctx) return NextResponse.json({ error: 'Order not found' }, { status: 404 })
+  const { data: org } = await access.db.from('organisations').select('name, trading_name, email_settings').eq('id', access.orgId).single()
   const settings = readSettings(org?.email_settings)
+  const ctx = await loadEmailContext(access.db, access.orgId, module, id, settings.default_recipient)
+  if (!ctx) return NextResponse.json({ error: 'Order not found' }, { status: 404 })
   const companyName = org?.trading_name || org?.name || ''
   const from = effectiveFrom(settings, companyName)
   if (!from) return NextResponse.json({ error: 'No sending address is set up yet. Check Settings → Email.' }, { status: 400 })
@@ -85,6 +83,13 @@ export async function POST(req: Request) {
   const total = attachments.reduce((n, a) => n + a.content.length, 0)
   if (total > MAX_TOTAL) return NextResponse.json({ error: 'Attachments are over 15 MB in total. Remove some and try again.' }, { status: 400 })
 
+  // Shows in the order's Order History and in the Audit Log. Never stops the email.
+  const entity = { sales: 'sales_orders', purchases: 'purchase_orders', transfers: 'transfer_orders' }[module]
+  const audit = async (action: string, detail: string) => {
+    try {
+      await access.db.from('audit_log').insert({ org_id: access.orgId, category: 'Email', action, ref: ctx.ref, detail: detail.slice(0, 500), entity_type: entity, entity_id: id, user_id: access.userId, user_name: access.name })
+    } catch { /* the audit trail must never break a send */ }
+  }
   const log = { org_id: access.orgId, sent_by: access.userId, sent_by_name: access.name, module, doc_id: id, doc_ref: ctx.ref, to_addresses: to.ok, cc_addresses: cc.ok, bcc_addresses: bcc.ok, from_address: from.address, subject, attachments: attachments.map(a => ({ name: a.filename, size: a.content.length })) }
   try {
     const sent = await sendEmail({
@@ -92,10 +97,12 @@ export async function POST(req: Request) {
       subject, html: wrapEmail(body, signatureHtml), attachments,
     })
     await access.db.from('email_log').insert({ ...log, status: 'sent', provider_id: sent.id })
+    await audit('Email sent', `To ${to.ok.join(', ')} — “${subject}”${attachments.length ? ` (${attachments.length} attachment${attachments.length === 1 ? '' : 's'})` : ''}`)
     return NextResponse.json({ success: true, preview: htmlToText(body).slice(0, 80) })
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Could not send the email.'
     await access.db.from('email_log').insert({ ...log, status: 'failed', error: msg.slice(0, 500) })
+    await audit('Email failed', `To ${to.ok.join(', ')} — ${msg}`.slice(0, 480))
     return NextResponse.json({ error: msg }, { status: 502 })
   }
 }

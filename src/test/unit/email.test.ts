@@ -1,6 +1,6 @@
 // @vitest-environment node
 import { describe, it, expect } from 'vitest'
-import { effectiveFrom, parseAddresses, readSettings, validateSettingsInput, isDomain, EMPTY_SETTINGS } from '@/lib/email/config'
+import { pickRecipient, effectiveFrom, parseAddresses, readSettings, validateSettingsInput, isDomain, EMPTY_SETTINGS } from '@/lib/email/config'
 import { cleanHtml, fillPlaceholders, wrapEmail } from '@/lib/email/render'
 import { cleanTemplate, cleanSignature } from '@/lib/email/library'
 import { mapStatus } from '@/lib/email/resend'
@@ -12,7 +12,7 @@ describe('email settings', () => {
     expect(r.bad).toEqual(['nope'])
   })
   it('validates the editable settings', () => {
-    expect(validateSettingsInput({ from_name: 'Acme "Ltd"', from_local: 'Accounts', reply_to: 'x@acme.nz', default_cc: 'a@b.co' })).toEqual({ value: { from_name: 'Acme Ltd', from_local: 'accounts', reply_to: 'x@acme.nz', default_cc: ['a@b.co'] } })
+    expect(validateSettingsInput({ from_name: 'Acme "Ltd"', from_local: 'Accounts', reply_to: 'x@acme.nz', default_cc: 'a@b.co' })).toEqual({ value: { from_name: 'Acme Ltd', from_local: 'accounts', reply_to: 'x@acme.nz', default_cc: ['a@b.co'], default_recipient: 'billing' } })
     expect('error' in validateSettingsInput({ from_local: 'bad local' })).toBe(true)
     expect('error' in validateSettingsInput({ reply_to: 'nope' })).toBe(true)
     expect('error' in validateSettingsInput({ default_cc: 'a@b.co, x' })).toBe(true)
@@ -28,6 +28,21 @@ describe('email settings', () => {
     expect(isDomain('acme.co.nz')).toBe(true)
     expect(isDomain('https://acme.nz')).toBe(false)
     expect(mapStatus('temporary_failure')).toBe('failed')
+  })
+})
+
+describe('default recipient', () => {
+  const c = { email: 'main@x.com', bill_email: 'bill@x.com', ship_email: 'ship@x.com' }
+  it('starts with the chosen address and falls back to the others', () => {
+    expect(pickRecipient(c, 'billing')).toBe('bill@x.com')
+    expect(pickRecipient(c, 'shipping')).toBe('ship@x.com')
+    expect(pickRecipient(c, 'main')).toBe('main@x.com')
+    expect(pickRecipient({ email: 'main@x.com', bill_email: '', ship_email: null }, 'shipping')).toBe('main@x.com')
+    expect(pickRecipient(null, 'billing')).toBe('')
+  })
+  it('keeps the setting when saved', () => {
+    expect(validateSettingsInput({ default_recipient: 'shipping' })).toMatchObject({ value: { default_recipient: 'shipping' } })
+    expect(validateSettingsInput({ default_recipient: 'zzz' })).toMatchObject({ value: { default_recipient: 'billing' } })
   })
 })
 

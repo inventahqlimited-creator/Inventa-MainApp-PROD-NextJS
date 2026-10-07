@@ -2,15 +2,14 @@
 import { NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { isSupportEmail, hubUrl } from '@/lib/hub/support'
+import { endSupport } from '@/lib/hub/support-lease'
 
 export async function GET() {
   const supabase = await createClient()
   const { data: { user } } = await supabase.auth.getUser()
   let toHub = false
   if (user && isSupportEmail(user.email)) {
-    const db = createAdminClient()
-    await db.from('org_members').update({ invite_status: 'inactive' }).eq('user_id', user.id)
-    await db.auth.admin.updateUserById(user.id, { ban_duration: '876000h' })
+    await endSupport(createAdminClient(), user.id)
     toHub = true
   }
   await supabase.auth.signOut()

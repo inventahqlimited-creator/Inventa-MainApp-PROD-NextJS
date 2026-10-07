@@ -4,6 +4,7 @@ import { requireHub } from '@/lib/hub/guard'
 import { logHub } from '@/lib/hub/activity'
 import { isUuid, PLATFORM_ORG_ID } from '@/lib/auth/platform-admin'
 import { supportEmailFor, signSupportLink, appUrl } from '@/lib/hub/support'
+import { startLease, sweepExpired } from '@/lib/hub/support-lease'
 import { randomBytes } from 'crypto'
 
 export async function POST(_req: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -14,6 +15,7 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
   if (id === PLATFORM_ORG_ID) return NextResponse.json({ error: 'This is the internal Hub organisation — there is no customer app to open.' }, { status: 400 })
 
   const { db, user } = g
+  await sweepExpired(db)
   const { data: org } = await db.from('organisations').select('id, name').eq('id', id).maybeSingle()
   if (!org) return NextResponse.json({ error: 'Organisation not found' }, { status: 404 })
 
@@ -52,6 +54,10 @@ export async function POST(_req: Request, { params }: { params: Promise<{ id: st
       await db.auth.admin.deleteUser(authId)
       return NextResponse.json({ error: 'Could not prepare the support access.' }, { status: 500 })
     }
+  }
+
+  if (!(await startLease(db, authId as string, id, user.id))) {
+    return NextResponse.json({ error: 'Support sessions aren’t set up yet — run support-sessions.sql in Supabase first.' }, { status: 500 })
   }
 
   const { data: link, error: lErr } = await db.auth.admin.generateLink({ type: 'magiclink', email })

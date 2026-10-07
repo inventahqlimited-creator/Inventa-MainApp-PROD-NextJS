@@ -100,7 +100,7 @@ export default function EmailSettingsTab() {
           </div>
           <div className="modal-field"><label className="modal-label">Send to this contact address by default</label>
             <select className="modal-input" value={s.default_recipient} onChange={e => setS(p => p ? { ...p, default_recipient: e.target.value as EmailSettings['default_recipient'] } : p)}>
-              <option value="billing">Billing email</option><option value="shipping">Shipping email</option><option value="main">Main contact email</option>
+              <option value="billing">Billing email</option><option value="shipping">Shipping email</option>
             </select>
           </div>
           <div />

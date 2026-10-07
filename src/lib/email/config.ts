@@ -5,7 +5,7 @@ export type EmailSettings = {
   from_local: string          // the bit before @ on the customer's own domain, e.g. "accounts"
   reply_to: string
   default_cc: string[]
-  default_recipient: 'billing' | 'shipping' | 'main'   // which contact email the To box starts with
+  default_recipient: 'billing' | 'shipping'   // which contact email the To box starts with
   domain: string              // customer's sending domain, e.g. "acme.co.nz"
   domain_id: string           // Resend's id for that domain
   domain_status: 'none' | 'pending' | 'verified' | 'failed'
@@ -20,10 +20,10 @@ const DOMAIN_RE = /^(?=.{4,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,
 export const isDomain = (v: unknown): v is string => typeof v === 'string' && DOMAIN_RE.test(v)
 const LOCAL_RE = /^[a-z0-9][a-z0-9._+-]{0,63}$/i
 
-/** Picks the contact email to start the To box with: the chosen kind first, then the others. */
+/** Picks the contact email to start the To box with: the chosen kind first, then the other one (the contact's general email is the last resort). */
 export function pickRecipient(c: { email?: string | null; bill_email?: string | null; ship_email?: string | null } | null | undefined, pref: EmailSettings['default_recipient']): string {
   if (!c) return ''
-  const order = pref === 'shipping' ? [c.ship_email, c.bill_email, c.email] : pref === 'main' ? [c.email, c.bill_email, c.ship_email] : [c.bill_email, c.email, c.ship_email]
+  const order = pref === 'shipping' ? [c.ship_email, c.bill_email, c.email] : [c.bill_email, c.ship_email, c.email]
   return order.map(v => (v ?? '').trim()).find(v => isEmail(v)) ?? ''
 }
 
@@ -44,7 +44,7 @@ export function readSettings(raw: unknown): EmailSettings {
     from_local: typeof r.from_local === 'string' && r.from_local ? r.from_local : 'accounts',
     reply_to: typeof r.reply_to === 'string' ? r.reply_to : '',
     default_cc: Array.isArray(r.default_cc) ? r.default_cc.filter(isEmail) : [],
-    default_recipient: r.default_recipient === 'shipping' || r.default_recipient === 'main' ? r.default_recipient : 'billing',
+    default_recipient: r.default_recipient === 'shipping' ? 'shipping' : 'billing',
     domain: typeof r.domain === 'string' ? r.domain : '',
     domain_id: typeof r.domain_id === 'string' ? r.domain_id : '',
     domain_status: (['none', 'pending', 'verified', 'failed'] as const).includes(r.domain_status as never) ? (r.domain_status as EmailSettings['domain_status']) : 'none',
@@ -63,7 +63,7 @@ export function validateSettingsInput(body: Record<string, unknown>): { value: P
   if (cc.bad.length) return { error: `Not a valid email address: ${cc.bad[0]}` }
   if (cc.ok.length > 5) return { error: 'Use five or fewer default CC addresses.' }
   const dr = body.default_recipient
-  const default_recipient = dr === 'shipping' || dr === 'main' ? dr : 'billing'
+  const default_recipient = dr === 'shipping' ? 'shipping' : 'billing'
   return { value: { from_name, from_local, reply_to, default_cc: cc.ok, default_recipient } }
 }
 

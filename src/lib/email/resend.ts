@@ -16,7 +16,11 @@ async function call<T>(method: string, path: string, body?: unknown): Promise<T>
   const text = await res.text()
   let json: Record<string, unknown> = {}
   try { json = text ? JSON.parse(text) : {} } catch { /* leave empty */ }
-  if (!res.ok) throw new Error(typeof json.message === 'string' ? json.message : `Email service error (${res.status})`)
+  if (!res.ok) {
+    const msg = typeof json.message === 'string' ? json.message : `Email service error (${res.status})`
+    if (/restricted|only send emails/i.test(msg) || json.name === 'restricted_api_key') throw new Error('The email service key can only send email. Create a Full access key in Resend (API Keys) and update RESEND_API_KEY.')
+    throw new Error(msg)
+  }
   return json as T
 }
 

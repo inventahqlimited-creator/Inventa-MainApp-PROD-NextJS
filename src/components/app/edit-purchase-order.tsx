@@ -8,6 +8,8 @@ import { printPurchaseOrder } from '@/lib/purchase-order/print'
 import { XeroPostNotice, XeroStatusBadge, usePostToXero, type XeroRowInfo } from '@/components/app/xero-sync-ui'
 import { toast } from '@/components/app/toast'
 import OrderHistory from '@/components/app/order-history'
+import EmailComposer from '@/components/app/email/email-composer'
+import { useCan } from '@/components/app/permissions-provider'
 
 type Supplier = {
   id: string
@@ -215,6 +217,8 @@ function ActionsMenu({ orderId, poNumber, status, relatedSoId, canEdit, canCance
   const [open, setOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const box = useRef<HTMLDivElement>(null)
+  const canEmail = useCan('send_emails')
+  const [emailOpen, setEmailOpen] = useState(false)
 
   useEffect(() => {
     if (!open) return
@@ -253,7 +257,7 @@ function ActionsMenu({ orderId, poNumber, status, relatedSoId, canEdit, canCance
             const res = await printPurchaseOrder([orderId])
             if (!res.ok) onError(`${poNumber}: ${res.error}`)
           }, { icon: ic('M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6z') })}
-          {item('Email', null, { soon: true, icon: ic('M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM22 6l-10 7L2 6') })}
+          {canEmail && item('Email', () => { setOpen(false); setEmailOpen(true) }, { icon: ic('M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM22 6l-10 7L2 6') })}
           {sep('s1')}
           {item('Clone Order', () => { setOpen(false); router.push(`/purchases/new?clone=${orderId}`) }, { icon: ic('M9 9h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V11a2 2 0 0 1 2-2zM5 15H4a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v1') })}
           {relatedSoId && item('Open Related Order', () => { setOpen(false); router.push(`/sales/${relatedSoId}`) }, { icon: ic('M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71') })}
@@ -265,6 +269,7 @@ function ActionsMenu({ orderId, poNumber, status, relatedSoId, canEdit, canCance
         </div>
       )}
       {historyOpen && <OrderHistory type="purchase" id={orderId} label={poNumber} onClose={() => setHistoryOpen(false)} />}
+      {emailOpen && <EmailComposer module="purchases" id={orderId} onClose={() => setEmailOpen(false)} />}
     </div>
   )
 }

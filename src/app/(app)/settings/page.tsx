@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { headers } from 'next/headers'
 import { clientIp } from '@/lib/rate-limit'
+import { isSupportEmail } from '@/lib/hub/support'
 import SettingsClient from '@/components/app/settings-client'
 
 export default async function SettingsPage({ searchParams }: { searchParams: Promise<{ tab?: string; xero?: string; xero_ok?: string; xero_error?: string }> }) {
@@ -74,7 +75,7 @@ export default async function SettingsPage({ searchParams }: { searchParams: Pro
   }
 
   const roleName = new Map(((rolesRaw ?? []) as { id: string; name: string }[]).map(r => [r.id, r.name]))
-  const members = (membersRaw ?? []).map((mb: Record<string, unknown>) => ({
+  const members = (membersRaw ?? []).filter((mb: Record<string, unknown>) => !isSupportEmail(mb.email as string | null)).map((mb: Record<string, unknown>) => ({
     ...mb,
     custom_role_name: mb.custom_role_id ? roleName.get(mb.custom_role_id as string) ?? null : null,
     email: (mb.email as string | null) || emailMap[mb.user_id as string] || null,

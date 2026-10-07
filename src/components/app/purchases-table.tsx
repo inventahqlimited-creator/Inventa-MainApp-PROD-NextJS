@@ -5,6 +5,8 @@ import { useRouter } from 'next/navigation'
 import { printPurchaseOrder } from '@/lib/purchase-order/print'
 import { XeroColumnMenuItem, XeroPostNotice, XeroStatusBadge, useXeroColumn, usePostToXero, type XeroTableInfo } from '@/components/app/xero-sync-ui'
 import { toast } from '@/components/app/toast'
+import EmailComposer from '@/components/app/email/email-composer'
+import { useCan } from '@/components/app/permissions-provider'
 
 type Order = {
   id: string
@@ -113,6 +115,8 @@ export default function PurchasesTable({
   orgId: string
 }) {
   const router = useRouter()
+  const canEmail = useCan('send_emails')
+  const [emailId, setEmailId] = useState<string | null>(null)
   const [xeroRecords, setXeroRecords] = useState(xero?.records ?? {})
   const xeroCol = useXeroColumn('purchases_xero_col')
   const showXero = Boolean(xero?.show) && xeroCol.on
@@ -570,6 +574,8 @@ export default function PurchasesTable({
       </div>
 
       {/* Row actions menu */}
+      {emailId && <EmailComposer module="purchases" id={emailId} onClose={() => setEmailId(null)} />}
+
       {menu && menuOrder && (() => {
         const o = menuOrder
         const k = o.status.toLowerCase()
@@ -597,7 +603,7 @@ export default function PurchasesTable({
             {!cancelled && item('Print', () => print([o.id], o.po_number ?? undefined), { icon: ic('M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6z') })}
             {xero?.show && xero.canPost && readyToBill.has(o.id) && xeroRecords[o.id]?.status !== 'synced' && item('Post bill to Xero', () => { setMenu(null); void xeroPost.post(o.id) }, { icon: ic('M16 16l-4-4-4 4M12 12v9M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3') })}
             {xero?.show && xeroRecords[o.id]?.status === 'synced' && xeroRecords[o.id]?.url && item('Open bill in Xero', () => { setMenu(null); window.open(xeroRecords[o.id]?.url ?? '', '_blank', 'noopener') }, { icon: ic('M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3') })}
-            {item('Email', null, { soon: true, icon: ic('M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM22 6l-10 7L2 6') })}
+            {canEmail && item('Email', () => { const id = o.id; setMenu(null); setEmailId(id) }, { icon: ic('M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM22 6l-10 7L2 6') })}
             {sep('s1')}
             {item('Clone Order', () => { setMenu(null); router.push(`/purchases/new?clone=${o.id}`) }, { icon: ic('M9 9h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V11a2 2 0 0 1 2-2zM5 15H4a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v1') })}
             {!cancelled && item('Create Sales Order', () => { setMenu(null); router.push(`/sales/new?from_po=${o.id}`) }, { icon: ic('M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4zM3 6h18M16 10a4 4 0 0 1-8 0') })}

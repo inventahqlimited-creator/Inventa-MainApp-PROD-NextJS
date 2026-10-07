@@ -11,6 +11,7 @@ import AppTopbar from '@/components/app/app-topbar'
 import { normalizePolicy, isPasswordExpired } from '@/lib/auth/password-policy'
 import ToastProvider from '@/components/app/toast'
 import { isSupportEmail } from '@/lib/hub/support'
+import SupportGuard from '@/components/app/support-guard'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const access = await getAccessUnchecked()
@@ -101,6 +102,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </PermissionsProvider>
         </div>
       </div>
+      {isSupport && <SupportGuard />}
       <IdleGuard minutes={security.session_timeout_minutes} />
       <ToastProvider />
       </div>

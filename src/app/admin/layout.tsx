@@ -1,6 +1,7 @@
 import { redirect } from 'next/navigation'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { PLATFORM_ORG_ID, isPlatformAdmin } from '@/lib/auth/platform-admin'
+import { sweepExpired } from '@/lib/hub/support-lease'
 import HubSidebar from '@/components/hub/hub-sidebar'
 
 export const dynamic = 'force-dynamic'
@@ -23,6 +24,8 @@ export default async function AdminLayout({ children }: { children: React.ReactN
   const m = membership as { role: string; first_name: string | null; last_name: string | null; email: string | null } | null
 
   if (!m || !(await isPlatformAdmin(createAdminClient(), user.id))) redirect('/')
+
+  void sweepExpired(createAdminClient()) // end any support session whose tab was closed
 
   const name = [m.first_name, m.last_name].filter(Boolean).join(' ') || user.email || 'Admin'
 

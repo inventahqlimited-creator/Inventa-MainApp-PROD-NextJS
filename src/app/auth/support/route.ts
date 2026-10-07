@@ -3,6 +3,7 @@
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { redirectTo } from '@/lib/auth/redirect'
 import { verifySupportLink, isSupportEmail } from '@/lib/hub/support'
+import { renewLease } from '@/lib/hub/support-lease'
 
 export async function GET(request: Request) {
   const sp = new URL(request.url).searchParams
@@ -20,6 +21,10 @@ export async function GET(request: Request) {
   // belt and braces: this login must be a support identity that belongs to the organisation in the link
   const { data: m } = await createAdminClient().from('org_members').select('email').eq('user_id', uid).eq('org_id', orgId).eq('invite_status', 'accepted').maybeSingle()
   if (!m || !isSupportEmail((m as { email: string | null }).email)) {
+    await supabase.auth.signOut()
+    return redirectTo('/login?error=support_link')
+  }
+  if (!(await renewLease(createAdminClient(), uid))) {
     await supabase.auth.signOut()
     return redirectTo('/login?error=support_link')
   }

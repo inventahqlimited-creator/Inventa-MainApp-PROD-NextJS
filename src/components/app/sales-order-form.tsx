@@ -14,6 +14,8 @@ import { printInvoice } from '@/lib/invoice/print'
 import { XeroPostNotice, XeroStatusBadge, usePostToXero, type XeroRowInfo } from '@/components/app/xero-sync-ui'
 import { toast } from '@/components/app/toast'
 import OrderHistory from '@/components/app/order-history'
+import EmailComposer from '@/components/app/email/email-composer'
+import { useCan } from '@/components/app/permissions-provider'
 
 type Customer = {
   id: string
@@ -254,6 +256,8 @@ function ActionsMenu({ orderId, soNumber, statusLower, relatedPoId, canEdit, can
   const [printOpen, setPrintOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
   const box = useRef<HTMLDivElement>(null)
+  const canEmail = useCan('send_emails')
+  const [emailOpen, setEmailOpen] = useState(false)
 
   useEffect(() => {
     if (!open) return
@@ -307,7 +311,7 @@ function ActionsMenu({ orderId, soNumber, statusLower, relatedPoId, canEdit, can
               {canInvoice && item(isQuote ? 'Quote' : 'Invoice', () => run(() => printInvoice([orderId])))}
             </div>
           )}
-          {item('Email', null, { soon: true, icon: ic('M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM22 6l-10 7L2 6') })}
+          {canEmail && item('Email', () => { shut(); setEmailOpen(true) }, { icon: ic('M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM22 6l-10 7L2 6') })}
           {!isQuote && item('Create Credit Note', null, { soon: true, icon: ic('M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M9 15h6') })}
           {sep('s1')}
           {item('Clone Order', () => { shut(); router.push(`/sales/new?clone=${orderId}`) }, { icon: ic('M9 9h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V11a2 2 0 0 1 2-2zM5 15H4a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v1') })}
@@ -320,6 +324,7 @@ function ActionsMenu({ orderId, soNumber, statusLower, relatedPoId, canEdit, can
         </div>
       )}
       {historyOpen && <OrderHistory type="sales" id={orderId} label={soNumber} onClose={() => setHistoryOpen(false)} />}
+      {emailOpen && <EmailComposer module="sales" id={orderId} onClose={() => setEmailOpen(false)} />}
     </div>
   )
 }

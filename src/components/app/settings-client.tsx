@@ -4,6 +4,7 @@ import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import MemberModal from './member-modal'
+import EmailSettingsTab from './email/email-settings'
 import ProfileModal from './profile-modal'
 import PickListTemplate from '@/components/app/pick-list-template'
 import PackingListTemplate from '@/components/app/packing-list-template'
@@ -57,6 +58,7 @@ const TABS = [
   { key: 'sales', label: 'Sales' },
   { key: 'users', label: 'Users' },
   { key: 'notifications', label: 'Notifications' },
+  { key: 'email', label: 'Email' },
   { key: 'security', label: 'Security' },
   { key: 'integrations', label: 'Integrations' },
 ] as const
@@ -2376,6 +2378,8 @@ export default function SettingsClient({
         )}
 
         {/* ── NOTIFICATIONS ── */}
+        {tab === 'email' && <EmailSettingsTab />}
+
         {tab === 'notifications' && (
           <NotificationsCard initial={org.notification_settings} canManage={canManageCompany} showToast={showToast} />
         )}

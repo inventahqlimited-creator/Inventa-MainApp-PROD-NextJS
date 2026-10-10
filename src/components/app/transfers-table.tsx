@@ -6,6 +6,8 @@
 import { useState, useMemo, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from '@/components/app/toast'
+import EmailComposer from '@/components/app/email/email-composer'
+import { useCan } from '@/components/app/permissions-provider'
 
 type Transfer = {
   id: string
@@ -89,6 +91,8 @@ function loadCols(): Set<ColKey> {
 
 export default function TransfersTable({ transfers, locations }: { transfers: Transfer[]; locations: Location[]; orgId?: string }) {
   const router = useRouter()
+  const canEmail = useCan('send_emails')
+  const [emailId, setEmailId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [tab, setTab] = useState<Tab>('all')
   const [fromFilter, setFromFilter] = useState('')
@@ -407,6 +411,8 @@ export default function TransfersTable({ transfers, locations }: { transfers: Tr
       </div>
 
       {/* Row actions menu */}
+      {emailId && <EmailComposer module="transfers" id={emailId} onClose={() => setEmailId(null)} />}
+
       {menu && menuTr && (() => {
         const t = menuTr
         const k = statusKey(t.status)
@@ -416,6 +422,7 @@ export default function TransfersTable({ transfers, locations }: { transfers: Tr
         const sep = <div style={{ height: 1, background: 'var(--gray-100)', margin: '5px 0' }} />
         return (
           <div className="inv-dropdown" style={{ display: 'block', position: 'fixed', left: menu.x, top: menu.y, width: 210, padding: 6, zIndex: 400 }} onClick={e => e.stopPropagation()}>
+            {canEmail && k !== 'draft' && item('Email', () => { setMenu(null); setEmailId(t.id) })}
             {k === 'open' && item('Pick Order', () => router.push(`/transfers/${t.id}/pick`))}
             {k === 'picking' && item('Continue Picking', () => router.push(`/transfers/${t.id}/pick`))}
             {k === 'picked' && item('Complete Transfer', () => { setMenu(null); setDialog({ kind: 'complete', tr: t }) })}

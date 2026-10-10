@@ -137,6 +137,13 @@ export const PERMISSION_GROUPS = [
       { key: 'export_audit_log', label: 'Export Audit Log', needs: ['view_audit_log'] },
     ],
   },
+  {
+    id: 'email', title: 'Email',
+    perms: [
+      { key: 'send_emails', label: 'Send emails from orders', hint: 'Sales, purchase orders and transfers. Attaching a document also needs permission to print it' },
+      { key: 'manage_email_settings', label: 'Manage email settings', hint: 'Sender details, sending domain, signatures and templates' },
+    ],
+  },
 ] as const satisfies readonly PermGroup[]
 
 /** The same groups, typed loosely for screens that loop over them. */
@@ -209,6 +216,7 @@ const MANAGER: PermissionSet = (() => {
   const s = fullSet()
   for (const k of SETTINGS_KEYS) if (k !== 'view_audit_log' && k !== 'export_audit_log') s[k] = false
   s.xero_settings = false
+  s.manage_email_settings = false
   return s
 })()
 
@@ -217,7 +225,7 @@ const STAFF: PermissionSet = closeSet(Object.fromEntries([
   'view_contacts', 'create_contacts', 'edit_contacts',
   'view_products', 'create_products', 'view_pricing', 'view_movements', 'view_adjustments', 'create_adjustments', 'edit_adjustments',
   'view_sales', 'create_sales', 'edit_sales', 'pick_sales', 'pack_sales', 'close_sales', 'print_sales_pick', 'print_sales_pack', 'print_sales_invoice', 'view_sales_history',
-  'view_purchases', 'create_purchases', 'edit_purchases', 'receive_purchases', 'print_purchases', 'view_purchase_history',
+  'view_purchases', 'create_purchases', 'edit_purchases', 'receive_purchases', 'print_purchases', 'view_purchase_history', 'send_emails',
   'view_transfers', 'create_transfers', 'edit_transfers', 'pick_transfers', 'complete_transfers', 'print_transfers', 'view_transfer_history',
   'view_reports_contacts', 'view_reports_products', 'view_reports_stock', 'view_reports_sales', 'view_reports_purchases', 'view_reports_transfers',
 ].map(k => [k, true])))
@@ -236,12 +244,12 @@ export const ROLE_TEMPLATES: { id: string; name: string; blurb: string; perms: P
   {
     id: 'sales', name: 'Sales', blurb: 'Contacts, sales orders and sales reports',
     perms: closeSet(Object.fromEntries(['view_dashboard', 'view_contacts', 'create_contacts', 'edit_contacts', 'view_products', 'view_pricing',
-      'view_sales', 'create_sales', 'edit_sales', 'print_sales_pick', 'print_sales_pack', 'print_sales_invoice', 'view_sales_history', 'view_reports_sales'].map(k => [k, true]))),
+      'view_sales', 'create_sales', 'edit_sales', 'print_sales_pick', 'print_sales_pack', 'print_sales_invoice', 'view_sales_history', 'view_reports_sales', 'send_emails'].map(k => [k, true]))),
   },
   {
     id: 'purchasing', name: 'Purchasing', blurb: 'Purchase orders, suppliers and receiving',
     perms: closeSet(Object.fromEntries(['view_dashboard', 'view_contacts', 'create_contacts', 'edit_contacts', 'view_products', 'view_pricing', 'view_cost',
-      'view_purchases', 'create_purchases', 'edit_purchases', 'receive_purchases', 'print_purchases', 'view_purchase_history', 'view_reports_purchases'].map(k => [k, true]))),
+      'view_purchases', 'create_purchases', 'edit_purchases', 'receive_purchases', 'print_purchases', 'view_purchase_history', 'view_reports_purchases', 'send_emails'].map(k => [k, true]))),
   },
   {
     id: 'warehouse', name: 'Warehouse', blurb: 'Pick, pack, receive, transfers and stock adjustments — no prices or costs',

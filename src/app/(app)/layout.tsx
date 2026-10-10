@@ -10,6 +10,8 @@ import AppSidebar from '@/components/app/app-sidebar'
 import AppTopbar from '@/components/app/app-topbar'
 import { normalizePolicy, isPasswordExpired } from '@/lib/auth/password-policy'
 import ToastProvider from '@/components/app/toast'
+import { isSupportEmail } from '@/lib/hub/support'
+import SupportGuard from '@/components/app/support-guard'
 
 export default async function AppLayout({ children }: { children: React.ReactNode }) {
   const access = await getAccessUnchecked()
@@ -50,7 +52,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     org_id: access.orgId,
     ...((membership ?? {}) as { first_name?: string | null; last_name?: string | null; avatar_url?: string | null }),
   } as { role: string; org_id: string; first_name: string | null; last_name: string | null; avatar_url: string | null }
-  const user = { email: access.email }
+  const isSupport = isSupportEmail(access.email)
+  const user = { email: isSupport ? '' : access.email }
 
   const { data: org } = await adminClient
     .from('organisations')
@@ -75,7 +78,14 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const xeroEnabled = Boolean((org as { xero_enabled?: boolean | null } | null)?.xero_enabled)
 
   return (
-    <div style={{ display: 'flex', height: '100vh', overflow: 'hidden', background: '#ECEEED' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
+      {isSupport && (
+        <div style={{ background: '#5B21B6', color: '#fff', padding: '7px 16px', fontSize: 13, display: 'flex', gap: 12, alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', flexShrink: 0 }}>
+          <span><strong>Inventa support session</strong> — you are signed in to {orgName} as {displayName}. Everything you change is recorded under your name.</span>
+          <a href="/auth/support-exit" style={{ color: '#fff', fontWeight: 700, textDecoration: 'underline' }}>Exit to Hub</a>
+        </div>
+      )}
+      <div style={{ display: 'flex', flex: 1, minHeight: 0, overflow: 'hidden', background: '#ECEEED' }}>
       <AppSidebar xeroEnabled={xeroEnabled} perms={access.perms} auditEnabled={security.audit_log_enabled} />
       <div className="main">
         <AppTopbar
@@ -92,8 +102,10 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           </PermissionsProvider>
         </div>
       </div>
+      {isSupport && <SupportGuard />}
       <IdleGuard minutes={security.session_timeout_minutes} />
       <ToastProvider />
+      </div>
     </div>
   )
 }

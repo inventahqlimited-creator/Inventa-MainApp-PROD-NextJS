@@ -9,6 +9,8 @@ import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { headers } from 'next/headers'
 import { clientIp } from '@/lib/rate-limit'
 import { isIpAllowed, loadSecurity } from '@/lib/auth/security-settings'
+import { isSupportEmail } from '@/lib/hub/support'
+import { leaseValid } from '@/lib/hub/support-lease'
 import { homePath, resolvePermissions, type PermKey, type PermissionSet } from '@/lib/permissions'
 
 export type Access = {
@@ -28,6 +30,8 @@ export async function getAccessUnchecked(): Promise<Access | null> {
   const { data: { user } } = await supabase.auth.getUser()
   if (!user) return null
   const db = createAdminClient()
+  // Inventa support sessions only work while a tab is open and renewing the lease
+  if (isSupportEmail(user.email) && !(await leaseValid(db, user.id))) return null
   const { data: m } = await db
     .from('org_members')
     .select('org_id, role, custom_role_id, first_name, last_name')

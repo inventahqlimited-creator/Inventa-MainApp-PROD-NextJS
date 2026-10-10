@@ -1,5 +1,6 @@
 import { createAdminClient } from '@/lib/supabase/server'
 import Link from 'next/link'
+import { isSupportEmail } from '@/lib/hub/support'
 import { fmtAud, fmtDate, planLabel } from '@/lib/hub/constants'
 
 export const metadata = { title: 'Organisations — inventaHQ Hub' }
@@ -33,9 +34,9 @@ export default async function OrganisationsPage({ searchParams }: { searchParams
   const { data: orgs, error } = await supabase.from('organisations').select('*').order('created_at', { ascending: false })
   const all = (orgs ?? []) as Org[]
 
-  const { data: mem } = await supabase.from('org_members').select('org_id, invite_status')
+  const { data: mem } = await supabase.from('org_members').select('org_id, invite_status, email')
   const counts: Record<string, { active: number; pending: number }> = {}
-  for (const m of (mem ?? []) as { org_id: string; invite_status: string }[]) {
+  for (const m of ((mem ?? []) as { org_id: string; invite_status: string; email: string | null }[]).filter(x => !isSupportEmail(x.email))) {
     const c = (counts[m.org_id] ??= { active: 0, pending: 0 })
     if (m.invite_status === 'accepted') c.active++
     else if (m.invite_status === 'pending') c.pending++

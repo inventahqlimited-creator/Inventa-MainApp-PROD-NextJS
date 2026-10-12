@@ -6,6 +6,7 @@ import { NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { requirePerm } from '@/lib/auth/access'
 import { allocateLandedCost, normalizeMethod } from '@/lib/purchases/landed-cost'
+import { checkReceiveTracking, type Tracking } from '@/lib/purchases/tracking'
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -30,6 +31,18 @@ export async function POST(request: Request, { params }: Params) {
   const body = await request.json()
   const lines = Array.isArray(body.lines) ? body.lines : []
   if (lines.length === 0) return NextResponse.json({ error: 'Nothing to receive.' }, { status: 400 })
+
+  // Tracked products: batch / expiry / serial must be filled in (same rule as stock adjustments)
+  {
+    const { data: tl, error: tlErr } = await adminClient.from('purchase_order_lines').select('id, product_name, products ( batch_tracking, expiry_tracking, serial_tracking )').eq('po_id', id).eq('org_id', orgId)
+    if (tlErr) return NextResponse.json({ error: 'Could not check the order lines.' }, { status: 500 })
+    const tracking = new Map<string, Tracking>()
+    for (const r of (tl ?? []) as unknown as { id: string; product_name: string | null; products: { batch_tracking: boolean | null; expiry_tracking: boolean | null; serial_tracking: boolean | null } | null }[]) {
+      tracking.set(r.id, { name: r.product_name ?? 'this product', batch: !!r.products?.batch_tracking, expiry: !!r.products?.expiry_tracking, serial: !!r.products?.serial_tracking })
+    }
+    const problem = checkReceiveTracking(lines.map((l: Record<string, unknown>) => ({ id: String(l.id), qty_to_receive: Number(l.qty_to_receive) || 0, batch_num: l.batch_num, expiry_date: l.expiry_date, serial_numbers: l.serial_numbers })), tracking)
+    if (problem) return NextResponse.json({ error: problem }, { status: 400 })
+  }
 
   // Landed cost: share the order's additional costs over its lines, so received stock is costed with its share
   const [{ data: org }, { data: poLines }, { data: costRows }] = await Promise.all([

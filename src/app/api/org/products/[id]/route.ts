@@ -1,3 +1,4 @@
+import { saveError } from '@/lib/api/db-error'
 import { NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { pick, badForeignKey, PRODUCT_FIELDS, PRODUCT_LINKS } from '@/lib/api/sanitize'
@@ -34,6 +35,6 @@ export async function PATCH(request: Request, { params }: Params) {
     .update(clean)
     .eq('id', id)
     .eq('org_id', ctx.org_id)
-  if (error) { console.error('products update failed', error.message); return NextResponse.json({ error: 'Could not save the product' }, { status: 500 }) }
+  if (error) { console.error('products update failed', error.message); const e = saveError(error, 'product'); return NextResponse.json({ error: e.message }, { status: e.status }) }
   return NextResponse.json({ success: true })
 }

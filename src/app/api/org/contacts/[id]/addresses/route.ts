@@ -1,3 +1,4 @@
+import { saveError } from '@/lib/api/db-error'
 import { NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { pick, ADDRESS_FIELDS } from '@/lib/api/sanitize'
@@ -35,6 +36,6 @@ export async function POST(req: Request, { params }: Params) {
   const { data: owner } = await ctx.adminClient.from('contacts').select('id').eq('id', id).eq('org_id', ctx.org_id).maybeSingle()
   if (!owner) return NextResponse.json({ error: 'Contact not found' }, { status: 404 })
   const { data, error } = await ctx.adminClient.from('contact_addresses').insert({ ...clean, contact_id: id, org_id: ctx.org_id }).select('id').single()
-  if (error) { console.error('address insert failed', error.message); return NextResponse.json({ error: 'Could not save the address' }, { status: 500 }) }
+  if (error) { console.error('address insert failed', error.message); const e = saveError(error, 'address'); return NextResponse.json({ error: e.message }, { status: e.status }) }
   return NextResponse.json({ id: (data as { id: string }).id })
 }

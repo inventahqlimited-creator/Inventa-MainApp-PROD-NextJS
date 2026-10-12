@@ -1,3 +1,4 @@
+import { saveError } from '@/lib/api/db-error'
 import { NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { pick, LOCATION_FIELDS } from '@/lib/api/sanitize'
@@ -22,6 +23,6 @@ export async function POST(request: Request) {
     .insert({ ...clean, org_id: (m as { org_id: string }).org_id })
     .select('id').single()
 
-  if (error) { console.error('location insert failed', error.message); return NextResponse.json({ error: 'Could not save the location' }, { status: 500 }) }
+  if (error) { console.error('location insert failed', error.message); const e = saveError(error, 'location'); return NextResponse.json({ error: e.message }, { status: e.status }) }
   return NextResponse.json({ id: (data as { id: string }).id })
 }

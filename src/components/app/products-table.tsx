@@ -1746,6 +1746,12 @@ export default function ProductsTable({
                 const groups = stockGroups.filter(g => g.quantity > 0)
                 const hasGroups = groups.length > 0
                 const showBin = groups.some(g => g.bin_id)
+                // Stock on hand that has no serial / batch / expiry recorded against it (received before tracking was captured)
+                const looseRows = hasTracking ? locations.map(loc => {
+                  const onHandHere = stockLevels.find(sl => sl.product_id === activeProduct?.id && sl.location_id === loc.id)?.quantity ?? 0
+                  const grouped = groups.filter(g => g.location_id === loc.id).reduce((t, g) => t + g.quantity, 0)
+                  return { loc, qty: onHandHere - grouped }
+                }).filter(r => r.qty > 0.000001) : []
 
                 return (
                 <div>
@@ -1788,7 +1794,7 @@ export default function ProductsTable({
                       </div>
 
                       {/* ── Stock group breakdown ── */}
-                      {(hasTracking || showBin) && (stockGroupsLoading || hasGroups) && (
+                      {(hasTracking || showBin) && (stockGroupsLoading || hasGroups || looseRows.length > 0) && (
                         <div>
                           <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase' as const, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)', marginBottom: 8 }}>Stock Groups</div>
                           {stockGroupsLoading ? (
@@ -1807,6 +1813,16 @@ export default function ProductsTable({
                                   </tr>
                                 </thead>
                                 <tbody>
+                                  {looseRows.map(r => (
+                                    <tr key={`loose-${r.loc.id}`} style={{ borderBottom: '1px solid var(--gray-100)', background: 'var(--gray-50)' }}>
+                                      <td className="li-td" style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{r.loc.name}</td>
+                                      <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: 'var(--slate)' }}>{q(r.qty, !!activeProduct?.serial_tracking)}</td>
+                                      {showBin    && <td className="li-td" style={{ color: 'var(--gray-300)', fontSize: 12 }}>—</td>}
+                                      {showBatch  && <td className="li-td" style={{ color: 'var(--gray-400)', fontSize: 12 }} colSpan={1 + (showSerial ? 1 : 0) + (showExpiry ? 1 : 0)}>Not recorded — received before {[showSerial && 'serial', showBatch && 'batch', showExpiry && 'expiry'].filter(Boolean).join('/')} tracking was captured</td>}
+                                      {!showBatch && showSerial && <td className="li-td" style={{ color: 'var(--gray-400)', fontSize: 12 }} colSpan={1 + (showExpiry ? 1 : 0)}>Serial numbers not recorded</td>}
+                                      {!showBatch && !showSerial && showExpiry && <td className="li-td" style={{ color: 'var(--gray-400)', fontSize: 12 }}>Not recorded</td>}
+                                    </tr>
+                                  ))}
                                   {groups.map(g => {
                                     const loc = locations.find(l => l.id === g.location_id)
                                     const expiryDisplay = g.expiry_date

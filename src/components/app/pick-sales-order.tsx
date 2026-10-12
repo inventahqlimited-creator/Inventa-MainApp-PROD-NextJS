@@ -120,13 +120,6 @@ export default function PickSalesOrder({
     setDirty(d => new Set(d).add(l.id))
   }
 
-  function typeQty(l: Line, raw: string) {
-    let q = parseFloat(raw)
-    if (!Number.isFinite(q) || q < 0) q = 0
-    q = round(Math.min(q, capOf(l)), l.product_id)
-    setLine(l, allocate(l, q))
-  }
-
   // Only offered when "Auto picking" is switched on in Settings
   function autoPick() {
     const cur = { ...allocs }
@@ -268,18 +261,15 @@ export default function PickSalesOrder({
     <th className="li-th" style={{ width: w, textAlign: align }}>{label}</th>
   )
 
+  // Read-only: the picked quantity only changes by choosing stock in the panel on the right (click the line)
   const pickedInput = (l: Line) => {
     const noStock = status(l) === 'no-stock'
+    const n = pickedOf(l)
     return (
-      <input
-        type="number" min={0} step={step(l.product_id)} max={allowOverPicking ? undefined : l.ordered}
-        value={pickedOf(l)} disabled={noStock}
-        onChange={e => typeQty(l, e.target.value)}
-        onClick={e => e.stopPropagation()}
-        style={{ width: 64, padding: '4px 8px', border: '1.5px solid var(--gray-200)', borderRadius: 8, fontSize: 13, fontWeight: 600, textAlign: 'right', background: noStock ? 'var(--gray-50)' : 'var(--white)', outline: 'none', fontFamily: 'var(--font-ui)' }}
-        onFocus={e => (e.currentTarget.style.borderColor = 'var(--teal)')}
-        onBlur={e => (e.currentTarget.style.borderColor = 'var(--gray-200)')}
-      />
+      <span
+        title={noStock ? undefined : 'Click the line and choose stock on the right'}
+        style={{ display: 'inline-block', minWidth: 52, padding: '4px 10px', border: '1.5px solid var(--gray-100)', borderRadius: 8, fontSize: 13, fontWeight: 600, textAlign: 'right', background: 'var(--gray-50)', color: n > 0 ? 'var(--slate)' : 'var(--gray-400)', fontFamily: 'var(--font-ui)', cursor: noStock ? 'default' : 'pointer' }}
+      >{fq(n, l.product_id)}</span>
     )
   }
   const panelBtn = (l: Line) => status(l) === 'no-stock' ? null : (

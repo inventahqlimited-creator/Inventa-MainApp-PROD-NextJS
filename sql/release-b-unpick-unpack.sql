@@ -7,8 +7,8 @@ declare v_so sales_orders%rowtype;
 begin
   select * into v_so from sales_orders where id = p_so and org_id = p_org for update;
   if not found then raise exception 'Sales order not found'; end if;
-  if lower(v_so.status) not in ('picking','partially picked','picked','partially packed','packed') then
-    raise exception 'Only orders that have been picked can be unpicked (this one is %)', v_so.status;
+  if lower(v_so.status) not in ('picking','partially picked','picked') then
+    raise exception 'Only picked orders can be unpicked — unpack it first if it is packed (this one is %)', v_so.status;
   end if;
   -- packing depends on picking, so it goes too
   delete from sales_order_cartons where so_id = p_so;

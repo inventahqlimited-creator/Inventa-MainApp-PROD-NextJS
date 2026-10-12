@@ -10,8 +10,9 @@ export async function POST(_req: Request, { params }: Params) {
   if ('res' in g) return g.res
   const { id } = await params
   const { db, orgId, userId, name } = g.access
-  const { data: row } = await db.from('sales_orders').select('so_number').eq('id', id).eq('org_id', orgId).maybeSingle()
+  const { data: row } = await db.from('sales_orders').select('so_number, status').eq('id', id).eq('org_id', orgId).maybeSingle()
   if (!row) return NextResponse.json({ error: 'Not found' }, { status: 404 })
+  if (/pack/i.test(String((row as unknown as Record<string, string | null>)['status'] ?? ''))) return NextResponse.json({ error: 'Unpack this order first, then unpick it.' }, { status: 409 })
   const { data, error } = await db.rpc('unpick_sales_order', { p_so: id, p_org: orgId, p_user: userId })
   if (error) return NextResponse.json({ error: error.message }, { status: 400 })
   const ref = (row as unknown as Record<string, string | null>)['so_number']

@@ -1485,7 +1485,7 @@ export default function ProductsTable({
                               // When product was created as Stock, can't switch to NonStock/Service; also can't switch other types back to Stock
                               const disabled = isStockLocked
                                 ? t !== 'Stock' // locked on Stock — other buttons disabled
-                                : t === 'Stock' && activeProduct?.type !== 'Stock' // non-Stock product — Stock button disabled
+                                : modal === 'edit' && t === 'Stock' && activeProduct?.type !== 'Stock' // existing non-Stock product — Stock button disabled (new products can pick any type)
                               return (
                                 <button
                                   key={t}
@@ -1493,7 +1493,7 @@ export default function ProductsTable({
                                   className={`seg-btn${form.type === t ? ' active' : ''}${disabled ? ' disabled' : ''}`}
                                   onClick={() => !disabled && setF('type', t)}
                                   style={disabled ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
-                                  title={isStockLocked && t !== 'Stock' ? 'Stock products cannot be changed to a different type' : t === 'Stock' && activeProduct?.type !== 'Stock' ? 'Cannot change to Stock type once created' : undefined}
+                                  title={isStockLocked && t !== 'Stock' ? 'Stock products cannot be changed to a different type' : modal === 'edit' && t === 'Stock' && activeProduct?.type !== 'Stock' ? 'Cannot change to Stock type once created' : undefined}
                                 >
                                   {t === 'NonStock' ? 'Non Stock' : t}
                                 </button>

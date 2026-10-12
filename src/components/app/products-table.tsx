@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { PostToXeroButton, XeroColumnHeader, XeroPostNotice, XeroStatusBadge, usePostToXero, type XeroTableInfo } from '@/components/app/xero-sync-ui'
 import { toast } from '@/components/app/toast'
+import { useQty } from '@/components/app/qty-provider'
 
 type Product = {
   id: string
@@ -747,6 +748,7 @@ export default function ProductsTable({
   }
   const taxLabel = (id: string | null | undefined) => TAX_OPTIONS.find(t => t.value === (id ?? ''))?.label ?? 'No Tax'
   const dp = decimalPlaces
+  const { q } = useQty()
   const priceStep = dp > 0 ? `0.${'0'.repeat(dp - 1)}1` : '1'
   // UOM list: prefer from settings, fall back to hardcoded
   const UOM_LIST = uoms.length > 0 ? uoms.map(u => u.name) : UOM_OPTIONS
@@ -1368,10 +1370,10 @@ export default function ProductsTable({
                     {v.has('barcode') && <td className="td-mono">{p.barcode ?? '—'}</td>}
                     {canViewPricing && v.has('sell_price') && <td style={{ textAlign: 'right' }} className="td-muted">{fmt(p.sell_price, dp)}</td>}
                     {canViewPricing && v.has('cost_price') && <td style={{ textAlign: 'right' }} className="td-muted">{fmt(p.cost_price, dp)}</td>}
-                    {v.has('on_hand') && <td style={{ textAlign: 'right' }}>{p.track_stock ? <span style={{ fontWeight: 600, color: stock.onHand <= 0 ? 'var(--danger)' : 'var(--slate)' }}>{stock.onHand}</span> : <span className="td-muted">—</span>}</td>}
-                    {v.has('on_order') && <td style={{ textAlign: 'right' }} className="td-muted">{p.track_stock ? stock.onOrder : '—'}</td>}
-                    {v.has('committed') && <td style={{ textAlign: 'right' }} className="td-muted">{p.track_stock ? stock.committed : '—'}</td>}
-                    {v.has('available') && <td style={{ textAlign: 'right' }}>{p.track_stock ? <span style={{ fontWeight: 600, color: stock.available <= 0 ? 'var(--danger)' : '#059669' }}>{stock.available}</span> : <span className="td-muted">—</span>}</td>}
+                    {v.has('on_hand') && <td style={{ textAlign: 'right' }}>{p.track_stock ? <span style={{ fontWeight: 600, color: stock.onHand <= 0 ? 'var(--danger)' : 'var(--slate)' }}>{q(stock.onHand, !!p.serial_tracking)}</span> : <span className="td-muted">—</span>}</td>}
+                    {v.has('on_order') && <td style={{ textAlign: 'right' }} className="td-muted">{p.track_stock ? q(stock.onOrder, !!p.serial_tracking) : '—'}</td>}
+                    {v.has('committed') && <td style={{ textAlign: 'right' }} className="td-muted">{p.track_stock ? q(stock.committed, !!p.serial_tracking) : '—'}</td>}
+                    {v.has('available') && <td style={{ textAlign: 'right' }}>{p.track_stock ? <span style={{ fontWeight: 600, color: stock.available <= 0 ? 'var(--danger)' : '#059669' }}>{q(stock.available, !!p.serial_tracking)}</span> : <span className="td-muted">—</span>}</td>}
                     {xero?.show && <td><XeroStatusBadge info={xeroRecords[p.id]} /></td>}
                     {(canEdit || (xero?.show && xero.canPost)) && (
                     <td>
@@ -1774,10 +1776,10 @@ export default function ProductsTable({
                               return (
                                 <tr key={loc.id} style={{ borderBottom: '1px solid var(--gray-100)' }}>
                                   <td className="li-td" style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{loc.name}</td>
-                                  <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: onHand <= 0 ? 'var(--danger)' : 'var(--slate)' }}>{onHand}</td>
-                                  <td className="li-td" style={{ textAlign: 'right', color: 'var(--gray-400)' }}>{onOrder}</td>
-                                  <td className="li-td" style={{ textAlign: 'right', color: 'var(--gray-400)' }}>{committed}</td>
-                                  <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: available <= 0 ? 'var(--danger)' : '#059669' }}>{available}</td>
+                                  <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: onHand <= 0 ? 'var(--danger)' : 'var(--slate)' }}>{q(onHand, !!activeProduct?.serial_tracking)}</td>
+                                  <td className="li-td" style={{ textAlign: 'right', color: 'var(--gray-400)' }}>{q(onOrder, !!activeProduct?.serial_tracking)}</td>
+                                  <td className="li-td" style={{ textAlign: 'right', color: 'var(--gray-400)' }}>{q(committed, !!activeProduct?.serial_tracking)}</td>
+                                  <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: available <= 0 ? 'var(--danger)' : '#059669' }}>{q(available, !!activeProduct?.serial_tracking)}</td>
                                 </tr>
                               )
                             })}
@@ -1813,7 +1815,7 @@ export default function ProductsTable({
                                     return (
                                       <tr key={g.id} style={{ borderBottom: '1px solid var(--gray-100)' }}>
                                         <td className="li-td" style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{loc?.name ?? '—'}</td>
-                                        <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: 'var(--slate)' }}>{g.quantity}</td>
+                                        <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: 'var(--slate)' }}>{q(g.quantity, !!activeProduct?.serial_tracking)}</td>
                                         {showBin    && <td className="li-td" style={{ color: g.bin_name      ? 'var(--slate)' : 'var(--gray-300)', fontSize: 12 }}>{g.bin_name      ?? '—'}</td>}
                                         {showBatch  && <td className="li-td" style={{ color: g.batch_number  ? 'var(--slate)' : 'var(--gray-300)', fontSize: 12 }}>{g.batch_number  ?? '—'}</td>}
                                         {showSerial && <td className="li-td" style={{ color: g.serial_number ? 'var(--slate)' : 'var(--gray-300)', fontSize: 12 }}>{g.serial_number ?? '—'}</td>}

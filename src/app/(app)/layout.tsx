@@ -6,6 +6,8 @@ import { loadSecurity, isIpAllowed } from '@/lib/auth/security-settings'
 import { clientIp } from '@/lib/rate-limit'
 import IdleGuard from '@/components/app/idle-guard'
 import { PermissionsProvider } from '@/components/app/permissions-provider'
+import { QtyProvider } from '@/components/app/qty-provider'
+import { qtyFmtFromOrg } from '@/lib/qty'
 import AppSidebar from '@/components/app/app-sidebar'
 import AppTopbar from '@/components/app/app-topbar'
 import { normalizePolicy, isPasswordExpired } from '@/lib/auth/password-policy'
@@ -57,7 +59,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   const { data: org } = await adminClient
     .from('organisations')
-    .select('name, xero_enabled')
+    .select('name, xero_enabled, decimal_qty, decimal_qty_places')
     .eq('id', m.org_id)
     .single()
 
@@ -98,7 +100,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         />
         <div className="content">
           <PermissionsProvider perms={access.perms} isAdmin={access.isAdmin}>
-            {children}
+            <QtyProvider format={qtyFmtFromOrg(org as { decimal_qty?: unknown; decimal_qty_places?: unknown } | null)}>
+              {children}
+            </QtyProvider>
           </PermissionsProvider>
         </div>
       </div>

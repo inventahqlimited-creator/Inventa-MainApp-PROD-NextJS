@@ -2,6 +2,7 @@
 import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { NextResponse } from 'next/server'
 import { requirePerm } from '@/lib/auth/access'
+import { hasFraction } from '@/lib/qty'
 
 const ALLOWED_KEYS = [
   'serial_tracking', 'batch_tracking', 'expiry_tracking',
@@ -28,6 +29,19 @@ export async function PATCH(req: Request) {
     if (key in body) updates[key] = body[key]
   }
   if (Object.keys(updates).length === 0) return NextResponse.json({ error: 'No valid fields' }, { status: 400 })
+  // Turning decimals off is blocked while any stock is held in part-units — it would be shown (and counted) wrongly
+  if (updates.decimal_qty === false) {
+    for (const table of ['stock_levels', 'stock_groups'] as const) {
+      for (let from = 0; ; from += 1000) {
+        const { data: rows, error: qErr } = await auth.adminClient.from(table).select('quantity').eq('org_id', auth.orgId).range(from, from + 999)
+        if (qErr) return NextResponse.json({ error: 'Could not check your stock quantities.' }, { status: 500 })
+        if (((rows ?? []) as { quantity: number }[]).some(r => hasFraction(r.quantity))) {
+          return NextResponse.json({ error: 'Some of your stock is held in part-units (for example 1.5). Adjust it to whole numbers first, then turn decimals off.' }, { status: 400 })
+        }
+        if ((rows ?? []).length < 1000) break
+      }
+    }
+  }
   const { error } = await auth.adminClient.from('organisations').update(updates).eq('id', auth.orgId)
   if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   return NextResponse.json({ success: true })

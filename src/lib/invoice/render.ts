@@ -13,7 +13,7 @@ function fmtDate(d: string | null): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d ?? '')
   return m ? `${Number(m[3])} ${MONTHS[Number(m[2]) - 1]} ${m[1]}` : ''
 }
-const qtyText = (n: number) => String(Math.round(n * 1000) / 1000)
+import { docQty as qtyText, docNum as numText, setDocQty } from '@/lib/qty'
 
 function today(tz: string, now = new Date()): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now)
@@ -87,12 +87,12 @@ function table(o: InvoiceOrder, cfg: InvoiceConfig, money: (n: number) => string
   const head = `<thead><tr><th>Description</th><th class="r" style="width:50px">Qty</th>${cols.map(c => `<th class="r" style="width:${c.w}px">${c.label}</th>`).join('')}<th class="r" style="width:100px">Amount</th></tr></thead>`
   const desc = (name: string, sub: string) => `<td><div class="pn">${esc(name)}</div>${sub ? `<div class="sku">${esc(sub)}</div>` : ''}</td>`
   const rows = o.lines.map(l => {
-    const cells = cols.map(c => `<td class="r">${c.key === 'unitPrice' ? money(l.unitPrice) : c.key === 'discount' ? (l.discount ? `${qtyText(l.discount)}%` : dash) : `${qtyText(l.taxRate)}%`}</td>`).join('')
+    const cells = cols.map(c => `<td class="r">${c.key === 'unitPrice' ? money(l.unitPrice) : c.key === 'discount' ? (l.discount ? `${numText(l.discount)}%` : dash) : `${numText(l.taxRate)}%`}</td>`).join('')
     return `<tr>${desc(l.name, cfg.columns.sku ? l.sku : '')}<td class="r">${qtyText(l.qty)}</td>${cells}<td class="r b">${money(l.amount)}</td></tr>`
   }).join('')
   const costs = o.costs.length
     ? `<tr class="band"><td colspan="${3 + cols.length}">Additional costs</td></tr>` + o.costs.map(c =>
-      `<tr>${desc(c.name, c.sub)}<td class="r"></td>${cols.map(col => `<td class="r">${col.key === 'tax' ? `${qtyText(c.taxRate)}%` : ''}</td>`).join('')}<td class="r b">${money(c.amount)}</td></tr>`).join('')
+      `<tr>${desc(c.name, c.sub)}<td class="r"></td>${cols.map(col => `<td class="r">${col.key === 'tax' ? `${numText(c.taxRate)}%` : ''}</td>`).join('')}<td class="r b">${money(c.amount)}</td></tr>`).join('')
     : ''
   return `<table>${head}<tbody>${rows}${costs}</tbody></table>`
 }
@@ -194,6 +194,7 @@ export type InvoiceRenderOptions = {
 }
 
 export function renderInvoiceHtml(payload: InvoicePayload, opts: InvoiceRenderOptions = {}): string {
+  setDocQty(payload.qty)
   const sheets = payload.orders.map(o => sheet(o, payload.business, payload.config, payload.decimals, payload.timezone, opts.now)).join('')
   const title = payload.orders.length === 1 ? `${payload.orders[0].kind === 'purchase' ? 'Purchase Order' : payload.orders[0].is_quote ? 'Quote' : 'Invoice'} ${payload.orders[0].invoice_number}` : `${payload.orders[0].kind === 'purchase' ? 'Purchase orders' : 'Invoices'} (${payload.orders.length} orders)`
   const previewCss = `body{background:#E5E9EA;padding:20px 0}.sheet{width:794px;min-height:1123px;margin:0 auto 20px;padding:48px 48px 34px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.12),0 12px 32px rgba(0,0,0,.12);break-after:auto}.tail{margin-top:auto}.fb{display:flex;font:500 10px var(--mono);color:var(--mut);letter-spacing:.04em;border-top:1px solid var(--line);padding-top:9px}.fb .pg::before{content:"Page 1 of 1"}`

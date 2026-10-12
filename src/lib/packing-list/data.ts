@@ -4,6 +4,7 @@
 // picks). Quantities come from the cartons: the ones on the Pack screen right now (overrides), else the saved ones,
 // else whatever was packed / picked.
 
+import { qtyFmtFromOrg } from '@/lib/qty'
 import { normalizePackingListConfig } from './config'
 import type { PackAddress, PackBusiness, PackOrder, PackOverrides, PackRow, PackingListPayload } from './types'
 
@@ -99,7 +100,7 @@ export async function loadPackingListPayload(db: Db, orgId: string, ids: string[
   const none = Promise.resolve({ data: [] })
 
   const [{ data: org }, { data: picks }, { data: cartons }, { data: contacts }, { data: locations }] = await Promise.all([
-    db.from('organisations').select('name, trading_name, abn_nzbn, gst_number, logo_url, phone, email, contact_phone, contact_email, address, address_line1, address_line2, city, state, postcode, country, default_carrier, default_shipping_method, timezone, packing_list_settings').eq('id', orgId).single(),
+    db.from('organisations').select('name, trading_name, abn_nzbn, gst_number, logo_url, phone, email, contact_phone, contact_email, address, address_line1, address_line2, city, state, postcode, country, default_carrier, default_shipping_method, timezone, packing_list_settings, decimal_qty, decimal_qty_places').eq('id', orgId).single(),
     orderIds.length ? db.from('sales_order_picks').select('so_id, so_line_id, qty, batch_number, serial_number, expiry_date, created_at').in('so_id', orderIds).order('created_at') : none,
     orderIds.length ? db.from('sales_order_cartons').select('id, so_id, sales_order_carton_lines ( so_line_id, qty )').in('so_id', orderIds) : none,
     customerIds.length ? db.from('contacts').select('id, name, address, city, country, phone, ship_name, ship_street, ship_city, ship_postcode, ship_country, ship_phone').in('id', customerIds) : none,
@@ -189,5 +190,6 @@ export async function loadPackingListPayload(db: Db, orgId: string, ids: string[
     business: business(orgRow),
     config: normalizePackingListConfig(orgRow.packing_list_settings),
     timezone: clean(orgRow.timezone) || 'Pacific/Auckland',
+    qty: qtyFmtFromOrg(orgRow as { decimal_qty?: unknown; decimal_qty_places?: unknown }),
   }
 }

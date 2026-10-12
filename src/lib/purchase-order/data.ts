@@ -3,6 +3,7 @@
 // to, where it is delivered, the lines at their ordered quantity, additional costs, order discount and tax (same maths as
 // the purchase order screen). The business details come from Settings.
 
+import { qtyFmtFromOrg } from '@/lib/qty'
 import { billTo, business, clean, num, r2, type ContactDb, type OrgDb } from '@/lib/invoice/data'
 import type { InvoiceAddress, InvoiceCost, InvoiceLine, InvoiceOrder, InvoicePayload, InvoiceTax } from '@/lib/invoice/types'
 import { normalizePurchaseOrderConfig, toInvoiceConfig } from './config'
@@ -43,7 +44,7 @@ export async function loadPurchaseOrderPayload(db: Db, orgId: string, ids: strin
   const locationIds = [...new Set(orders.map(o => o.location_id).filter((x): x is string => !!x))]
   const none = Promise.resolve({ data: [] })
   const [{ data: org }, { data: costs }, { data: contacts }, { data: locations }] = await Promise.all([
-    db.from('organisations').select('name, trading_name, abn_nzbn, gst_number, logo_url, phone, email, contact_phone, contact_email, address, address_line1, address_line2, city, state, postcode, country, currency, base_currency, decimal_places, timezone, purchase_order_settings').eq('id', orgId).single(),
+    db.from('organisations').select('name, trading_name, abn_nzbn, gst_number, logo_url, phone, email, contact_phone, contact_email, address, address_line1, address_line2, city, state, postcode, country, currency, base_currency, decimal_places, timezone, purchase_order_settings, decimal_qty, decimal_qty_places').eq('id', orgId).single(),
     orderIds.length ? db.from('purchase_order_cost_lines').select('po_id, product_name, description, amount, tax_rate, sort_order').in('po_id', orderIds).order('sort_order') : none,
     supplierIds.length ? db.from('contacts').select('id, name, email, address, city, country, bill_name, bill_email, bill_street, bill_city, bill_postcode, bill_country, ship_name, ship_street, ship_city, ship_postcode, ship_country').eq('org_id', orgId).in('id', supplierIds) : none,
     locationIds.length ? db.from('locations').select('id, name, address, city, country, phone, email').eq('org_id', orgId).in('id', locationIds) : none,
@@ -119,5 +120,5 @@ export async function loadPurchaseOrderPayload(db: Db, orgId: string, ids: strin
     }
   })
 
-  return { orders: out, business: business(orgRow), config, timezone: clean(orgRow.timezone) || 'Pacific/Auckland', decimals: dp }
+  return { orders: out, business: business(orgRow), config, timezone: clean(orgRow.timezone) || 'Pacific/Auckland', decimals: dp, qty: qtyFmtFromOrg(orgRow as { decimal_qty?: unknown; decimal_qty_places?: unknown }) }
 }

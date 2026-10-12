@@ -64,4 +64,6 @@ export type InvoicePayload = {
   config: InvoiceConfig
   timezone: string
   decimals: number
+  /** how stock quantities are shown (Settings → Allow Decimal Quantities) */
+  qty?: import('@/lib/qty').QtyFmt
 }

@@ -4,7 +4,8 @@
 import type { Content, TableCell } from 'pdfmake/interfaces'
 import type { InvoiceAddress, InvoiceBusiness, InvoiceOrder, InvoicePayload } from '@/lib/invoice/types'
 import type { InvoiceConfig } from '@/lib/invoice/config'
-import { COLORS, buildPdf, fmtDate, lbl, loadLogo, logoContent, moneyFn, pageFooter, qtyText, safeName, todayIn, type Logo } from './engine'
+import { setDocQty } from '@/lib/qty'
+import { COLORS, buildPdf, fmtDate, lbl, loadLogo, logoContent, moneyFn, pageFooter, qtyText, numText, safeName, todayIn, type Logo } from './engine'
 
 const dash = '—'
 
@@ -78,14 +79,14 @@ function lineTable(o: InvoiceOrder, cfg: InvoiceConfig, money: (n: number) => st
     body.push([
       desc(l.name, cfg.columns.sku ? l.sku : ''),
       num(qtyText(l.qty)),
-      ...cols.map(c => num(c.key === 'unitPrice' ? money(l.unitPrice) : c.key === 'discount' ? (l.discount ? `${qtyText(l.discount)}%` : dash) : `${qtyText(l.taxRate)}%`)),
+      ...cols.map(c => num(c.key === 'unitPrice' ? money(l.unitPrice) : c.key === 'discount' ? (l.discount ? `${numText(l.discount)}%` : dash) : `${numText(l.taxRate)}%`)),
       num(money(l.amount), true),
     ])
   }
   if (o.costs.length) {
     body.push([{ text: 'ADDITIONAL COSTS', colSpan: 3 + cols.length, fontSize: 6.5, bold: true, color: COLORS.mut, characterSpacing: 0.7, fillColor: COLORS.tint, margin: [0, 2, 0, 2] }, ...Array(2 + cols.length).fill({})])
     for (const c of o.costs) {
-      body.push([desc(c.name, c.sub), num(''), ...cols.map(col => num(col.key === 'tax' ? `${qtyText(c.taxRate)}%` : '')), num(money(c.amount), true)])
+      body.push([desc(c.name, c.sub), num(''), ...cols.map(col => num(col.key === 'tax' ? `${numText(c.taxRate)}%` : '')), num(money(c.amount), true)])
     }
   }
   return {
@@ -165,6 +166,7 @@ export async function renderInvoicePdf(payload: InvoicePayload, orderIndex = 0, 
   const money = moneyFn(payload.decimals)
   const invoiceDate = o.invoice_date ?? todayIn(payload.timezone, now)
   const logo: Logo = cfg.header.logo ? await loadLogo(biz.logo_url) : null
+  setDocQty(payload.qty)
   const title = documentTitle(o, biz)
 
   const contact = [biz.address.join(', '), [biz.phone, biz.email].filter(Boolean).join(' · '), biz.numbers.join(' · ')].filter(Boolean)

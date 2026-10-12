@@ -34,6 +34,8 @@ export type PickListPayload = {
   orders: PickOrder[]
   config: PickListConfig
   timezone: string
+  /** how stock quantities are shown (Settings → Allow Decimal Quantities) */
+  qty?: import('@/lib/qty').QtyFmt
 }
 
 export type PickListMode = 'single' | 'consolidated-order' | 'consolidated-product'

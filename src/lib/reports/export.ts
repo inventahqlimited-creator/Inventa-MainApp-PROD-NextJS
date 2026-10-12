@@ -1,6 +1,11 @@
 // src/lib/reports/export.ts
 // Formatting plus CSV / Excel / Print-to-PDF for any report. Runs in the browser; no extra packages needed.
 import type { Col, Row } from './registry'
+import { fmtQty, WHOLE_QTY, type QtyFmt } from '@/lib/qty'
+
+// Quantity format of the organisation being viewed (Settings → Allow Decimal Quantities). Set by the report screen.
+let QTY: QtyFmt = WHOLE_QTY
+export const setReportQtyFormat = (f: QtyFmt) => { QTY = f }
 
 // ───────────── display formatting
 const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec']
@@ -18,7 +23,7 @@ export function fmtValue(col: Col, v: unknown): string {
   switch (col.type) {
     case 'money': return `${Number(v) < 0 ? '-' : ''}$${Math.abs(Number(v)).toLocaleString('en-NZ', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`
     case 'pct': return `${num(Number(v), 1)}%`
-    case 'qty': return num(Number(v), 4)
+    case 'qty': return fmtQty(Number(v), QTY)
     case 'num': return num(Number(v), 2)
     case 'date': return fmtDate(v)
     default: return String(v)

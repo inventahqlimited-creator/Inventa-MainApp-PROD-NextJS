@@ -94,7 +94,7 @@ export function fmtDate(d: string | null | undefined): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d ?? '')
   return m ? `${Number(m[3])} ${MONTHS[Number(m[2]) - 1]} ${m[1]}` : ''
 }
-export const qtyText = (n: number) => String(Math.round(n * 1000) / 1000)
+export { docQty as qtyText, docNum as numText } from '@/lib/qty'
 export const moneyFn = (dp: number) => (n: number) => new Intl.NumberFormat('en-NZ', { minimumFractionDigits: dp, maximumFractionDigits: dp }).format(n)
 export const todayIn = (tz: string, now = new Date()) =>
   new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now)

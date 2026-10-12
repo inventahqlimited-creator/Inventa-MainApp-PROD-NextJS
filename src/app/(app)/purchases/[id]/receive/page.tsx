@@ -65,9 +65,9 @@ export default async function ReceivePurchaseOrderPage({ params }: { params: Pro
       unit_cost: Number(l.unit_cost) || 0,
       discount: l.discount != null ? Number(l.discount) : null,
       tax_rate: l.tax_rate != null ? Number(l.tax_rate) : null,
-      serial_tracking: !!products?.serial_tracking && orgT.serial_tracking !== false,
-      batch_tracking: !!products?.batch_tracking && orgT.batch_tracking !== false,
-      expiry_tracking: !!products?.expiry_tracking && orgT.expiry_tracking !== false,
+      serial_tracking: !!products?.serial_tracking,
+      batch_tracking: !!products?.batch_tracking,
+      expiry_tracking: !!products?.expiry_tracking,
     }))
   const costLines = (raw.purchase_order_cost_lines ?? [])
     .sort((a: { sort_order: number }, b: { sort_order: number }) => (a.sort_order ?? 0) - (b.sort_order ?? 0))

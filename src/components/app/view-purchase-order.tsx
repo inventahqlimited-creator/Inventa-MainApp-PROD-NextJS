@@ -780,7 +780,8 @@ export default function ViewPurchaseOrder({
             {receiveLines.length > 0 && (() => {
               const anyBatchCol = receiveLines.some(l => l.needs_batch)
               const anyExpiryCol = receiveLines.some(l => l.needs_expiry)
-              const colCount = 5 + (anyBatchCol ? 1 : 0) + (anyExpiryCol ? 1 : 0)
+              const anySerialCol = receiveLines.some(l => l.needs_serial)
+              const colCount = 5 + (anySerialCol ? 1 : 0) + (anyBatchCol ? 1 : 0) + (anyExpiryCol ? 1 : 0)
               return (
                 <div className="npo-card" style={{ marginBottom: 16, overflow: 'visible' }}>
                   <div className="npo-card-title">
@@ -796,6 +797,7 @@ export default function ViewPurchaseOrder({
                           <th className="li-th" style={{ width: 90, textAlign: 'right' }}>Received</th>
                           <th className="li-th" style={{ width: 90, textAlign: 'right' }}>Remaining</th>
                           <th className="li-th" style={{ width: 120, textAlign: 'right' }}>Receive Now</th>
+                          {anySerialCol && <th className="li-th" style={{ width: 150 }}>Serial #</th>}
                           {anyBatchCol && <th className="li-th" style={{ width: 170 }}>Batch / Lot #</th>}
                           {anyExpiryCol && <th className="li-th" style={{ width: 170 }}>Expiry Date</th>}
                         </tr>
@@ -840,6 +842,13 @@ export default function ViewPurchaseOrder({
                                     </>
                                   )}
                                 </td>
+                                {anySerialCol && (
+                                  <td className="li-td" style={{ fontSize: 12.5 }}>
+                                    {rl.needs_serial ? (
+                                      <span style={{ fontWeight: 600, color: receivingCount >= remaining && remaining > 0 ? '#059669' : 'var(--gray-500)' }}>{receivingCount} of {remaining} entered<span style={{ display: 'block', fontWeight: 400, fontSize: 11, color: 'var(--gray-400)' }}>enter below ↓</span></span>
+                                    ) : <span style={{ color: 'var(--gray-300)' }}>—</span>}
+                                  </td>
+                                )}
                                 {anyBatchCol && (
                                   <td className="li-td">
                                     {rl.needs_batch ? (

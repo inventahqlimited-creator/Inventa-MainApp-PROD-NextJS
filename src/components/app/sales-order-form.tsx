@@ -872,7 +872,7 @@ function SalesOrderFormInner({
               onEdit={() => { setError(null); setMode('edit') }}
               onCancel={() => setConfirmCancelOrder(true)}
               onPo={() => { setPoScope('all'); setPoOpen(true) }}
-              onUnpick={fulfilmentMode !== 'none' && canPickSales && (inPicking || isPacked) ? () => setConfirmUndo('unpick') : undefined}
+              onUnpick={fulfilmentMode !== 'none' && canPickSales && inPicking && !statusLower.includes('pack') ? () => setConfirmUndo('unpick') : undefined}
               onUnpack={fulfilmentMode === 'full' && canPackSales && isPacked ? () => setConfirmUndo('unpack') : undefined}
               onError={setError}
             />
@@ -1503,7 +1503,7 @@ function SalesOrderFormInner({
         <ConfirmModal
           title={confirmUndo === 'unpick' ? 'Unpick sales order?' : 'Unpack sales order?'}
           message={confirmUndo === 'unpick'
-            ? `Are you sure you want to unpick ${order?.so_number ?? 'this order'}? It goes back to Open and the picked stock is released. Any packing details are removed too.`
+            ? `Are you sure you want to unpick ${order?.so_number ?? 'this order'}? It goes back to Open and the picked stock is released.`
             : `Are you sure you want to unpack ${order?.so_number ?? 'this order'}? It goes back to Picked and all packing details are removed.`}
           confirmLabel={confirmUndo === 'unpick' ? 'Yes, unpick' : 'Yes, unpack'}
           busy={undoing}

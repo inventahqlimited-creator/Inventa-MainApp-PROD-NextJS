@@ -615,7 +615,7 @@ export default function SalesTable({
         }
 
         const undo: React.ReactNode[] = []
-        if (pickEnabled && canPickSales && ['picking', 'picked', 'packed'].includes(k)) undo.push(item('Unpick Order', () => { setMenu(null); setDialog({ kind: 'unpick', order: o }) }, { icon: ic('M3 12a9 9 0 1 0 3-6.7M3 4v5h5') }))
+        if (pickEnabled && canPickSales && ['picking', 'picked'].includes(k)) undo.push(item('Unpick Order', () => { setMenu(null); setDialog({ kind: 'unpick', order: o }) }, { icon: ic('M3 12a9 9 0 1 0 3-6.7M3 4v5h5') }))
         if (packEnabled && canPackSales && k === 'packed') undo.push(item('Unpack Order', () => { setMenu(null); setDialog({ kind: 'unpack', order: o }) }, { icon: ic('M3 12a9 9 0 1 0 3-6.7M3 4v5h5') }))
 
         return (
@@ -696,7 +696,7 @@ export default function SalesTable({
               <div style={{ fontFamily: 'var(--font-display)', fontSize: 17, fontWeight: 700, color: 'var(--slate)', marginBottom: 8 }}>{dialog.kind === 'unpick' ? 'Unpick' : 'Unpack'} {dialog.order.so_number}?</div>
               <div style={{ fontSize: 13.5, color: 'var(--gray-500)', lineHeight: 1.6, marginBottom: 20 }}>
                 {dialog.kind === 'unpick'
-                  ? 'The order goes back to Open and the stock picked for it is released. Any packing details are removed too. Are you sure?'
+                  ? 'The order goes back to Open and the stock picked for it is released. Are you sure?'
                   : 'The order goes back to Picked and all packing details (cartons, carrier and tracking) are removed. Are you sure?'}
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>

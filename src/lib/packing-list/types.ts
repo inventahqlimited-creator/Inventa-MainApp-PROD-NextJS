@@ -54,6 +54,8 @@ export type PackingListPayload = {
   business: PackBusiness
   config: PackingListConfig
   timezone: string
+  /** how stock quantities are shown (Settings → Allow Decimal Quantities) */
+  qty?: import('@/lib/qty').QtyFmt
 }
 
 /** What the Pack screen is showing right now (not yet saved), so the printout matches the screen. */

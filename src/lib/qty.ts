@@ -50,3 +50,12 @@ export const hasFraction = (n: number | string | null | undefined) => {
   const v = Number(n)
   return Number.isFinite(v) && Math.abs(v - Math.round(v)) > 1e-9
 }
+
+// ── Printed documents (pick list, packing list, invoice, purchase order) ──
+// The document builders are synchronous, so a module-level format set at the start of a build is safe.
+let DOC: QtyFmt = WHOLE_QTY
+export const setDocQty = (f?: QtyFmt | null) => { DOC = f ?? WHOLE_QTY }
+/** A quantity on a printed document. */
+export const docQty = (n: number) => fmtQty(n, DOC)
+/** A plain number (discount %, tax rate) — never uses the quantity decimals. */
+export const docNum = (n: number) => String(Math.round(n * 1000) / 1000)

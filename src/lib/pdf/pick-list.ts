@@ -5,6 +5,7 @@ import type { Content, ContentTable, TableCell } from 'pdfmake/interfaces'
 import { code128Widths } from '@/lib/pick-list/barcode'
 import type { PickListConfig } from '@/lib/pick-list/config'
 import type { PickListPayload, PickOrder, PickRow } from '@/lib/pick-list/types'
+import { setDocQty } from '@/lib/qty'
 import { buildPdf, fmtDate, lbl, pageFooter, qtyText, safeName } from './engine'
 
 const INK = '#000000'
@@ -129,6 +130,7 @@ export async function renderPickListPdf(payload: PickListPayload, orderIndex = 0
   const o = payload.orders[orderIndex]
   if (!o) throw new Error(`Pick list: no order at index ${orderIndex}`)
   const cfg = payload.config
+  setDocQty(payload.qty)
   const printed = printedStamp(payload.timezone)
 
   const right: Content[] = [{ text: o.so_number, bold: true, fontSize: 20, alignment: 'right' } as Content]

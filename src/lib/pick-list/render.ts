@@ -22,7 +22,7 @@ function fmtExpiry(d: string | null): string {
   return m ? `${m[3]}/${m[2]}/${m[1].slice(2)}` : ''
 }
 const unitLabel = (u: string) => (/^each$/i.test(u) ? 'ea' : u.toLowerCase())
-const qtyText = (n: number) => String(Math.round(n * 1000) / 1000)
+import { docQty as qtyText, setDocQty } from '@/lib/qty'
 
 function stamp(tz: string, now = new Date()) {
   const fmt = new Intl.DateTimeFormat('en-NZ', { timeZone: tz, day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true })
@@ -245,6 +245,7 @@ export type RenderOptions = {
 
 export function renderPickListHtml(payload: PickListPayload, opts: RenderOptions): string {
   const cfg = payload.config
+  setDocQty(payload.qty)
   const { printed, ref } = stamp(payload.timezone, opts.now)
   const orders = payload.orders
   const sheets =

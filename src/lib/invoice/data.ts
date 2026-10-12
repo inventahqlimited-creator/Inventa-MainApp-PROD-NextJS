@@ -3,6 +3,7 @@
 // billed (the units that shipped; the ordered units while nothing has been picked yet), the additional costs, the order
 // discount and the tax, using the same maths as the sales order screen. The business details come from Settings.
 
+import { qtyFmtFromOrg } from '@/lib/qty'
 import { normalizeInvoiceConfig } from './config'
 import type { InvoiceAddress, InvoiceBusiness, InvoiceCost, InvoiceLine, InvoiceOrder, InvoicePayload, InvoiceTax } from './types'
 
@@ -110,7 +111,7 @@ export async function loadInvoicePayload(db: Db, orgId: string, ids: string[]): 
   const customerIds = [...new Set(orders.map(o => o.customer_id).filter((x): x is string => !!x))]
   const none = Promise.resolve({ data: [] })
   const [{ data: org }, { data: costs }, { data: contacts }] = await Promise.all([
-    db.from('organisations').select('name, trading_name, abn_nzbn, gst_number, logo_url, phone, email, contact_phone, contact_email, address, address_line1, address_line2, city, state, postcode, country, currency, base_currency, decimal_places, timezone, so_prefix, so_suffix, invoice_settings').eq('id', orgId).single(),
+    db.from('organisations').select('name, trading_name, abn_nzbn, gst_number, logo_url, phone, email, contact_phone, contact_email, address, address_line1, address_line2, city, state, postcode, country, currency, base_currency, decimal_places, timezone, so_prefix, so_suffix, invoice_settings, decimal_qty, decimal_qty_places').eq('id', orgId).single(),
     orderIds.length ? db.from('sales_order_cost_lines').select('so_id, product_name, description, amount, tax_rate, sort_order').in('so_id', orderIds).order('sort_order') : none,
     customerIds.length ? db.from('contacts').select('id, name, email, address, city, country, bill_name, bill_email, bill_street, bill_city, bill_postcode, bill_country, ship_name, ship_street, ship_city, ship_postcode, ship_country').eq('org_id', orgId).in('id', customerIds) : none,
   ])
@@ -178,5 +179,5 @@ export async function loadInvoicePayload(db: Db, orgId: string, ids: string[]): 
     }
   })
 
-  return { orders: out, business: business(orgRow), config, timezone: clean(orgRow.timezone) || 'Pacific/Auckland', decimals: dp }
+  return { orders: out, business: business(orgRow), config, timezone: clean(orgRow.timezone) || 'Pacific/Auckland', decimals: dp, qty: qtyFmtFromOrg(orgRow as { decimal_qty?: unknown; decimal_qty_places?: unknown }) }
 }

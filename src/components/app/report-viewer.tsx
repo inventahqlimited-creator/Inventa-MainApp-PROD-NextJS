@@ -5,7 +5,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 import { SECTIONS, defaultFilters, type Col, type FilterDef, type Filters, type FilterValue, type Opt, type ReportDef, type ReportResult, type Row } from '@/lib/reports/registry'
 import type { Lookups } from '@/lib/reports/run'
-import { buildXlsx, download, fileSafe, fmtDate, fmtTile, fmtValue, isNumeric, printReport, toCsv, totals } from '@/lib/reports/export'
+import { useQty } from '@/components/app/qty-provider'
+import { buildXlsx, download, fileSafe, fmtDate, fmtTile, fmtValue, isNumeric, printReport, setReportQtyFormat, toCsv, totals } from '@/lib/reports/export'
 
 const RECENT_KEY = 'inv-reports-recent'
 const colsKey = (id: string) => `inv-report-cols:${id}`
@@ -132,6 +133,8 @@ function DateRangeFilter({ def, from, to, onChange, open, setOpen }: { def: Filt
 
 // ───────────── the viewer
 export default function ReportViewer({ def, lookups, orgName }: { def: ReportDef; lookups: Lookups; orgName: string }) {
+  const { format: qtyFormat } = useQty()
+  setReportQtyFormat(qtyFormat) // before any cell is formatted
   const section = SECTIONS.find(s => s.id === def.section)!
   const defaults = useMemo(() => defaultFilters(def), [def])
   const [filters, setFilters] = useState<Filters>(defaults)

@@ -5,6 +5,7 @@
 // the orders in the batch, so two orders never get told to take the same unit.
 
 import { loadPickData, PICK_ANY } from '@/lib/sales-pick-data'
+import { qtyFmtFromOrg } from '@/lib/qty'
 import { normalizePickListConfig } from './config'
 import type { PickListPayload, PickOrder, PickRow } from './types'
 
@@ -86,7 +87,7 @@ export async function loadPickListPayload(db: Db, orgId: string, ids: string[]):
   const [{ data: orderRows }, { data: lineRows }, { data: org }] = await Promise.all([
     orderIds.length ? db.from('sales_orders').select('id, expected_date, notes').eq('org_id', orgId).in('id', orderIds) : Promise.resolve({ data: [] }),
     lineIds.length ? db.from('sales_order_lines').select('id, line_notes').in('id', lineIds) : Promise.resolve({ data: [] }),
-    db.from('organisations').select('timezone, pick_list_settings').eq('id', orgId).single(),
+    db.from('organisations').select('timezone, pick_list_settings, decimal_qty, decimal_qty_places').eq('id', orgId).single(),
   ])
   const extra = new Map(((orderRows ?? []) as { id: string; expected_date: string | null; notes: string | null }[]).map(r => [r.id, r]))
   const lineNote = new Map(((lineRows ?? []) as { id: string; line_notes: string | null }[]).map(r => [r.id, r.line_notes]))
@@ -178,5 +179,5 @@ export async function loadPickListPayload(db: Db, orgId: string, ids: string[]):
   }
 
   const orgRow = (org ?? {}) as { timezone?: string | null; pick_list_settings?: unknown }
-  return { orders, config: normalizePickListConfig(orgRow.pick_list_settings), timezone: orgRow.timezone || 'Pacific/Auckland' }
+  return { orders, config: normalizePickListConfig(orgRow.pick_list_settings), timezone: orgRow.timezone || 'Pacific/Auckland', qty: qtyFmtFromOrg(org as { decimal_qty?: unknown; decimal_qty_places?: unknown } | null) }
 }

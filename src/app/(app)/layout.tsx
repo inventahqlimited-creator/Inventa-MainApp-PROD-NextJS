@@ -76,6 +76,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   const displayName = [m.first_name, m.last_name].filter(Boolean).join(' ') || user.email || 'User'
   const initials = displayName.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2)
+  const { data: serialRows } = await adminClient.from('products').select('id').eq('org_id', m.org_id).eq('serial_tracking', true)
+  const serialIds = ((serialRows ?? []) as { id: string }[]).map(r => r.id)
   const orgName = (org as { name: string } | null)?.name ?? 'inventaHQ'
   const xeroEnabled = Boolean((org as { xero_enabled?: boolean | null } | null)?.xero_enabled)
 
@@ -100,7 +102,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         />
         <div className="content">
           <PermissionsProvider perms={access.perms} isAdmin={access.isAdmin}>
-            <QtyProvider format={qtyFmtFromOrg(org as { decimal_qty?: unknown; decimal_qty_places?: unknown } | null)}>
+            <QtyProvider format={qtyFmtFromOrg(org as { decimal_qty?: unknown; decimal_qty_places?: unknown } | null)} serialIds={serialIds}>
               {children}
             </QtyProvider>
           </PermissionsProvider>

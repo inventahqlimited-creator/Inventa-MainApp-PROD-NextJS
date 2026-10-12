@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import { useQty } from '@/components/app/qty-provider'
 import NumInput from '@/components/app/num-input'
 import TaxSelect from '@/components/app/tax-select'
 import { printPurchaseOrder } from '@/lib/purchase-order/print'
@@ -312,6 +313,7 @@ function PurchaseOrderForm({
   onDiscard: () => void
 }) {
   const router = useRouter()
+  const { q, places } = useQty()
   const [xeroInfo, setXeroInfo] = useState<XeroRowInfo | null>(xeroBill?.info ?? null)
   const xeroPost = usePostToXero('bill', (_id, info) => { setXeroInfo(info) })
 
@@ -924,13 +926,13 @@ function PurchaseOrderForm({
                     </td>
                     <td className="li-td" style={{ textAlign: 'right' }}>
                       {editable
-                        ? <NumInput className="li-input right" value={l.quantity_ordered} onChange={n => updateLine(idx, 'quantity_ordered', n)} min={0} style={{ width: 70, textAlign: 'right' }} />
-                        : <span style={{ fontSize: 13 }}>{l.quantity_ordered}</span>
+                        ? <NumInput className="li-input right" value={l.quantity_ordered} decimals={places(l.product_id)} onChange={n => updateLine(idx, 'quantity_ordered', n)} min={0} style={{ width: 70, textAlign: 'right' }} />
+                        : <span style={{ fontSize: 13 }}>{q(l.quantity_ordered, l.product_id)}</span>
                       }
                     </td>
                     {showReceived && (
                       <td className="li-td" style={{ textAlign: 'right' }}>
-                        <span style={{ fontSize: 13, fontWeight: 600, color: Number(l.quantity_received) > 0 ? (Number(l.quantity_received) >= l.quantity_ordered ? '#059669' : '#B45309') : 'var(--gray-400)' }}>{Number(l.quantity_received) || 0}</span>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: Number(l.quantity_received) > 0 ? (Number(l.quantity_received) >= l.quantity_ordered ? '#059669' : '#B45309') : 'var(--gray-400)' }}>{q(Number(l.quantity_received) || 0, l.product_id)}</span>
                       </td>
                     )}
                     <td className="li-td" style={{ textAlign: 'right' }}>
@@ -1010,7 +1012,7 @@ function PurchaseOrderForm({
                             const tracked = p.track_stock !== false && p.type === 'Stock'
                             return (
                               <>
-                                <span style={{ fontSize: 13, fontWeight: 600, textAlign: 'right', color: !tracked ? 'var(--gray-400)' : st.available <= 0 ? 'var(--danger)' : '#059669' }}>{tracked ? st.available : '—'}</span>
+                                <span style={{ fontSize: 13, fontWeight: 600, textAlign: 'right', color: !tracked ? 'var(--gray-400)' : st.available <= 0 ? 'var(--danger)' : '#059669' }}>{tracked ? q(st.available, p.id) : '—'}</span>
                                 <span style={{ fontSize: 13, textAlign: 'right', color: 'var(--gray-400)' }}>{tracked ? st.committed : '—'}</span>
                               </>
                             )

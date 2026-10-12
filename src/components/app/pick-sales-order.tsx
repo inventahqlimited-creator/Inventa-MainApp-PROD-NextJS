@@ -6,6 +6,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useQty } from '@/components/app/qty-provider'
 import PickListMenu from '@/components/app/pick-list-menu'
 import { toast } from '@/components/app/toast'
 
@@ -51,6 +52,7 @@ export default function PickSalesOrder({
   kind?: 'sales' | 'transfer'
 }) {
   const router = useRouter()
+  const { q: fq, step, round } = useQty()
   const single = orders.length === 1
   const isTr = kind === 'transfer'
   const base = isTr ? '/transfers' : '/sales'
@@ -121,7 +123,7 @@ export default function PickSalesOrder({
   function typeQty(l: Line, raw: string) {
     let q = parseFloat(raw)
     if (!Number.isFinite(q) || q < 0) q = 0
-    q = Math.min(q, capOf(l))
+    q = round(Math.min(q, capOf(l)), l.product_id)
     setLine(l, allocate(l, q))
   }
 
@@ -270,7 +272,7 @@ export default function PickSalesOrder({
     const noStock = status(l) === 'no-stock'
     return (
       <input
-        type="number" min={0} max={allowOverPicking ? undefined : l.ordered}
+        type="number" min={0} step={step(l.product_id)} max={allowOverPicking ? undefined : l.ordered}
         value={pickedOf(l)} disabled={noStock}
         onChange={e => typeQty(l, e.target.value)}
         onClick={e => e.stopPropagation()}
@@ -362,7 +364,7 @@ export default function PickSalesOrder({
                             {l.name}{l.sku && <div style={{ fontFamily: 'monospace', fontSize: 11, color: 'var(--gray-400)', fontWeight: 400 }}>{l.sku}</div>}
                           </td>
                           <td style={{ ...cell, textAlign: 'center', fontSize: 12, color: 'var(--gray-400)' }}>{l.unit}</td>
-                          <td style={{ ...cell, textAlign: 'right', fontSize: 13, fontWeight: 600, color: 'var(--slate)' }}>{l.ordered}</td>
+                          <td style={{ ...cell, textAlign: 'right', fontSize: 13, fontWeight: 600, color: 'var(--slate)' }}>{fq(l.ordered, l.product_id)}</td>
                           <td style={{ ...cell, textAlign: 'right' }}>{pickedInput(l)}</td>
                           <td style={{ padding: '8px 12px', maxWidth: 200 }}>{allocTags(l)}</td>
                           <td style={cell}>{badge(l)}</td>
@@ -399,7 +401,7 @@ export default function PickSalesOrder({
                         <tr key={l.id} onClick={() => status(l) !== 'no-stock' && openPanel(l)} style={{ borderBottom: '1px solid var(--gray-50)', cursor: status(l) === 'no-stock' ? 'default' : 'pointer', background: panelLine === l.id ? 'var(--teal-surface)' : undefined }}>
                           <td style={{ ...cell, fontFamily: 'var(--font-display)', fontSize: 13, fontWeight: 700, color: 'var(--slate)' }}>{orderOf(l).so_number}</td>
                           <td style={{ ...cell, fontSize: 13, color: 'var(--gray-400)' }}>{orderOf(l).customer_name}</td>
-                          <td style={{ ...cell, textAlign: 'right', fontSize: 13, fontWeight: 600, color: 'var(--slate)' }}>{l.ordered}</td>
+                          <td style={{ ...cell, textAlign: 'right', fontSize: 13, fontWeight: 600, color: 'var(--slate)' }}>{fq(l.ordered, l.product_id)}</td>
                           <td style={{ ...cell, textAlign: 'right' }}>{pickedInput(l)}</td>
                           <td style={{ padding: '8px 12px', maxWidth: 200 }}>{allocTags(l)}</td>
                           <td style={cell}>{badge(l)}</td>
@@ -420,7 +422,7 @@ export default function PickSalesOrder({
             <div style={{ padding: '16px 18px', borderBottom: '1px solid var(--gray-100)', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
               <div>
                 <div style={{ fontFamily: 'var(--font-display)', fontSize: 14, fontWeight: 700, color: 'var(--slate)' }}>{panel.name}</div>
-                <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>{single ? '' : `${orderOf(panel).so_number} · `}{panel.ordered} {panel.unit} {isTr ? 'to transfer' : 'ordered'} · {orderOf(panel).location_name} · On hand: {panel.onHand}</div>
+                <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2 }}>{single ? '' : `${orderOf(panel).so_number} · `}{fq(panel.ordered, panel.product_id)} {panel.unit} {isTr ? 'to transfer' : 'ordered'} · {orderOf(panel).location_name} · On hand: {fq(panel.onHand, panel.product_id)}</div>
               </div>
               <button onClick={() => setPanelLine(null)} className="sq-btn" style={{ width: 28, height: 28 }}>
                 <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
@@ -443,7 +445,7 @@ export default function PickSalesOrder({
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="var(--teal)" strokeWidth="2.5"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
                             <span style={{ fontSize: 13, fontWeight: 700, color: 'var(--slate)', fontFamily: 'var(--font-display)' }}>{s.bin ?? 'Default'}</span>
                           </div>
-                          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--teal)', background: 'var(--teal-surface)', padding: '2px 8px', borderRadius: 6 }}>{avail} available</span>
+                          <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--teal)', background: 'var(--teal-surface)', padding: '2px 8px', borderRadius: 6 }}>{fq(avail)} available</span>
                         </div>
                         {s.batch && <div style={{ fontSize: 12, color: 'var(--gray-400)', marginBottom: 3 }}>Batch: <strong>{s.batch}</strong></div>}
                         {s.expiry && <div style={{ fontSize: 12, color: 'var(--gray-400)', marginBottom: 3 }}>Expiry: <strong>{s.expiry}</strong></div>}
@@ -470,7 +472,7 @@ export default function PickSalesOrder({
                     )
                   })}
                   <div style={{ padding: '10px 0', borderTop: '1px solid var(--gray-100)', marginTop: 4, display: 'flex', justifyContent: 'space-between', fontSize: 12.5, color: 'var(--gray-400)' }}>
-                    <span>Ordered: <strong>{panel.ordered}</strong></span>
+                    <span>Ordered: <strong>{fq(panel.ordered, panel.product_id)}</strong></span>
                     <span>Selected: <strong style={{ color: panelTotal > panel.ordered ? '#92400E' : 'var(--slate)' }}>{panelTotal}</strong>{panelTotal > panel.ordered && <span style={{ color: '#92400E', fontSize: 11 }}> (over)</span>}</span>
                   </div>
                 </>
@@ -487,7 +489,7 @@ export default function PickSalesOrder({
       <div style={{ background: 'var(--white)', borderTop: '1px solid var(--gray-100)', padding: '14px 28px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 -4px 16px rgba(0,0,0,0.06)', flexShrink: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16 }}>
           <button onClick={() => router.push(backTo)} className="btn btn-outline" style={{ height: 38 }}>Cancel</button>
-          <div style={{ fontSize: 13, color: 'var(--gray-400)' }}>{totalPicked} / {totalOrdered} units picked</div>
+          <div style={{ fontSize: 13, color: 'var(--gray-400)' }}>{fq(totalPicked)} / {fq(totalOrdered)} units picked</div>
         </div>
         <button onClick={askConfirm} className="btn btn-primary" style={{ height: 38, padding: '0 24px' }} disabled={saving || lines.length === 0}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>

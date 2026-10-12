@@ -1,23 +1,29 @@
 'use client'
 // src/components/app/qty-provider.tsx
 // Gives every screen the organisation's quantity format, so stock quantities show the same way everywhere.
-import { createContext, useContext } from 'react'
+// Serial-tracked products are always whole numbers — pass the product id (or true) as the "whole" argument.
+import { createContext, useContext, useMemo } from 'react'
 import { fmtQty, qtyPlaces, qtyStep, roundQty, WHOLE_QTY, type QtyFmt } from '@/lib/qty'
 
-const Ctx = createContext<QtyFmt>(WHOLE_QTY)
+type Value = { format: QtyFmt; serialIds: Set<string> }
+const Ctx = createContext<Value>({ format: WHOLE_QTY, serialIds: new Set() })
 
-export function QtyProvider({ format, children }: { format: QtyFmt; children: React.ReactNode }) {
-  return <Ctx.Provider value={format}>{children}</Ctx.Provider>
+export function QtyProvider({ format, serialIds = [], children }: { format: QtyFmt; serialIds?: string[]; children: React.ReactNode }) {
+  const value = useMemo(() => ({ format, serialIds: new Set(serialIds) }), [format, serialIds])
+  return <Ctx.Provider value={value}>{children}</Ctx.Provider>
 }
 
-/** `q(n)` formats a quantity; pass `true` as the second argument for serial-tracked products (always whole). */
+/** true / a serial-tracked product's id → whole numbers only. */
+export type Whole = boolean | string | null | undefined
+
 export function useQty() {
-  const f = useContext(Ctx)
+  const { format: f, serialIds } = useContext(Ctx)
+  const whole = (w: Whole) => (typeof w === 'string' ? serialIds.has(w) : !!w)
   return {
     format: f,
-    q: (n: number | string | null | undefined, wholeOnly = false) => fmtQty(n, f, wholeOnly),
-    places: (wholeOnly = false) => qtyPlaces(f, wholeOnly),
-    step: (wholeOnly = false) => qtyStep(f, wholeOnly),
-    round: (n: number, wholeOnly = false) => roundQty(n, f, wholeOnly),
+    q: (n: number | string | null | undefined, w?: Whole) => fmtQty(n, f, whole(w)),
+    places: (w?: Whole) => qtyPlaces(f, whole(w)),
+    step: (w?: Whole) => qtyStep(f, whole(w)),
+    round: (n: number, w?: Whole) => roundQty(n, f, whole(w)),
   }
 }

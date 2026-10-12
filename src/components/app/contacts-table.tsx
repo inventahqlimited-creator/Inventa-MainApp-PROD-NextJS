@@ -4,6 +4,7 @@ import { useState, useMemo, useEffect, useRef } from 'react'
 import { useSearchParams, useRouter } from 'next/navigation'
 import { PostToXeroButton, XeroColumnHeader, XeroPostNotice, XeroStatusBadge, usePostToXero, type XeroTableInfo } from '@/components/app/xero-sync-ui'
 import { toast } from '@/components/app/toast'
+import { useTermNames } from '@/components/app/payment-terms-provider'
 
 type Contact = {
   id: string
@@ -220,6 +221,7 @@ export default function ContactsTable({
   const [modal, setModal] = useState<'closed' | 'view' | 'add' | 'edit'>('closed')
   const [activeContact, setActiveContact] = useState<Contact | null>(null)
   const [form, setForm] = useState<ModalForm>(EMPTY_FORM)
+  const termNames = useTermNames(form.terms)
   const [modalTab, setModalTab] = useState<'details' | 'address' | 'custom' | 'orders'>('details')
   const [saving, setSaving] = useState(false)
   const [error, setErrorRaw] = useState<string | null>(null)
@@ -668,7 +670,7 @@ export default function ContactsTable({
               <label>Payment Terms</label>
               <select className="adv-input" value={advTerms} onChange={e => setAdvTerms(e.target.value)} style={{ cursor: 'pointer' }}>
                 <option value="">Any</option>
-                {['Net 7','Net 14','Net 30','Net 60','COD','Prepaid'].map(t => <option key={t}>{t}</option>)}
+                {termNames.map(t => <option key={t}>{t}</option>)}
               </select>
             </div>
             <div className="adv-field">
@@ -957,7 +959,7 @@ export default function ContactsTable({
                       )}
                     </Field>
                     <Field label="Payment Terms">
-                      <MSelect value={modal === 'view' ? (activeContact?.terms ?? 'Net 30') : form.terms} onChange={v => set('terms', v)} options={['Net 7','Net 14','Net 30','Net 60','COD','Prepaid'].map(t=>({value:t,label:t}))} disabled={modal === 'view'} />
+                      <MSelect value={modal === 'view' ? (activeContact?.terms ?? 'Net 30') : form.terms} onChange={v => set('terms', v)} options={termNames.map(t=>({value:t,label:t}))} disabled={modal === 'view'} />
                     </Field>
                     <Field label="Tax Rate">
                       <MSelect value={modal === 'view' ? (activeContact?.tax_rate ?? '') : form.tax_rate} onChange={v => set('tax_rate', v)} options={taxRateOptions} disabled={modal === 'view'} />

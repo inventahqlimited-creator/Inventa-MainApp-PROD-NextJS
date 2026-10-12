@@ -6,6 +6,8 @@ import { loadSecurity, isIpAllowed } from '@/lib/auth/security-settings'
 import { clientIp } from '@/lib/rate-limit'
 import IdleGuard from '@/components/app/idle-guard'
 import { PermissionsProvider } from '@/components/app/permissions-provider'
+import { PaymentTermsProvider } from '@/components/app/payment-terms-provider'
+import type { PaymentTerm } from '@/lib/payment-terms'
 import { QtyProvider } from '@/components/app/qty-provider'
 import { qtyFmtFromOrg } from '@/lib/qty'
 import AppSidebar from '@/components/app/app-sidebar'
@@ -78,6 +80,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
   const initials = displayName.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2)
   const { data: serialRows } = await adminClient.from('products').select('id').eq('org_id', m.org_id).eq('serial_tracking', true)
   const serialIds = ((serialRows ?? []) as { id: string }[]).map(r => r.id)
+  const { data: termRows } = await adminClient.from('payment_terms').select('name, type, days').eq('org_id', m.org_id).order('sort_order').order('created_at')
+  const paymentTerms = (termRows ?? []) as PaymentTerm[]
   const orgName = (org as { name: string } | null)?.name ?? 'inventaHQ'
   const xeroEnabled = Boolean((org as { xero_enabled?: boolean | null } | null)?.xero_enabled)
 
@@ -103,7 +107,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
         <div className="content">
           <PermissionsProvider perms={access.perms} isAdmin={access.isAdmin}>
             <QtyProvider format={qtyFmtFromOrg(org as { decimal_qty?: unknown; decimal_qty_places?: unknown } | null)} serialIds={serialIds}>
-              {children}
+              <PaymentTermsProvider terms={paymentTerms}>
+                {children}
+              </PaymentTermsProvider>
             </QtyProvider>
           </PermissionsProvider>
         </div>

@@ -1,6 +1,7 @@
 // src/lib/pdf/invoice.ts
 // Invoice, quote and purchase order as a PDF (pure JavaScript). Mirrors src/lib/invoice/render.ts: the same layout
 // toggles (InvoiceConfig), wording and totals; purchase orders use the same layout with their own labels.
+import { dueDateFor, type PaymentTerm } from '@/lib/payment-terms'
 import type { Content, TableCell } from 'pdfmake/interfaces'
 import type { InvoiceAddress, InvoiceBusiness, InvoiceOrder, InvoicePayload } from '@/lib/invoice/types'
 import type { InvoiceConfig } from '@/lib/invoice/config'
@@ -9,17 +10,10 @@ import { COLORS, buildPdf, fmtDate, lbl, loadLogo, logoContent, moneyFn, pageFoo
 
 const dash = '—'
 
-/** "Net 14" → 14 days after the invoice date; COD / Prepaid → the invoice date itself; anything else → no date. */
+let DOC_TERMS: PaymentTerm[] = []
+/** Due date from the organisation's payment terms (Net 14, 20th of next month …); null when the term is unknown. */
 function dueDate(terms: string | null, invoiceDate: string): string | null {
-  if (!terms) return null
-  const net = /^net\s*(\d+)/i.exec(terms.trim())
-  if (net) {
-    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(invoiceDate)
-    if (!m) return null
-    return new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + Number(net[1]))).toISOString().slice(0, 10)
-  }
-  if (/^(cod|prepaid)/i.test(terms.trim())) return invoiceDate
-  return null
+  return dueDateFor(terms, invoiceDate, DOC_TERMS)
 }
 
 export function documentTitle(o: InvoiceOrder, biz: InvoiceBusiness): string {
@@ -167,6 +161,7 @@ export async function renderInvoicePdf(payload: InvoicePayload, orderIndex = 0, 
   const invoiceDate = o.invoice_date ?? todayIn(payload.timezone, now)
   const logo: Logo = cfg.header.logo ? await loadLogo(biz.logo_url) : null
   setDocQty(payload.qty)
+  DOC_TERMS = payload.paymentTerms ?? []
   const title = documentTitle(o, biz)
 
   const contact = [biz.address.join(', '), [biz.phone, biz.email].filter(Boolean).join(' · '), biz.numbers.join(' · ')].filter(Boolean)

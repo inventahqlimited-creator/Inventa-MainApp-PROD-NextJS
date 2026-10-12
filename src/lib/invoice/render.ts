@@ -3,6 +3,7 @@
 // One invoice per order; several orders print as one document. What is shown is controlled by InvoiceConfig
 // (Settings → Sales → Sales Documents → Invoice).
 
+import { dueDateFor, type PaymentTerm } from '@/lib/payment-terms'
 import type { InvoiceConfig } from './config'
 import type { InvoiceAddress, InvoiceBusiness, InvoiceOrder, InvoicePayload } from './types'
 
@@ -19,18 +20,10 @@ function today(tz: string, now = new Date()): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now)
 }
 
-/** "Net 14" → 14 days after the invoice date; COD / Prepaid → the invoice date itself; anything else → no date. */
+let DOC_TERMS: PaymentTerm[] = []
+/** Due date from the organisation's payment terms (Net 14, 20th of next month …); null when the term is unknown. */
 function dueDate(terms: string | null, invoiceDate: string): string | null {
-  if (!terms) return null
-  const net = /^net\s*(\d+)/i.exec(terms.trim())
-  if (net) {
-    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(invoiceDate)
-    if (!m) return null
-    const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + Number(net[1])))
-    return d.toISOString().slice(0, 10)
-  }
-  if (/^(cod|prepaid)/i.test(terms.trim())) return invoiceDate
-  return null
+  return dueDateFor(terms, invoiceDate, DOC_TERMS)
 }
 
 const dash = '—'
@@ -195,6 +188,7 @@ export type InvoiceRenderOptions = {
 
 export function renderInvoiceHtml(payload: InvoicePayload, opts: InvoiceRenderOptions = {}): string {
   setDocQty(payload.qty)
+  DOC_TERMS = payload.paymentTerms ?? []
   const sheets = payload.orders.map(o => sheet(o, payload.business, payload.config, payload.decimals, payload.timezone, opts.now)).join('')
   const title = payload.orders.length === 1 ? `${payload.orders[0].kind === 'purchase' ? 'Purchase Order' : payload.orders[0].is_quote ? 'Quote' : 'Invoice'} ${payload.orders[0].invoice_number}` : `${payload.orders[0].kind === 'purchase' ? 'Purchase orders' : 'Invoices'} (${payload.orders.length} orders)`
   const previewCss = `body{background:#E5E9EA;padding:20px 0}.sheet{width:794px;min-height:1123px;margin:0 auto 20px;padding:48px 48px 34px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.12),0 12px 32px rgba(0,0,0,.12);break-after:auto}.tail{margin-top:auto}.fb{display:flex;font:500 10px var(--mono);color:var(--mut);letter-spacing:.04em;border-top:1px solid var(--line);padding-top:9px}.fb .pg::before{content:"Page 1 of 1"}`

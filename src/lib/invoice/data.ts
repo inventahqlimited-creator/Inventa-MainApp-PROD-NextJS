@@ -3,6 +3,7 @@
 // billed (the units that shipped; the ordered units while nothing has been picked yet), the additional costs, the order
 // discount and the tax, using the same maths as the sales order screen. The business details come from Settings.
 
+import { loadTerms } from '@/lib/payment-terms-server'
 import { qtyFmtFromOrg } from '@/lib/qty'
 import { normalizeInvoiceConfig } from './config'
 import type { InvoiceAddress, InvoiceBusiness, InvoiceCost, InvoiceLine, InvoiceOrder, InvoicePayload, InvoiceTax } from './types'
@@ -179,5 +180,5 @@ export async function loadInvoicePayload(db: Db, orgId: string, ids: string[]): 
     }
   })
 
-  return { orders: out, business: business(orgRow), config, timezone: clean(orgRow.timezone) || 'Pacific/Auckland', decimals: dp, qty: qtyFmtFromOrg(orgRow as { decimal_qty?: unknown; decimal_qty_places?: unknown }) }
+  return { orders: out, business: business(orgRow), config, timezone: clean(orgRow.timezone) || 'Pacific/Auckland', decimals: dp, qty: qtyFmtFromOrg(orgRow as { decimal_qty?: unknown; decimal_qty_places?: unknown }), paymentTerms: await loadTerms(db, orgId) }
 }

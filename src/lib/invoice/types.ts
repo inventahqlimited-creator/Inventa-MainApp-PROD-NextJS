@@ -66,4 +66,6 @@ export type InvoicePayload = {
   decimals: number
   /** how stock quantities are shown (Settings → Allow Decimal Quantities) */
   qty?: import('@/lib/qty').QtyFmt
+  /** The organisation's payment terms, used to work out due dates. */
+  paymentTerms?: import('@/lib/payment-terms').PaymentTerm[]
 }

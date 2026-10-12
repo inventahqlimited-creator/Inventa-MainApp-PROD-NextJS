@@ -4,6 +4,7 @@
 // New order  : <SalesOrderForm … />                     (starts in edit mode)
 // Saved order: <SalesOrderForm order={…} … />           (opens in view mode, Edit button switches to edit)
 
+import { useTermNames } from '@/components/app/payment-terms-provider'
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useQty } from '@/components/app/qty-provider'
@@ -130,7 +131,6 @@ type Props = {
 
 // Item picker columns: SKU | Product | Unit | Available | Committed | Price
 const PICK_COLS = '110px minmax(160px, 1fr) 70px 80px 85px 90px'
-const TERMS = ['Net 7', 'Net 14', 'Net 30', 'Net 60', 'COD', 'Prepaid']
 
 function fmtMoney(n: number) {
   return `$${n.toFixed(2)}`
@@ -260,6 +260,7 @@ function SalesOrderFormInner({
   onDiscard: () => void
 }) {
   const router = useRouter()
+  const termNames = useTermNames()
   const { q, places } = useQty()
   const isNew = !order
 
@@ -769,7 +770,7 @@ function SalesOrderFormInner({
               <label className="modal-label">Delivery Date</label>
               <input className="modal-input" type="date" value={expectedDate} onChange={e => setExpectedDate(e.target.value)} disabled={!editable} style={{ background: editable ? 'var(--white)' : 'var(--gray-50)' }} />
             </div>
-            <Dd label="Payment Terms" value={terms} options={TERMS.map(t => ({ id: t, label: t }))} onPick={setTerms} open={openDd === 'terms'} setOpen={o => setOpenDd(o ? 'terms' : null)} disabled={!editable} />
+            <Dd label="Payment Terms" value={terms} options={termNames.map(t => ({ id: t, label: t }))} onPick={setTerms} open={openDd === 'terms'} setOpen={o => setOpenDd(o ? 'terms' : null)} disabled={!editable} />
             <Dd label="Price Level" value={levelName} options={levelOptions} onPick={changePriceLevel} open={openDd === 'level'} setOpen={o => setOpenDd(o ? 'level' : null)} disabled={!editable} />
             <Dd label="Currency" value={currency} options={currencyOptions} onPick={setCurrency} open={openDd === 'currency'} setOpen={o => setOpenDd(o ? 'currency' : null)} disabled={!editable} />
             <div />

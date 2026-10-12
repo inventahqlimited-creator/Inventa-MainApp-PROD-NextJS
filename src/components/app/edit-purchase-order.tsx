@@ -1,5 +1,6 @@
 'use client'
 
+import { useTermNames } from '@/components/app/payment-terms-provider'
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useQty } from '@/components/app/qty-provider'
@@ -313,6 +314,7 @@ function PurchaseOrderForm({
   onDiscard: () => void
 }) {
   const router = useRouter()
+  const termNames = useTermNames()
   const { q, places } = useQty()
   const [xeroInfo, setXeroInfo] = useState<XeroRowInfo | null>(xeroBill?.info ?? null)
   const xeroPost = usePostToXero('bill', (_id, info) => { setXeroInfo(info) })
@@ -859,7 +861,7 @@ function PurchaseOrderForm({
                   {termsOpen && (
                     <div className="inv-dropdown filter-pick-dropdown" style={{ display: 'block', minWidth: 160 }}>
                       <div className="col-dropdown-title">Payment Terms</div>
-                      {['Net 7', 'Net 14', 'Net 30', 'Net 60', 'COD', 'Prepaid'].map(t => (
+                      {termNames.map(t => (
                         <div key={t} className={`fp-item${terms === t ? ' active' : ''}`} onClick={() => { setTerms(t); setTermsOpen(false) }}>{t}</div>
                       ))}
                     </div>

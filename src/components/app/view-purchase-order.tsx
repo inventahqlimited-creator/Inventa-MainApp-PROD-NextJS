@@ -1,5 +1,6 @@
 'use client'
 
+import { useTermNames } from '@/components/app/payment-terms-provider'
 import { useState, useMemo, useRef, useEffect, useCallback, Fragment } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
@@ -298,6 +299,7 @@ export default function ViewPurchaseOrder({
   nextBackorderNumber?: string // what the next backorder of this PO will be called, e.g. PO-0001A
 }) {
   const router = useRouter()
+  const termNames = useTermNames()
   const { q, step, round } = useQty()
   const [po, setPo] = useState(initialPo)
   const [lines, setLines] = useState(initialLines)
@@ -1079,7 +1081,7 @@ export default function ViewPurchaseOrder({
                         {termsOpen && (
                           <div className="inv-dropdown filter-pick-dropdown" style={{ display: 'block', minWidth: 160 }}>
                             <div className="col-dropdown-title">Payment Terms</div>
-                            {['Net 7','Net 14','Net 30','Net 60','COD','Prepaid'].map(t => (
+                            {termNames.map(t => (
                               <div key={t} className={`fp-item${editTerms === t ? ' active' : ''}`} onClick={() => { setEditTerms(t); setTermsOpen(false) }}>{t}</div>
                             ))}
                           </div>

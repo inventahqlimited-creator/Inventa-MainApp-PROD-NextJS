@@ -3,6 +3,7 @@
 import { useState, useMemo, useRef, useEffect, useCallback, Fragment } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
+import { useQty } from '@/components/app/qty-provider'
 import { toast } from '@/components/app/toast'
 import { allocateLandedCost, type LandedMethod } from '@/lib/purchases/landed-cost'
 
@@ -297,6 +298,7 @@ export default function ViewPurchaseOrder({
   nextBackorderNumber?: string // what the next backorder of this PO will be called, e.g. PO-0001A
 }) {
   const router = useRouter()
+  const { q, step, round } = useQty()
   const [po, setPo] = useState(initialPo)
   const [lines, setLines] = useState(initialLines)
   const [costLines] = useState<CostLine[]>(initialCostLines)
@@ -813,9 +815,9 @@ export default function ViewPurchaseOrder({
                                     {rl.needs_serial && <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--teal)', background: 'var(--teal-surface)', padding: '2px 7px', borderRadius: 20 }}>SERIAL</span>}
                                   </div>
                                 </td>
-                                <td className="li-td" style={{ textAlign: 'right', fontSize: 13 }}>{rl.quantity_ordered}</td>
-                                <td className="li-td" style={{ textAlign: 'right', fontSize: 13, color: rl.quantity_received > 0 ? '#059669' : 'var(--gray-400)', fontWeight: 600 }}>{rl.quantity_received}</td>
-                                <td className="li-td" style={{ textAlign: 'right', fontSize: 13, fontWeight: 600, color: remaining > 0 ? 'var(--danger)' : '#059669' }}>{remaining}</td>
+                                <td className="li-td" style={{ textAlign: 'right', fontSize: 13 }}>{q(rl.quantity_ordered, rl.product_id)}</td>
+                                <td className="li-td" style={{ textAlign: 'right', fontSize: 13, color: rl.quantity_received > 0 ? '#059669' : 'var(--gray-400)', fontWeight: 600 }}>{q(rl.quantity_received, rl.product_id)}</td>
+                                <td className="li-td" style={{ textAlign: 'right', fontSize: 13, fontWeight: 600, color: remaining > 0 ? 'var(--danger)' : '#059669' }}>{q(remaining, rl.product_id)}</td>
                                 <td className="li-td" style={{ textAlign: 'right' }}>
                                   {rl.needs_serial ? (
                                     <span style={{ fontSize: 13, fontWeight: 700, color: receivingCount > 0 ? 'var(--teal)' : 'var(--gray-400)' }}>{receivingCount}</span>
@@ -825,9 +827,10 @@ export default function ViewPurchaseOrder({
                                         className={`li-input right${errs.qty_to_receive ? ' li-input-error' : ''}`}
                                         type="number"
                                         min="0"
+                                        step={step(rl.product_id)}
                                         max={allowOverReceive ? undefined : remaining}
                                         value={rl.qty_to_receive}
-                                        onChange={e => updateReceiveLine(idx, 'qty_to_receive', parseFloat(e.target.value) || 0)}
+                                        onChange={e => updateReceiveLine(idx, 'qty_to_receive', round(parseFloat(e.target.value) || 0, rl.product_id))}
                                         onFocus={e => e.target.select()}
                                         style={{ width: 90, textAlign: 'right' }}
                                       />
@@ -1142,9 +1145,9 @@ export default function ViewPurchaseOrder({
                             {fullyReceived && <div style={{ fontSize: 11, color: '#059669', fontWeight: 600, marginTop: 2 }}>✓ Fully received</div>}
                           </td>
                           <td className="li-td" style={{ textAlign: 'center', color: 'var(--gray-400)' }}>{l.unit ?? '—'}</td>
-                          <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: 'var(--slate)' }}>{l.quantity_ordered}</td>
-                          <td className="li-td" style={{ textAlign: 'right', color: '#059669', fontWeight: 600 }}>{received}</td>
-                          <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: remaining > 0 ? 'var(--danger)' : '#059669' }}>{remaining}</td>
+                          <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: 'var(--slate)' }}>{q(l.quantity_ordered, l.product_id)}</td>
+                          <td className="li-td" style={{ textAlign: 'right', color: '#059669', fontWeight: 600 }}>{q(received, l.product_id)}</td>
+                          <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: remaining > 0 ? 'var(--danger)' : '#059669' }}>{q(remaining, l.product_id)}</td>
                           <td className="li-td" style={{ textAlign: 'right', color: 'var(--gray-400)' }}>{`$${l.unit_cost.toFixed(2)}`}</td>
                           <td className="li-td" style={{ textAlign: 'right', color: 'var(--gray-400)' }}>{l.discount ? `${l.discount}%` : '—'}</td>
                           <td className="li-td" style={{ textAlign: 'right', color: 'var(--gray-400)' }}>{l.tax_name ?? (l.tax_rate ? `${l.tax_rate}%` : '—')}</td>

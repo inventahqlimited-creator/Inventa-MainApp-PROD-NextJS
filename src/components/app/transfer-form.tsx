@@ -6,6 +6,7 @@
 
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import { useQty } from '@/components/app/qty-provider'
 import NumInput from './num-input'
 import { toast } from '@/components/app/toast'
 import OrderHistory from '@/components/app/order-history'
@@ -171,6 +172,7 @@ export default function TransferForm({ transfer, lines: dbLines, locations, prod
   cloneOf?: { from_location_id: string | null; to_location_id: string | null; notes: string | null } | null
 }) {
   const router = useRouter()
+  const { q, places } = useQty()
   const isNew = !transfer
   const scrollRef = useRef<HTMLDivElement>(null)
 
@@ -456,15 +458,15 @@ export default function TransferForm({ transfer, lines: dbLines, locations, prod
                       <td className="li-td"><span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--gray-400)' }}>{l.product_sku}</span></td>
                       <td className="li-td">
                         <span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{l.product_name}</span>
-                        {editable && fromId && <div style={{ fontSize: 11, color: 'var(--gray-400)' }}>On hand at {fromLoc?.name}: {onHand[l.product_id] ?? 0}</div>}
+                        {editable && fromId && <div style={{ fontSize: 11, color: 'var(--gray-400)' }}>On hand at {fromLoc?.name}: {q(onHand[l.product_id] ?? 0, l.product_id)}</div>}
                       </td>
                       <td className="li-td" style={{ textAlign: 'center', fontSize: 12, color: 'var(--gray-400)' }}>{l.unit}</td>
                       <td className="li-td" style={{ textAlign: 'right' }}>
                         {lockQty
-                          ? <span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{l.quantity}</span>
-                          : <NumInput className="li-input right" value={l.quantity} onChange={n => updateLine(l.key, { quantity: Math.max(n, l.quantity_picked) })} min={Math.max(l.quantity_picked, 0)} style={{ width: 80, textAlign: 'right' }} />}
+                          ? <span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{q(l.quantity, l.product_id)}</span>
+                          : <NumInput className="li-input right" value={l.quantity} decimals={places(l.product_id)} onChange={n => updateLine(l.key, { quantity: Math.max(n, l.quantity_picked) })} min={Math.max(l.quantity_picked, 0)} style={{ width: 80, textAlign: 'right' }} />}
                       </td>
-                      {showPickedCol && <td className="li-td" style={{ textAlign: 'right', fontSize: 13, color: l.quantity_picked >= l.quantity ? '#065F46' : 'var(--gray-400)', fontWeight: 600 }}>{l.quantity_picked}</td>}
+                      {showPickedCol && <td className="li-td" style={{ textAlign: 'right', fontSize: 13, color: l.quantity_picked >= l.quantity ? '#065F46' : 'var(--gray-400)', fontWeight: 600 }}>{q(l.quantity_picked, l.product_id)}</td>}
                       {showFromBin && (
                         <td className="li-td">
                           {lockFrom ? <span style={{ fontSize: 13, color: 'var(--gray-500, var(--gray-400))' }}>{binLabel(l.from_bin_id, fromBins)}</span> : binSelect(l.from_bin_id, fromBins, v => updateLine(l.key, { from_bin_id: v }), false)}

@@ -1,5 +1,6 @@
 // src/app/api/org/purchases/[id]/route.ts
 import { NextResponse } from 'next/server'
+import { checkLineQuantities } from '@/lib/qty-server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { pickPO, lineRow, costLineRow } from '../shared'
 import { requireEditOrCancel } from '@/lib/auth/access'
@@ -47,6 +48,8 @@ export async function PATCH(request: Request, { params }: Params) {
     const { error } = await db.from('purchase_orders').update(updates).eq('id', id).eq('org_id', ctx.org_id)
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   }
+
+  if (Array.isArray(body.lines)) { const e = await checkLineQuantities(db, ctx.org_id, body.lines as Record<string, unknown>[], 'quantity_ordered'); if (e) return NextResponse.json({ error: e }, { status: 400 }) }
 
   // 2. Lines — only when the edit screen sends them. Update existing rows in place so
   //    received quantities / bin allocations are never lost; insert new; delete removed.

@@ -6,6 +6,7 @@
 
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import { useQty } from '@/components/app/qty-provider'
 import NumInput from '@/components/app/num-input'
 import TaxSelect from '@/components/app/tax-select'
 import { printPickList } from '@/lib/pick-list/print'
@@ -374,6 +375,7 @@ function SalesOrderFormInner({
   onDiscard: () => void
 }) {
   const router = useRouter()
+  const { q, places } = useQty()
   const isNew = !order
 
   // ── Tax helpers: lines store the chosen tax (id + name) plus its numeric rate ──
@@ -526,8 +528,8 @@ function SalesOrderFormInner({
     const picked = Number(l.quantity_picked ?? 0)
     const packed = Number(l.quantity_packed ?? 0)
     if (qty > 0 && packed >= qty) return 'packed'
-    if (picked > 0 && picked >= qty) return packed > 0 ? { partial: `Partly Packed (${packed}/${qty})` } : 'picked'
-    if (picked > 0) return { partial: `Partially Picked (${picked}/${qty})` }
+    if (picked > 0 && picked >= qty) return packed > 0 ? { partial: `Partly Packed (${q(packed, l.product_id)}/${q(qty, l.product_id)})` } : 'picked'
+    if (picked > 0) return { partial: `Partially Picked (${q(picked, l.product_id)}/${q(qty, l.product_id)})` }
     const needed = lines.filter(x => x.product_id === l.product_id).reduce((sum, x) => sum + (Number(x.quantity) || 0), 0)
     return (stockByProduct[l.product_id]?.onHand ?? 0) >= needed ? 'in' : 'no'
   }
@@ -1075,8 +1077,8 @@ function SalesOrderFormInner({
                     </td>
                     <td className="li-td" style={{ textAlign: 'right' }}>
                       {rowEd
-                        ? <NumInput className="li-input right" value={l.quantity} onChange={n => updateLine(idx, 'quantity', Math.max(n, Number(l.quantity_picked ?? 0)))} min={Number(l.quantity_picked ?? 0)} style={{ width: 70, textAlign: 'right' }} />
-                        : <span style={{ fontSize: 13 }}>{l.quantity}</span>}
+                        ? <NumInput className="li-input right" value={l.quantity} decimals={places(l.product_id)} onChange={n => updateLine(idx, 'quantity', Math.max(n, Number(l.quantity_picked ?? 0)))} min={Number(l.quantity_picked ?? 0)} style={{ width: 70, textAlign: 'right' }} />
+                        : <span style={{ fontSize: 13 }}>{q(l.quantity, l.product_id)}</span>}
                     </td>
                     {showStock && (
                       <td className="li-td">
@@ -1087,7 +1089,7 @@ function SalesOrderFormInner({
                           if (st === 'picked') return <span className="badge" style={{ background: '#DBEAFE', color: '#1D4ED8' }}>Picked</span>
                           if (typeof st === 'object') return <span className="badge" style={{ background: '#FEF3C7', color: '#B45309' }}>{st.partial}</span>
                           return st === 'no'
-                            ? <span className="badge" style={{ background: '#FEE2E2', color: '#B91C1C' }} title={`${stockByProduct[l.product_id]?.onHand ?? 0} on hand`}>No Stock ({stockByProduct[l.product_id]?.onHand ?? 0} on hand)</span>
+                            ? <span className="badge" style={{ background: '#FEE2E2', color: '#B91C1C' }} title={`${q(stockByProduct[l.product_id]?.onHand ?? 0, l.product_id)} on hand`}>No Stock ({q(stockByProduct[l.product_id]?.onHand ?? 0, l.product_id)} on hand)</span>
                             : <span className="badge" style={{ background: '#DCFCE7', color: '#15803D' }}>In Stock</span>
                         })()}
                       </td>
@@ -1163,7 +1165,7 @@ function SalesOrderFormInner({
                               <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--gray-400)' }}>{p.sku ?? '—'}</span>
                               <span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{p.name}</span>
                               <span style={{ fontSize: 12, color: 'var(--gray-400)', textAlign: 'center' }}>{p.sell_uom ?? 'Each'}</span>
-                              <span style={{ fontSize: 13, fontWeight: 600, textAlign: 'right', color: !tracked ? 'var(--gray-400)' : st.available <= 0 ? 'var(--danger)' : '#059669' }}>{tracked ? st.available : '—'}</span>
+                              <span style={{ fontSize: 13, fontWeight: 600, textAlign: 'right', color: !tracked ? 'var(--gray-400)' : st.available <= 0 ? 'var(--danger)' : '#059669' }}>{tracked ? q(st.available, p.id) : '—'}</span>
                               <span style={{ fontSize: 13, textAlign: 'right', color: 'var(--gray-400)' }}>{tracked ? st.committed : '—'}</span>
                               <span style={{ fontSize: 13, color: 'var(--teal)', fontWeight: 600, textAlign: 'right' }}>{price ? `$${price.toFixed(decimalPlaces)}` : '—'}</span>
                             </div>

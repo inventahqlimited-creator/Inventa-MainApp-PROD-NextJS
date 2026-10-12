@@ -6,6 +6,7 @@
 
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import { useQty } from '@/components/app/qty-provider'
 import NumInput from '@/components/app/num-input'
 import TaxSelect from '@/components/app/tax-select'
 
@@ -259,6 +260,7 @@ function SalesOrderFormInner({
   onDiscard: () => void
 }) {
   const router = useRouter()
+  const { q, places } = useQty()
   const isNew = !order
 
   // ── Tax helpers: lines store the chosen tax (id + name) plus its numeric rate ──
@@ -818,8 +820,8 @@ function SalesOrderFormInner({
                     </td>
                     <td className="li-td" style={{ textAlign: 'right' }}>
                       {editable
-                        ? <NumInput className="li-input right" value={l.quantity} onChange={n => updateLine(idx, 'quantity', n)} min={0} style={{ width: 70, textAlign: 'right' }} />
-                        : <span style={{ fontSize: 13 }}>{l.quantity}</span>}
+                        ? <NumInput className="li-input right" value={l.quantity} decimals={places(l.product_id)} onChange={n => updateLine(idx, 'quantity', n)} min={0} style={{ width: 70, textAlign: 'right' }} />
+                        : <span style={{ fontSize: 13 }}>{q(l.quantity, l.product_id)}</span>}
                     </td>
                     <td className="li-td" style={{ textAlign: 'right' }}>
                       {editable
@@ -889,7 +891,7 @@ function SalesOrderFormInner({
                               <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--gray-400)' }}>{p.sku ?? '—'}</span>
                               <span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{p.name}</span>
                               <span style={{ fontSize: 12, color: 'var(--gray-400)', textAlign: 'center' }}>{p.sell_uom ?? 'Each'}</span>
-                              <span style={{ fontSize: 13, fontWeight: 600, textAlign: 'right', color: !tracked ? 'var(--gray-400)' : st.available <= 0 ? 'var(--danger)' : '#059669' }}>{tracked ? st.available : '—'}</span>
+                              <span style={{ fontSize: 13, fontWeight: 600, textAlign: 'right', color: !tracked ? 'var(--gray-400)' : st.available <= 0 ? 'var(--danger)' : '#059669' }}>{tracked ? q(st.available, p.id) : '—'}</span>
                               <span style={{ fontSize: 13, textAlign: 'right', color: 'var(--gray-400)' }}>{tracked ? st.committed : '—'}</span>
                               <span style={{ fontSize: 13, color: 'var(--teal)', fontWeight: 600, textAlign: 'right' }}>{price ? `$${price.toFixed(decimalPlaces)}` : '—'}</span>
                             </div>

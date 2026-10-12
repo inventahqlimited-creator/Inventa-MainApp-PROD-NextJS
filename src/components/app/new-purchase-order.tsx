@@ -2,6 +2,7 @@
 
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import { useQty } from '@/components/app/qty-provider'
 import NumInput from '@/components/app/num-input'
 import TaxSelect from '@/components/app/tax-select'
 import { toast } from '@/components/app/toast'
@@ -160,6 +161,7 @@ export default function NewPurchaseOrder({
   stockLevels?: StockLevel[]
 }) {
   const router = useRouter()
+  const { q, places } = useQty()
 
   // ── Tax helpers: lines store the chosen tax (id + name) plus its numeric rate ──
   const taxById = (id: string | null | undefined) => (id ? taxRates.find(t => t.id === id) : undefined)
@@ -653,7 +655,7 @@ export default function NewPurchaseOrder({
                       <input className="li-input" value={l.unit} onChange={e => updateLine(idx, 'unit', e.target.value)} style={{ width: 60, textAlign: 'center' }} />
                     </td>
                     <td className="li-td" style={{ textAlign: 'right' }}>
-                      <NumInput className="li-input right" value={l.quantity_ordered} onChange={n => updateLine(idx, 'quantity_ordered', n)} min={0} style={{ width: 70, textAlign: 'right' }} />
+                      <NumInput className="li-input right" value={l.quantity_ordered} decimals={places(l.product_id)} onChange={n => updateLine(idx, 'quantity_ordered', n)} min={0} style={{ width: 70, textAlign: 'right' }} />
                     </td>
                     <td className="li-td" style={{ textAlign: 'right' }}>
                       <NumInput className="li-input right" value={l.unit_cost} onChange={n => updateLine(idx, 'unit_cost', n)} decimals={decimalPlaces} min={0} style={{ width: 90, textAlign: 'right' }} />
@@ -717,7 +719,7 @@ export default function NewPurchaseOrder({
                             const tracked = p.track_stock !== false && p.type === 'Stock'
                             return (
                               <>
-                                <span style={{ fontSize: 13, fontWeight: 600, textAlign: 'right', color: !tracked ? 'var(--gray-400)' : st.available <= 0 ? 'var(--danger)' : '#059669' }}>{tracked ? st.available : '—'}</span>
+                                <span style={{ fontSize: 13, fontWeight: 600, textAlign: 'right', color: !tracked ? 'var(--gray-400)' : st.available <= 0 ? 'var(--danger)' : '#059669' }}>{tracked ? q(st.available, p.id) : '—'}</span>
                                 <span style={{ fontSize: 13, textAlign: 'right', color: 'var(--gray-400)' }}>{tracked ? st.committed : '—'}</span>
                               </>
                             )

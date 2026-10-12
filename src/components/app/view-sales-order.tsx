@@ -1,5 +1,6 @@
 'use client'
 
+import { useTermNames } from '@/components/app/payment-terms-provider'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { useQty } from '@/components/app/qty-provider'
@@ -77,6 +78,7 @@ export default function ViewSalesOrder({
   orgId: string
 }) {
   const router = useRouter()
+  const termNames = useTermNames()
   const { q } = useQty()
   const [so, setSo] = useState(initialSo)
   const [mode, setMode] = useState<'view' | 'edit'>('view')
@@ -282,7 +284,7 @@ export default function ViewSalesOrder({
                   {termsOpen && (
                     <div className="inv-dropdown filter-pick-dropdown" style={{ display: 'block', minWidth: 160 }}>
                       <div className="col-dropdown-title">Payment Terms</div>
-                      {['Net 7','Net 14','Net 30','Net 60','COD','Prepaid'].map(t => (
+                      {termNames.map(t => (
                         <div key={t} className={`fp-item${editTerms === t ? ' active' : ''}`} onClick={() => { setEditTerms(t); setTermsOpen(false) }}>{t}</div>
                       ))}
                     </div>

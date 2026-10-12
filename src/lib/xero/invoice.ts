@@ -12,6 +12,7 @@ import { runSync } from './sync'
 import { loadInvoicePayload } from '@/lib/invoice/data'
 import { stockError, type XeroPrefs } from './prefs'
 import { auditPost } from './audit'
+import { dueDateFor, type PaymentTerm } from '@/lib/payment-terms'
 
 type Row = Record<string, unknown>
 type Db = SupabaseClient
@@ -39,6 +40,15 @@ export function dueInDays(terms: string | null | undefined): number | null {
   const m = t.match(/(\d{1,3})\s*(?:days?)?/)
   if (m && /net|day|\d/.test(t) && !/month|eom/.test(t)) return Number(m[1])
   return null
+}
+/** Xero DueDate: from the org's payment terms when the term is known, else the old "Net N" reading. */
+export function xeroDueDate(terms: string | null | undefined, date: string, list: PaymentTerm[]): string | null {
+  const t = clean(terms)
+  if (!t) return null
+  const viaTable = dueDateFor(t, date, list)
+  if (viaTable) return viaTable
+  const days = dueInDays(t)
+  return days === null ? null : addDays(date, days)
 }
 export const addDays = (ymd: string, d: number) => { const t = new Date(`${ymd}T00:00:00Z`); t.setUTCDate(t.getUTCDate() + d); return t.toISOString().slice(0, 10) }
 
@@ -190,13 +200,13 @@ export async function postInvoice(db: Db, orgId: string, soId: string, settings:
     ? day(order.order_date) || day(order.created_at)
     : day(order.delivery_date) || day(order.shipped_date) || day(order.closed_at) || day(order.order_date)
   ) || inv.invoice_date || new Date().toISOString().slice(0, 10)
-  const days = dueInDays(inv.terms)
+  const dueDate = xeroDueDate(inv.terms, date, payload.paymentTerms ?? [])
   const body = {
     Invoices: [{
       Type: 'ACCREC',
       Contact: { ContactID: contactId },
       Date: date,
-      ...(days !== null ? { DueDate: addDays(date, days) } : {}),
+      ...(dueDate ? { DueDate: dueDate } : {}),
       InvoiceNumber: inv.invoice_number,
       ...(inv.customer_po ? { Reference: inv.customer_po } : {}),
       ...(inv.currency ? { CurrencyCode: inv.currency } : {}),

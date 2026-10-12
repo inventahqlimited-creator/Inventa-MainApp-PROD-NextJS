@@ -1,5 +1,6 @@
 'use client'
 
+import { useTermNames } from '@/components/app/payment-terms-provider'
 import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -746,6 +747,9 @@ function ContactsTab({ taxRates, currencies, locations, priceLevels, orgId, show
   const [defCurrency, setDefCurrency] = useState('')
   const [defLocation, setDefLocation] = useState('')
   const [defPaymentTerms, setDefPaymentTerms] = useState('Net 30')
+  const termNames = useTermNames()
+  const canC = useCan('manage_contact_settings'), canS = useCan('manage_sales_settings'), canP = useCan('manage_purchase_settings')
+  const canManageTerms = canC || canS || canP
   const [defPriceTier, setDefPriceTier] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -783,13 +787,15 @@ function ContactsTab({ taxRates, currencies, locations, priceLevels, orgId, show
             <Select value={defLocation} onChange={setDefLocation} options={locationOptions} />
           </Field>
           <Field label="Default Payment Terms">
-            <Select value={defPaymentTerms} onChange={setDefPaymentTerms} options={['Net 7','Net 14','Net 30','Net 60','COD','Prepaid'].map(t => ({ value: t, label: t }))} />
+            <Select value={defPaymentTerms} onChange={setDefPaymentTerms} options={termNames.map(t => ({ value: t, label: t }))} />
           </Field>
           <Field label="Default Price Tier">
             <Select value={defPriceTier} onChange={setDefPriceTier} options={[{ value: '', label: '— None —' }, ...priceLevels.map(pl => ({ value: pl.id, label: pl.name }))]} />
           </Field>
         </div>
       </Card>
+
+      <PaymentTermsCard canManage={canManageTerms} showToast={showToast} />
 
       <CustomFieldsAndLists
         apiBase="/api/org/contact-custom"
@@ -808,6 +814,7 @@ import RolesModal from '@/components/app/roles-modal'
 import { normalizeSecurity, SESSION_TIMEOUT_OPTIONS, sessionTimeoutLabel, parseIpRule, isIpAllowed, MAX_IP_RULES, type SecuritySettings } from '@/lib/auth/security-settings'
 import { normalizeNotifications, type NotificationSettings, type OverdueRule } from '@/lib/notifications/config'
 import { useCan } from '@/components/app/permissions-provider'
+import PaymentTermsCard from '@/components/app/payment-terms-card'
 import { normalizePolicy, ROTATION_DAYS, MIN_LENGTH_FLOOR, MIN_LENGTH_CAP, type PasswordPolicy } from '@/lib/auth/password-policy'
 
 // ── Notifications ─────────────────────────────────────────────────────
@@ -1341,6 +1348,7 @@ export default function SettingsClient({
   const [poStart, setPoStart] = useState(String(org.po_start ?? '1'))
   const [poDigits, setPoDigits] = useState(String(org.po_digits ?? '4'))
   const [poDefaultPaymentTerms, setPoDefaultPaymentTerms] = useState(String(org.po_default_payment_terms ?? 'Net 30'))
+  const termNames = useTermNames()
   const [poDefaultDeliverTo, setPoDefaultDeliverTo] = useState(String(org.po_default_deliver_to ?? ''))
   const [savingPoDefaults, setSavingPoDefaults] = useState(false)
   const [poDocCfg, setPoDocCfg] = useState<PurchaseOrderConfig>(() => normalizePurchaseOrderConfig(org.purchase_order_settings))
@@ -2032,7 +2040,7 @@ export default function SettingsClient({
             <Card title="Purchase Order Defaults" subtitle="Default values for new purchase orders" action={<SaveBtn onClick={savePoDefaults} saving={savingPoDefaults} label="Save Defaults" />}>
               <div style={{ padding: '18px 20px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
                 <Field label="Default Payment Terms">
-                  <Select value={poDefaultPaymentTerms} onChange={setPoDefaultPaymentTerms} options={['Net 7','Net 14','Net 30','Net 60','COD','Prepaid'].map(t => ({ value: t, label: t }))} />
+                  <Select value={poDefaultPaymentTerms} onChange={setPoDefaultPaymentTerms} options={termNames.map(t => ({ value: t, label: t }))} />
                 </Field>
                 <Field label="Default Deliver To">
                   <Select value={poDefaultDeliverTo} onChange={setPoDefaultDeliverTo} options={[{ value: '', label: '— None —' }, ...locations.filter(l => l.active).map(l => ({ value: l.id, label: l.name }))]} />
@@ -2164,7 +2172,7 @@ export default function SettingsClient({
             <Card title="Sales Order Defaults" subtitle="Default values for new sales orders" action={<SaveBtn onClick={saveSoDefaults} saving={savingSoDefaults} label="Save Defaults" />}>
               <div style={{ padding: '18px 20px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
                 <Field label="Default Payment Terms">
-                  <Select value={soDefaultPaymentTerms} onChange={setSoDefaultPaymentTerms} options={['Net 7','Net 14','Net 30','Net 60','COD','Prepaid'].map(t => ({ value: t, label: t }))} />
+                  <Select value={soDefaultPaymentTerms} onChange={setSoDefaultPaymentTerms} options={termNames.map(t => ({ value: t, label: t }))} />
                 </Field>
                 <Field label="Default Ship From">
                   <Select value={soDefaultShipFrom} onChange={setSoDefaultShipFrom} options={[{ value: '', label: '— None —' }, ...locations.filter(l => l.active).map(l => ({ value: l.id, label: l.name }))]} />

@@ -3,6 +3,7 @@
 // to, where it is delivered, the lines at their ordered quantity, additional costs, order discount and tax (same maths as
 // the purchase order screen). The business details come from Settings.
 
+import { loadTerms } from '@/lib/payment-terms-server'
 import { qtyFmtFromOrg } from '@/lib/qty'
 import { billTo, business, clean, num, r2, type ContactDb, type OrgDb } from '@/lib/invoice/data'
 import type { InvoiceAddress, InvoiceCost, InvoiceLine, InvoiceOrder, InvoicePayload, InvoiceTax } from '@/lib/invoice/types'
@@ -120,5 +121,5 @@ export async function loadPurchaseOrderPayload(db: Db, orgId: string, ids: strin
     }
   })
 
-  return { orders: out, business: business(orgRow), config, timezone: clean(orgRow.timezone) || 'Pacific/Auckland', decimals: dp, qty: qtyFmtFromOrg(orgRow as { decimal_qty?: unknown; decimal_qty_places?: unknown }) }
+  return { orders: out, business: business(orgRow), config, timezone: clean(orgRow.timezone) || 'Pacific/Auckland', decimals: dp, qty: qtyFmtFromOrg(orgRow as { decimal_qty?: unknown; decimal_qty_places?: unknown }), paymentTerms: await loadTerms(db, orgId) }
 }

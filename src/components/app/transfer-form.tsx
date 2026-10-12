@@ -10,6 +10,7 @@ import { useQty } from '@/components/app/qty-provider'
 import NumInput from './num-input'
 import { toast } from '@/components/app/toast'
 import OrderHistory from '@/components/app/order-history'
+import { AttachmentsBadge, AttachmentsModal } from '@/components/app/attachments'
 import { useCan } from '@/components/app/permissions-provider'
 
 type Loc = { id: string; name: string; address?: string | null; city?: string | null; country?: string | null; phone?: string | null; email?: string | null }
@@ -122,6 +123,7 @@ function TransferActions({ transferId, number, canEdit, canCancel, onEdit, onCan
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [attOpen, setAttOpen] = useState(false)
   const box = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -150,10 +152,12 @@ function TransferActions({ transferId, number, canEdit, canCancel, onEdit, onCan
           {onUnpick && item('Unpick Order', onUnpick, ic('M3 12a9 9 0 1 0 3-6.7M3 4v5h5'))}
           {canEdit && item('Edit Order', onEdit, ic('M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z'))}
           {item('Clone Order', () => router.push(`/transfers/new?clone=${transferId}`), ic('M9 9h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V11a2 2 0 0 1 2-2zM5 15H4a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v1'))}
+          {item('Attachments', () => setAttOpen(true), ic('M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48'))}
           {item('Order History', () => setHistoryOpen(true), ic('M12 8v4l3 3M3.05 11a9 9 0 1 1 .5 4M3 4v5h5'))}
           {canCancel && <><div style={{ height: 1, background: 'var(--gray-100)', margin: '5px 0' }} />{item('Cancel Order', onCancel, ic('M18 6 6 18M6 6l12 12'), true)}</>}
         </div>
       )}
+      {attOpen && <AttachmentsModal type="transfers" id={transferId} label={number} onClose={() => setAttOpen(false)} />}
       {historyOpen && <OrderHistory type="transfer" id={transferId} label={number} onClose={() => setHistoryOpen(false)} />}
     </div>
   )
@@ -375,6 +379,7 @@ export default function TransferForm({ transfer, lines: dbLines, locations, prod
           {isNew
             ? <><span style={{ fontSize: 12, color: 'var(--gray-400)' }}>Draft</span><div style={{ width: 8, height: 8, borderRadius: '50%', background: '#F59E0B' }} /></>
             : <span className={`badge ${statusClass}`} style={statusStyle}>{status}</span>}
+          {!isNew && <AttachmentsBadge type="transfers" id={transfer!.id} label={transfer!.tr_number ?? 'Transfer'} />}
           {!isNew && mode === 'view' && (
             <TransferActions
               transferId={transfer!.id}

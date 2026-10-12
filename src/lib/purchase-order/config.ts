@@ -47,9 +47,9 @@ export function normalizePurchaseOrderConfig(raw: unknown): PurchaseOrderConfig 
 export function toInvoiceConfig(cfg: PurchaseOrderConfig): InvoiceConfig {
   return {
     header: { ...cfg.header },
-    details: { invoiceDate: cfg.details.orderDate, dueDate: cfg.details.expectedDelivery, terms: cfg.details.terms, orderNumber: false, customerPo: cfg.details.supplierRef },
+    details: { invoiceDate: cfg.details.orderDate, dueDate: cfg.details.expectedDelivery, terms: cfg.details.terms, orderNumber: false, customerPo: cfg.details.supplierRef, carrier: false, shippingMethod: false, serviceType: false, trackingNumber: false },
     addresses: { billTo: cfg.addresses.supplier, shipTo: cfg.addresses.deliverTo },
-    columns: { sku: cfg.columns.sku, unitPrice: cfg.columns.unitCost, discount: cfg.columns.discount, tax: cfg.columns.tax },
+    columns: { sku: cfg.columns.sku, serial: false, batch: false, expiry: false, unitPrice: cfg.columns.unitCost, discount: cfg.columns.discount, tax: cfg.columns.tax },
     footer: { paymentDetails: false, notes: cfg.footer.notes },
     content: { numberPrefix: '', bankName: '', accountName: '', accountNumber: '', notes: cfg.content.notes },
   }

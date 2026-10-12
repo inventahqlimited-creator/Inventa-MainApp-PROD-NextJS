@@ -41,6 +41,12 @@ function infoRow(o: InvoiceOrder, cfg: InvoiceConfig, invoiceDate: string): Cont
     d.terms ? ['Terms', o.terms ?? dash] : null,
     d.orderNumber ? ['Order #', o.so_number] : null,
     d.customerPo && o.customer_po ? [po ? 'Supplier ref' : 'Customer PO', o.customer_po] : null,
+    ...(po || o.is_quote ? [] : [
+      d.carrier && o.carrier ? ['Carrier', o.carrier] : null,
+      d.shippingMethod && o.shipping_method ? ['Shipping method', o.shipping_method] : null,
+      d.serviceType && o.service_type ? ['Service', o.service_type] : null,
+      d.trackingNumber && o.tracking_number ? ['Tracking number', o.tracking_number] : null,
+    ]),
   ].filter((x): x is string[] => !!x)
   const cols: Content[] = []
   if (cfg.addresses.billTo) cols.push(addr(po ? 'Supplier' : 'Bill to', o.bill_to))
@@ -63,8 +69,13 @@ function lineTable(o: InvoiceOrder, cfg: InvoiceConfig, money: (n: number) => st
     cfg.columns.discount ? { key: 'discount', label: 'Disc.', w: 38 } : null,
     cfg.columns.tax ? { key: 'tax', label: 'Tax', w: 38 } : null,
   ].filter((c): c is { key: string; label: string; w: number } => !!c)
+  const track = po ? [] : ([
+    cfg.columns.serial ? { key: 'serial', label: 'Serial #', w: 82 } : null,
+    cfg.columns.batch ? { key: 'batch', label: 'Batch', w: 56 } : null,
+    cfg.columns.expiry ? { key: 'expiry', label: 'Expiry', w: 52 } : null,
+  ].filter((c): c is { key: string; label: string; w: number } => !!c))
   const th = (t: string, right = false): TableCell => ({ text: t.toUpperCase(), fontSize: 6.5, bold: true, color: COLORS.mut, characterSpacing: 0.7, fillColor: COLORS.tint, alignment: right ? 'right' : 'left', margin: [0, 2, 0, 2] })
-  const head: TableCell[] = [th('Description'), th('Qty', true), ...cols.map(c => th(c.label, true)), th('Amount', true)]
+  const head: TableCell[] = [th('Description'), ...track.map(t => th(t.label)), th('Qty', true), ...cols.map(c => th(c.label, true)), th('Amount', true)]
   const desc = (name: string, sub: string): TableCell => ({ stack: [{ text: name, bold: true, fontSize: 9.5 }, ...(sub ? [{ text: sub, color: COLORS.mut, fontSize: 7.5, margin: [0, 1, 0, 0] }] : [])] as Content[] })
   const num = (t: string, bold = false): TableCell => ({ text: t, alignment: 'right', bold, noWrap: true })
 
@@ -72,19 +83,23 @@ function lineTable(o: InvoiceOrder, cfg: InvoiceConfig, money: (n: number) => st
   for (const l of o.lines) {
     body.push([
       desc(l.name, cfg.columns.sku ? l.sku : ''),
+      ...track.map((t): TableCell => {
+        const v = t.key === 'serial' ? l.serials : t.key === 'batch' ? l.batches : (l.expiries ?? []).map(fmtDate)
+        return { text: (v ?? []).length ? (v ?? []).join('\n') : dash, fontSize: 7.5, color: (v ?? []).length ? COLORS.ink : COLORS.mut }
+      }),
       num(qtyText(l.qty)),
       ...cols.map(c => num(c.key === 'unitPrice' ? money(l.unitPrice) : c.key === 'discount' ? (l.discount ? `${numText(l.discount)}%` : dash) : `${numText(l.taxRate)}%`)),
       num(money(l.amount), true),
     ])
   }
   if (o.costs.length) {
-    body.push([{ text: 'ADDITIONAL COSTS', colSpan: 3 + cols.length, fontSize: 6.5, bold: true, color: COLORS.mut, characterSpacing: 0.7, fillColor: COLORS.tint, margin: [0, 2, 0, 2] }, ...Array(2 + cols.length).fill({})])
+    body.push([{ text: 'ADDITIONAL COSTS', colSpan: 3 + cols.length + track.length, fontSize: 6.5, bold: true, color: COLORS.mut, characterSpacing: 0.7, fillColor: COLORS.tint, margin: [0, 2, 0, 2] }, ...Array(2 + cols.length + track.length).fill({})])
     for (const c of o.costs) {
-      body.push([desc(c.name, c.sub), num(''), ...cols.map(col => num(col.key === 'tax' ? `${numText(c.taxRate)}%` : '')), num(money(c.amount), true)])
+      body.push([desc(c.name, c.sub), ...track.map((): TableCell => ({ text: '' })), num(''), ...cols.map(col => num(col.key === 'tax' ? `${numText(c.taxRate)}%` : '')), num(money(c.amount), true)])
     }
   }
   return {
-    table: { headerRows: 1, dontBreakRows: true, widths: ['*', 34, ...cols.map(c => c.w), 70], body },
+    table: { headerRows: 1, dontBreakRows: true, widths: ['*', ...track.map(t => t.w), 34, ...cols.map(c => c.w), 70], body },
     layout: {
       hLineWidth: (i: number, node: { table: { body: unknown[] } }) => (i === 0 ? 0.9 : i === node.table.body.length ? 0.5 : 0.5),
       hLineColor: (i: number) => (i === 0 ? COLORS.ink : COLORS.line),

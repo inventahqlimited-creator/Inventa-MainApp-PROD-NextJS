@@ -9,6 +9,7 @@ import { useRouter } from 'next/navigation'
 import NumInput from './num-input'
 import { toast } from '@/components/app/toast'
 import OrderHistory from '@/components/app/order-history'
+import { useCan } from '@/components/app/permissions-provider'
 
 type Loc = { id: string; name: string; address?: string | null; city?: string | null; country?: string | null; phone?: string | null; email?: string | null }
 type Product = { id: string; name: string; sku: string | null; sell_uom: string | null; track_stock: boolean | null; type: string | null }
@@ -114,8 +115,8 @@ function LocationCard({ title, locations, value, onPick, onClear, editable, canC
 }
 
 // Actions dropdown in the header of a saved transfer (view mode)
-function TransferActions({ transferId, number, canEdit, canCancel, onEdit, onCancel }: {
-  transferId: string; number: string; canEdit: boolean; canCancel: boolean; onEdit: () => void; onCancel: () => void
+function TransferActions({ transferId, number, canEdit, canCancel, onEdit, onCancel, onUnpick }: {
+  transferId: string; number: string; canEdit: boolean; canCancel: boolean; onEdit: () => void; onCancel: () => void; onUnpick?: () => void
 }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
@@ -145,6 +146,7 @@ function TransferActions({ transferId, number, canEdit, canCancel, onEdit, onCan
       </button>
       {open && (
         <div className="inv-dropdown" role="menu" style={{ display: 'block', position: 'absolute', right: 0, top: 'calc(100% + 6px)', width: 230, padding: 6, zIndex: 60 }}>
+          {onUnpick && item('Unpick Order', onUnpick, ic('M3 12a9 9 0 1 0 3-6.7M3 4v5h5'))}
           {canEdit && item('Edit Order', onEdit, ic('M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z'))}
           {item('Clone Order', () => router.push(`/transfers/new?clone=${transferId}`), ic('M9 9h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V11a2 2 0 0 1 2-2zM5 15H4a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v1'))}
           {item('Order History', () => setHistoryOpen(true), ic('M12 8v4l3 3M3.05 11a9 9 0 1 1 .5 4M3 4v5h5'))}
@@ -196,6 +198,8 @@ export default function TransferForm({ transfer, lines: dbLines, locations, prod
   const [confirmLeave, setConfirmLeave] = useState(false)
   const [confirmCancel, setConfirmCancel] = useState(false)
   const [confirmComplete, setConfirmComplete] = useState(false)
+  const [confirmUnpick, setConfirmUnpick] = useState(false)
+  const canPickTr = useCan('pick_transfers')
 
   // Re-sync after the server refreshes the page (save, pick, complete…)
   useEffect(() => {
@@ -316,6 +320,10 @@ export default function TransferForm({ transfer, lines: dbLines, locations, prod
     setConfirmCancel(false)
     if (ok) setMode('view')
   }
+  async function unpickTransfer() {
+    await act(`/api/org/transfers/${transfer!.id}/unpick`, { method: 'POST' }, 'Could not unpick this transfer.', 'Transfer unpicked — stock released')
+    setConfirmUnpick(false)
+  }
   async function completeTransfer() {
     await act(`/api/org/transfers/${transfer!.id}/complete`, { method: 'POST' }, 'Could not complete this transfer.', 'Transfer completed')
     setConfirmComplete(false)
@@ -373,6 +381,7 @@ export default function TransferForm({ transfer, lines: dbLines, locations, prod
               canCancel={statusEditable}
               onEdit={() => { setError(null); setMode('edit') }}
               onCancel={() => setConfirmCancel(true)}
+              onUnpick={canPickTr && (status === 'Picking' || status === 'Picked') && anyPicked ? () => setConfirmUnpick(true) : undefined}
             />
           )}
         </div>
@@ -598,6 +607,14 @@ export default function TransferForm({ transfer, lines: dbLines, locations, prod
           message={`Are you sure you want to cancel ${transfer?.tr_number ?? 'this transfer'}? It will move to Cancelled${anyPicked ? ' and anything already picked is released back to stock.' : '.'}`}
           confirmLabel="Yes, cancel transfer" danger busy={busy}
           onConfirm={cancelTransfer} onCancel={() => setConfirmCancel(false)}
+        />
+      )}
+      {confirmUnpick && (
+        <ConfirmModal
+          title="Unpick transfer?"
+          message={`Are you sure you want to unpick ${transfer?.tr_number ?? 'this transfer'}? It goes back to Open and the picked stock is released.`}
+          confirmLabel="Yes, unpick" cancelLabel="No, keep it" busy={busy}
+          onConfirm={unpickTransfer} onCancel={() => setConfirmUnpick(false)}
         />
       )}
       {confirmComplete && (

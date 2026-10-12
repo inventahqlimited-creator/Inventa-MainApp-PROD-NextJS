@@ -1215,12 +1215,18 @@ export default function SettingsClient({
   // Confirm modal for disabling global tracking when products with stock exist
   const [trackingConfirm, setTrackingConfirm] = useState<{ key: string; label: string; lockedCount: number } | null>(null)
 
-  async function saveProductSetting(key: string, value: unknown) {
-    await fetch('/api/org/settings', {
+  async function saveProductSetting(key: string, value: unknown): Promise<boolean> {
+    const res = await fetch('/api/org/settings', {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ [key]: value }),
     })
-    showToast('success', 'Setting saved')
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}))
+      showToast('error', d.error ?? 'Could not save this setting')
+      return false
+    }
+    showToast('success', key.startsWith('decimal_qty') ? 'Setting saved — refresh the page to see quantities in the new format' : 'Setting saved')
+    return true
   }
 
   async function handleTrackingToggle(key: 'serial_tracking' | 'batch_tracking' | 'expiry_tracking', newValue: boolean, setFn: (v: boolean) => void, label: string) {
@@ -1890,7 +1896,7 @@ export default function SettingsClient({
             </Card>
             <Card title="Quantity Settings" subtitle="Control how quantities are entered and displayed">
               <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <ToggleRow label="Allow Decimal Quantities" sub="Enables buying and selling in fractional quantities (e.g. 0.5, 1.25)" active={decimalQty} onChange={v => { setDecimalQty(v); saveProductSetting('decimal_qty', v) }} />
+                <ToggleRow label="Allow Decimal Quantities" sub="Show every stock quantity with decimals (1.00) and allow part-units such as 0.5. Off = whole numbers only. Serial-tracked products are always whole." active={decimalQty} onChange={async v => { setDecimalQty(v); if (!(await saveProductSetting('decimal_qty', v))) setDecimalQty(!v) }} />
                 {decimalQty && (
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', background: 'var(--gray-50)', border: '1.5px solid var(--gray-200)', borderRadius: 10 }}>
                     <div>

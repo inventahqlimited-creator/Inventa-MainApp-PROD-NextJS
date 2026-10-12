@@ -6,6 +6,7 @@ export type NotificationSettings = {
   low_stock: { enabled: boolean }
   sales_overdue: OverdueRule
   purchase_overdue: OverdueRule
+  transfer_overdue: OverdueRule
 }
 export type AlertLevel = 'warning' | 'critical'
 
@@ -13,6 +14,7 @@ export const DEFAULT_NOTIFICATIONS: NotificationSettings = {
   low_stock: { enabled: false },
   sales_overdue: { enabled: false, warn_days: 1, critical_days: 5 },
   purchase_overdue: { enabled: false, warn_days: 1, critical_days: 5 },
+  transfer_overdue: { enabled: false, warn_days: 1, critical_days: 5 },
 }
 
 const int = (v: unknown, d: number, min: number, max: number) => {
@@ -34,6 +36,7 @@ export function normalizeNotifications(raw: unknown): NotificationSettings {
     low_stock: { enabled: typeof ls.enabled === 'boolean' ? ls.enabled : false },
     sales_overdue: rule(r.sales_overdue),
     purchase_overdue: rule(r.purchase_overdue),
+    transfer_overdue: rule(r.transfer_overdue),
   }
 }
 

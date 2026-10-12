@@ -5,7 +5,7 @@ import { NextResponse } from 'next/server'
 import { getAccess, can } from '@/lib/auth/access'
 import { normalizeNotifications, overdueLevel, type AlertLevel } from '@/lib/notifications/config'
 
-export type Alert = { id: string; kind: 'low_stock' | 'sales_overdue' | 'purchase_overdue'; level: AlertLevel; title: string; body: string; href: string }
+export type Alert = { id: string; kind: 'low_stock' | 'sales_overdue' | 'purchase_overdue' | 'transfer_overdue'; level: AlertLevel; title: string; body: string; href: string }
 const MAX = 100
 const num = (v: unknown) => Number(v) || 0
 
@@ -72,6 +72,23 @@ export async function GET(req: Request) {
         title: `Purchase order ${o.po_number ?? ''} not received`.replace('  ', ' '),
         body: `${o.supplier_name ?? 'Supplier'} — expected ${o.expected_date.slice(0, 10)}, ${lvl.days} day${lvl.days === 1 ? '' : 's'} late`,
         href: `/purchases/${o.id}`,
+      })
+    }
+  }
+
+  if (s.transfer_overdue.enabled && can(access, 'view_transfers')) {
+    const { data: tr } = await access.db.from('transfer_orders')
+      .select('id, tr_number, status, expected_date, from_location_name, to_location_name')
+      .eq('org_id', access.orgId).not('expected_date', 'is', null).lt('expected_date', today)
+    for (const o of (tr ?? []) as { id: string; tr_number: string | null; status: string; expected_date: string; from_location_name: string | null; to_location_name: string | null }[]) {
+      if (['draft', 'closed', 'completed', 'cancelled'].includes(o.status.toLowerCase())) continue
+      const lvl = overdueLevel(o.expected_date, today, s.transfer_overdue)
+      if (!lvl) continue
+      alerts.push({
+        id: `tr:${o.id}:${lvl.level}`, kind: 'transfer_overdue', level: lvl.level,
+        title: `Transfer ${o.tr_number ?? ''} is overdue`.replace('  ', ' '),
+        body: `${o.from_location_name ?? 'From'} → ${o.to_location_name ?? 'To'} — due ${o.expected_date.slice(0, 10)}, ${lvl.days} day${lvl.days === 1 ? '' : 's'} late`,
+        href: `/transfers/${o.id}`,
       })
     }
   }

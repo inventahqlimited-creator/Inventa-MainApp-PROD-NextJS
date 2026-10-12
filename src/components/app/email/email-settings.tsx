@@ -24,6 +24,7 @@ export default function EmailSettingsTab() {
   const [configured, setConfigured] = useState(true)
   const [sender, setSender] = useState<{ address: string; verified: boolean } | null>(null)
   const [cc, setCc] = useState('')
+  const [bcc, setBcc] = useState('')
   const [domain, setDomain] = useState('')
   const [sigs, setSigs] = useState<Sig[]>([])
   const [tpls, setTpls] = useState<Tpl[]>([])
@@ -38,7 +39,7 @@ export default function EmailSettingsTab() {
   async function load() {
     const [a, b, c, d] = await Promise.all([api<{ settings: EmailSettings; configured: boolean; sender: { address: string; verified: boolean } | null }>('/api/org/email/settings'), api<{ items: Sig[] }>('/api/org/email/signatures'), api<{ items: Tpl[] }>('/api/org/email/templates'), api<{ items: LogRow[] }>('/api/org/email/log')])
     if (a.error) { flash(false, a.error); return }
-    setS(a.settings); setConfigured(a.configured); setSender(a.sender); setCc(a.settings.default_cc.join(', ')); setDomain(a.settings.domain)
+    setS(a.settings); setConfigured(a.configured); setSender(a.sender); setCc(a.settings.default_cc.join(', ')); setBcc((a.settings.default_bcc ?? []).join(', ')); setDomain(a.settings.domain)
     setSigs(b.items ?? []); setTpls(c.items ?? []); setLog(d.items ?? [])
   }
   useEffect(() => { load() }, [])
@@ -46,7 +47,7 @@ export default function EmailSettingsTab() {
 
   async function saveSender() {
     setBusy(true)
-    const r = await api<{ settings: EmailSettings }>('/api/org/email/settings', 'PATCH', { from_name: s!.from_name, from_local: s!.from_local, reply_to: s!.reply_to, default_cc: cc, default_recipient: s!.default_recipient })
+    const r = await api<{ settings: EmailSettings }>('/api/org/email/settings', 'PATCH', { from_name: s!.from_name, from_local: s!.from_local, reply_to: s!.reply_to, default_cc: cc, default_bcc: bcc, default_recipient: s!.default_recipient })
     setBusy(false)
     if (r.error) return flash(false, r.error)
     await load(); flash(true, 'Email settings saved.')
@@ -92,6 +93,7 @@ export default function EmailSettingsTab() {
           <div className="modal-field"><label className="modal-label">From name</label><input className="modal-input" value={s.from_name} onChange={e => set('from_name', e.target.value)} placeholder="Acme Ltd" /></div>
           <div className="modal-field"><label className="modal-label">Reply-to address</label><input className="modal-input" type="email" value={s.reply_to} onChange={e => set('reply_to', e.target.value)} placeholder="sales@acme.co.nz" /></div>
           <div className="modal-field"><label className="modal-label">Default CC <span style={{ fontWeight: 400, color: 'var(--gray-400)' }}>(comma separated)</span></label><input className="modal-input" value={cc} onChange={e => setCc(e.target.value)} placeholder="accounts@acme.co.nz" /></div>
+          <div className="modal-field"><label className="modal-label">Default BCC <span style={{ fontWeight: 400, color: 'var(--gray-400)' }}>(comma separated, hidden from the customer)</span></label><input className="modal-input" value={bcc} onChange={e => setBcc(e.target.value)} placeholder="records@acme.co.nz" /></div>
           <div className="modal-field"><label className="modal-label">Sending address</label>
             <div style={{ display: 'flex', alignItems: 'center', gap: 4, opacity: s.domain_status === 'verified' ? 1 : 0.55 }}>
               <input className="modal-input" value={s.from_local} onChange={e => set('from_local', e.target.value)} disabled={s.domain_status !== 'verified'} style={{ width: 120, background: s.domain_status === 'verified' ? undefined : 'var(--gray-100)', color: s.domain_status === 'verified' ? undefined : 'var(--gray-400)', cursor: s.domain_status === 'verified' ? undefined : 'not-allowed' }} />

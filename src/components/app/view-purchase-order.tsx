@@ -808,11 +808,11 @@ export default function ViewPurchaseOrder({
                                           className={`modal-input${errs.serials ? ' li-input-error' : ''}`}
                                           value={rl.serial_text}
                                           onChange={e => updateSerialText(idx, e.target.value)}
-                                          placeholder={'One serial per line.\nPaste a list to add many.'}
-                                          rows={Math.min(Math.max(3, rl.serials.length + 1), 10)}
+                                          placeholder="Type a serial, press Enter for the next"
+                                          rows={Math.min(Math.max(1, rl.serial_text.split(/\r?\n/).length), 12)}
                                           autoComplete="off"
                                           spellCheck={false}
-                                          style={{ width: '100%', minWidth: 190, background: 'var(--gray-50)', fontFamily: 'monospace', fontSize: 12.5, lineHeight: 1.5, resize: 'vertical', height: 'auto' }}
+                                          style={{ width: '100%', minWidth: 190, background: 'var(--gray-50)', fontFamily: 'monospace', fontSize: 12.5, lineHeight: 1.5, resize: 'none', height: 'auto', overflowY: 'auto' }}
                                         />
                                         <div style={{ fontSize: 11, marginTop: 3, color: errs.serials ? 'var(--danger)' : 'var(--gray-400)' }}>
                                           {errs.serials ?? `${rl.serials.length} of ${remaining} entered`}

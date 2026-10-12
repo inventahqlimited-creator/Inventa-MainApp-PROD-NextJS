@@ -265,7 +265,7 @@ export default function SalesTable({
       if (!res.ok) { flash(false, data.error ?? 'Could not close these orders'); return }
       const closed = (data.closed ?? []) as string[]
       const failed = (data.failed ?? []) as { so_number: string; error: string }[]
-      flash(failed.length === 0, `${closed.length} order${closed.length !== 1 ? 's' : ''} closed` + (failed.length ? `. ${failed.length} failed — ${failed.map(f => `${f.so_number}: ${f.error}`).join('; ')}` : '.'))
+      flash(failed.length === 0, `${closed.length} order${closed.length !== 1 ? 's' : ''} shipped` + (failed.length ? `. ${failed.length} failed — ${failed.map(f => `${f.so_number}: ${f.error}`).join('; ')}` : '.'))
       setSelected(new Set())
       router.refresh()
     } catch { flash(false, 'Network error — please try again.') }
@@ -279,7 +279,7 @@ export default function SalesTable({
       const res = await fetch(`/api/org/sales/${o.id}/close`, { method: 'POST' })
       const data = await res.json().catch(() => ({}))
       if (!res.ok) flash(false, `${o.so_number}: ${data.error ?? 'Could not close this order'}`)
-      else { flash(true, `${o.so_number} closed.`); router.refresh() }
+      else { flash(true, `${o.so_number} shipped.`); router.refresh() }
     } catch { flash(false, 'Network error — please try again.') }
     finally { setBusy(false); setDialog(null) }
   }
@@ -459,7 +459,7 @@ export default function SalesTable({
                 <button className="btn-sm btn-sm-primary" title={`${toPack.length} Picked order${toPack.length !== 1 ? 's' : ''} will load`} onClick={() => router.push(`/sales/pack?ids=${toPack.map(o => o.id).join(',')}`)}>Start Packing</button>
               )}
               {toClose.length > 0 && (
-                <button className="btn-sm btn-sm-primary" title={`${toClose.length} Packed order${toClose.length !== 1 ? 's' : ''} will be closed`} onClick={() => setDialog({ kind: 'bulk-close', ids: toClose.map(o => o.id), skipped: selected.size - toClose.length })}>Close Order</button>
+                <button className="btn-sm btn-sm-primary" title={`${toClose.length} Packed order${toClose.length !== 1 ? 's' : ''} will be shipped`} onClick={() => setDialog({ kind: 'bulk-close', ids: toClose.map(o => o.id), skipped: selected.size - toClose.length })}>Ship Order</button>
               )}
               {!(pickEnabled && toPick.length > 0) && !(packEnabled && toPack.length > 0) && toClose.length === 0 && (
                 <span style={{ fontSize: 12.5, color: 'var(--gray-400)' }}>No selected order is ready to pick, pack or close.</span>
@@ -587,16 +587,16 @@ export default function SalesTable({
         let fulfil: React.ReactNode = null
         if (k === 'open') {
           fulfil = fulfilmentMode === 'none'
-            ? item('Close Order', () => { setMenu(null); setDialog({ kind: 'close', order: o }) }, { icon: ic('M20 6 9 17l-5-5') })
+            ? item('Ship Order', () => { setMenu(null); setDialog({ kind: 'close', order: o }) }, { icon: ic('M20 6 9 17l-5-5') })
             : item('Pick Order', () => router.push(`/sales/${o.id}/pick`), { icon: ic('M21 8l-9-5-9 5v8l9 5 9-5z') })
         } else if (k === 'picking') {
           fulfil = item('Continue Picking', () => router.push(`/sales/${o.id}/pick`), { icon: ic('M21 8l-9-5-9 5v8l9 5 9-5z') })
         } else if (k === 'picked') {
           fulfil = fulfilmentMode === 'full'
             ? item('Pack Order', () => router.push(`/sales/${o.id}/pack`), { icon: ic('M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z') })
-            : item('Close Order', () => { setMenu(null); setDialog({ kind: 'close', order: o }) }, { icon: ic('M20 6 9 17l-5-5') })
+            : item('Ship Order', () => { setMenu(null); setDialog({ kind: 'close', order: o }) }, { icon: ic('M20 6 9 17l-5-5') })
         } else if (k === 'packed') {
-          fulfil = item('Close Order', () => { setMenu(null); setDialog({ kind: 'close', order: o }) }, { icon: ic('M20 6 9 17l-5-5') })
+          fulfil = item('Ship Order', () => { setMenu(null); setDialog({ kind: 'close', order: o }) }, { icon: ic('M20 6 9 17l-5-5') })
         }
 
         return (
@@ -661,27 +661,27 @@ export default function SalesTable({
             </>)}
 
             {dialog.kind === 'close' && (<>
-              <div style={{ fontFamily: 'var(--font-display)', fontSize: 17, fontWeight: 700, color: 'var(--slate)', marginBottom: 8 }}>Close {dialog.order.so_number}?</div>
+              <div style={{ fontFamily: 'var(--font-display)', fontSize: 17, fontWeight: 700, color: 'var(--slate)', marginBottom: 8 }}>Ship {dialog.order.so_number}?</div>
               <div style={{ fontSize: 13.5, color: 'var(--gray-400)', lineHeight: 1.5, marginBottom: 20 }}>
                 {statusKey(dialog.order.status) === 'open'
-                  ? 'Stock will be allocated automatically (oldest stock first, including batch, serial, expiry and bin where tracked) and the order closed.'
-                  : 'The picked stock will be taken out of inventory and the order closed.'} This can&apos;t be undone.
+                  ? 'Stock will be allocated automatically (oldest stock first, including batch, serial, expiry and bin where tracked) and the order shipped.'
+                  : 'The picked stock will be taken out of inventory and the order shipped.'} This can&apos;t be undone.
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
                 <button className="btn btn-outline" style={{ height: 38 }} onClick={() => setDialog(null)} disabled={busy}>Go back</button>
-                <button className="btn btn-primary" style={{ height: 38, padding: '0 20px' }} onClick={() => closeOne(dialog.order)} disabled={busy}>{busy ? 'Please wait…' : 'Yes, close order'}</button>
+                <button className="btn btn-primary" style={{ height: 38, padding: '0 20px' }} onClick={() => closeOne(dialog.order)} disabled={busy}>{busy ? 'Please wait…' : 'Yes, ship order'}</button>
               </div>
             </>)}
 
             {dialog.kind === 'bulk-close' && (<>
-              <div style={{ fontFamily: 'var(--font-display)', fontSize: 17, fontWeight: 700, color: 'var(--slate)', marginBottom: 8 }}>Close {dialog.ids.length} order{dialog.ids.length !== 1 ? 's' : ''}?</div>
+              <div style={{ fontFamily: 'var(--font-display)', fontSize: 17, fontWeight: 700, color: 'var(--slate)', marginBottom: 8 }}>Ship {dialog.ids.length} order{dialog.ids.length !== 1 ? 's' : ''}?</div>
               <div style={{ fontSize: 13.5, color: 'var(--gray-400)', lineHeight: 1.5, marginBottom: 20 }}>
                 The picked stock on {dialog.ids.length === 1 ? 'this Packed order' : 'these Packed orders'} will be taken out of inventory. This can&apos;t be undone.
                 {dialog.skipped > 0 && <> {dialog.skipped} other selected order{dialog.skipped !== 1 ? 's aren\'t' : ' isn\'t'} Packed and will be left as they are.</>}
               </div>
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
                 <button className="btn btn-outline" style={{ height: 38 }} onClick={() => setDialog(null)} disabled={busy}>Go back</button>
-                <button className="btn btn-primary" style={{ height: 38, padding: '0 20px' }} onClick={() => bulkClose(dialog.ids)} disabled={busy}>{busy ? 'Please wait…' : 'Yes, close'}</button>
+                <button className="btn btn-primary" style={{ height: 38, padding: '0 20px' }} onClick={() => bulkClose(dialog.ids)} disabled={busy}>{busy ? 'Please wait…' : 'Yes, ship'}</button>
               </div>
             </>)}
 

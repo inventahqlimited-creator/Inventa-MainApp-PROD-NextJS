@@ -5,6 +5,7 @@ export type EmailSettings = {
   from_local: string          // the bit before @ on the customer's own domain, e.g. "accounts"
   reply_to: string
   default_cc: string[]
+  default_bcc: string[]
   default_recipient: 'billing' | 'shipping'   // which contact email the To box starts with
   domain: string              // customer's sending domain, e.g. "acme.co.nz"
   domain_id: string           // Resend's id for that domain
@@ -12,7 +13,7 @@ export type EmailSettings = {
   domain_records: DnsRecord[]
 }
 
-export const EMPTY_SETTINGS: EmailSettings = { from_name: '', from_local: 'accounts', reply_to: '', default_cc: [], default_recipient: 'billing', domain: '', domain_id: '', domain_status: 'none', domain_records: [] }
+export const EMPTY_SETTINGS: EmailSettings = { from_name: '', from_local: 'accounts', reply_to: '', default_cc: [], default_bcc: [], default_recipient: 'billing', domain: '', domain_id: '', domain_status: 'none', domain_records: [] }
 
 const EMAIL_RE = /^[^\s@<>",;]+@[^\s@<>",;]+\.[^\s@<>",;]+$/
 export const isEmail = (v: unknown): v is string => typeof v === 'string' && v.length <= 254 && EMAIL_RE.test(v.trim())
@@ -44,6 +45,7 @@ export function readSettings(raw: unknown): EmailSettings {
     from_local: typeof r.from_local === 'string' && r.from_local ? r.from_local : 'accounts',
     reply_to: typeof r.reply_to === 'string' ? r.reply_to : '',
     default_cc: Array.isArray(r.default_cc) ? r.default_cc.filter(isEmail) : [],
+    default_bcc: Array.isArray(r.default_bcc) ? r.default_bcc.filter(isEmail) : [],
     default_recipient: r.default_recipient === 'shipping' ? 'shipping' : 'billing',
     domain: typeof r.domain === 'string' ? r.domain : '',
     domain_id: typeof r.domain_id === 'string' ? r.domain_id : '',
@@ -53,7 +55,7 @@ export function readSettings(raw: unknown): EmailSettings {
 }
 
 /** Validates the editable part of the settings from a request body. */
-export function validateSettingsInput(body: Record<string, unknown>): { value: Pick<EmailSettings, 'from_name' | 'from_local' | 'reply_to' | 'default_cc' | 'default_recipient'> } | { error: string } {
+export function validateSettingsInput(body: Record<string, unknown>): { value: Pick<EmailSettings, 'from_name' | 'from_local' | 'reply_to' | 'default_cc' | 'default_bcc' | 'default_recipient'> } | { error: string } {
   const from_name = String(body.from_name ?? '').replace(/[\r\n"<>]/g, '').trim().slice(0, 80)
   const from_local = String(body.from_local ?? 'accounts').trim().toLowerCase()
   if (!LOCAL_RE.test(from_local)) return { error: 'The sending address can only use letters, numbers and . _ + -' }
@@ -62,9 +64,12 @@ export function validateSettingsInput(body: Record<string, unknown>): { value: P
   const cc = parseAddresses(body.default_cc)
   if (cc.bad.length) return { error: `Not a valid email address: ${cc.bad[0]}` }
   if (cc.ok.length > 5) return { error: 'Use five or fewer default CC addresses.' }
+  const bcc = parseAddresses(body.default_bcc)
+  if (bcc.bad.length) return { error: `Not a valid email address: ${bcc.bad[0]}` }
+  if (bcc.ok.length > 5) return { error: 'Use five or fewer default BCC addresses.' }
   const dr = body.default_recipient
   const default_recipient = dr === 'shipping' ? 'shipping' : 'billing'
-  return { value: { from_name, from_local, reply_to, default_cc: cc.ok, default_recipient } }
+  return { value: { from_name, from_local, reply_to, default_cc: cc.ok, default_bcc: bcc.ok, default_recipient } }
 }
 
 /** The From header actually used. Own verified domain when there is one, otherwise the shared InventaHQ sender. */

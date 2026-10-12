@@ -167,7 +167,7 @@ export function SubscriptionCard({ org, used }: { org: OrgData; used: number }) 
         <div>
           <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--slate)' }}>Xero integration</div>
           <div style={{ fontSize: '12px', color: 'var(--gray-400)', marginTop: '2px' }}>
-            {xero ? 'Shows as “Installed” in their Settings → Integrations.' : 'Shows as “Talk to sales” in their Settings → Integrations.'}
+            {xero ? 'Shows as “Installed” in their Settings → Integrations.' : 'Shows as “Talk to us” in their Settings → Integrations.'}
           </div>
         </div>
         <button onClick={toggleXero} disabled={xBusy} role="switch" aria-checked={xero} aria-label="Xero integration" style={{

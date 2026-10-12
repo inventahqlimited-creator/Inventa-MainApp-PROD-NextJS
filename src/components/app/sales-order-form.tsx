@@ -1371,7 +1371,7 @@ function SalesOrderFormInner({
             {showClose && (
               <button className="btn btn-primary" style={{ height: 38, padding: '0 20px', fontSize: 14 }} onClick={() => setConfirmClose(true)} disabled={closing}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-                Close Order
+                Ship Order
               </button>
             )}
           </div>
@@ -1417,11 +1417,11 @@ function SalesOrderFormInner({
       )}
       {confirmClose && (
         <ConfirmModal
-          title="Close sales order?"
+          title="Ship sales order?"
           message={anyPicked
-            ? `${order?.so_number ?? 'This order'} will be closed and the picked stock will be taken out of inventory. This can't be undone.`
-            : `Stock for ${order?.so_number ?? 'this order'} will be allocated automatically (oldest stock first, including batch, serial, expiry and bin where tracked) and the order will be closed. This can't be undone.`}
-          confirmLabel="Yes, close order"
+            ? `${order?.so_number ?? 'This order'} will be shipped and the picked stock will be taken out of inventory. This can't be undone.`
+            : `Stock for ${order?.so_number ?? 'this order'} will be allocated automatically (oldest stock first, including batch, serial, expiry and bin where tracked) and the order will be shipped. This can't be undone.`}
+          confirmLabel="Yes, ship order"
           busy={closing}
           onConfirm={closeOrder}
           onCancel={() => setConfirmClose(false)}

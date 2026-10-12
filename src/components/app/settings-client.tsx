@@ -816,8 +816,8 @@ function NotificationsCard({ initial, canManage, showToast }: {
   initial: unknown; canManage: boolean; showToast: (type: 'success' | 'error', msg: string) => void
 }) {
   const [n, setN] = useState<NotificationSettings>(() => normalizeNotifications(initial))
-  const [warnTxt, setWarnTxt] = useState({ sales: String(n.sales_overdue.warn_days), purchase: String(n.purchase_overdue.warn_days) })
-  const [critTxt, setCritTxt] = useState({ sales: String(n.sales_overdue.critical_days), purchase: String(n.purchase_overdue.critical_days) })
+  const [warnTxt, setWarnTxt] = useState({ sales: String(n.sales_overdue.warn_days), purchase: String(n.purchase_overdue.warn_days), transfer: String(n.transfer_overdue.warn_days) })
+  const [critTxt, setCritTxt] = useState({ sales: String(n.sales_overdue.critical_days), purchase: String(n.purchase_overdue.critical_days), transfer: String(n.transfer_overdue.critical_days) })
   const [saving, setSaving] = useState(false)
 
   async function save() {
@@ -826,8 +826,9 @@ function NotificationsCard({ initial, canManage, showToast }: {
       ...n,
       sales_overdue: build(n.sales_overdue, warnTxt.sales, critTxt.sales),
       purchase_overdue: build(n.purchase_overdue, warnTxt.purchase, critTxt.purchase),
+      transfer_overdue: build(n.transfer_overdue, warnTxt.transfer, critTxt.transfer),
     }
-    for (const r of [next.sales_overdue, next.purchase_overdue]) {
+    for (const r of [next.sales_overdue, next.purchase_overdue, next.transfer_overdue]) {
       if (r.critical_days < r.warn_days) { showToast('error', 'Critical days must be the same as or more than the first alert'); return }
     }
     setSaving(true)
@@ -840,8 +841,8 @@ function NotificationsCard({ initial, canManage, showToast }: {
       const d = await res.json().catch(() => null)
       const saved = normalizeNotifications(d?.notification_settings ?? next)
       setN(saved)
-      setWarnTxt({ sales: String(saved.sales_overdue.warn_days), purchase: String(saved.purchase_overdue.warn_days) })
-      setCritTxt({ sales: String(saved.sales_overdue.critical_days), purchase: String(saved.purchase_overdue.critical_days) })
+      setWarnTxt({ sales: String(saved.sales_overdue.warn_days), purchase: String(saved.purchase_overdue.warn_days), transfer: String(saved.transfer_overdue.warn_days) })
+      setCritTxt({ sales: String(saved.sales_overdue.critical_days), purchase: String(saved.purchase_overdue.critical_days), transfer: String(saved.transfer_overdue.critical_days) })
       showToast('success', 'Notification settings saved')
     } else showToast('error', 'Failed to save')
   }
@@ -855,9 +856,9 @@ function NotificationsCard({ initial, canManage, showToast }: {
     </div>
   )
 
-  const overdue = (key: 'sales' | 'purchase', label: string, sub: string) => {
-    const r = key === 'sales' ? n.sales_overdue : n.purchase_overdue
-    const field = key === 'sales' ? 'sales_overdue' : 'purchase_overdue'
+  const overdue = (key: 'sales' | 'purchase' | 'transfer', label: string, sub: string) => {
+    const field = (key + '_overdue') as 'sales_overdue' | 'purchase_overdue' | 'transfer_overdue'
+    const r = n[field]
     return (
       <>
         <ToggleRow label={label} sub={sub} active={r.enabled} onChange={v => canManage && setN(p => ({ ...p, [field]: { ...p[field], enabled: v } }))} />
@@ -886,6 +887,7 @@ function NotificationsCard({ initial, canManage, showToast }: {
         />
         {overdue('sales', 'Overdue sales orders', 'Alert when an open sales order is past its delivery date')}
         {overdue('purchase', 'Late purchase orders', 'Alert when a purchase order has not been received by its expected delivery date')}
+        {overdue('transfer', 'Overdue transfers', 'Alert when a transfer has not been completed by its expected date')}
         <div style={{ fontSize: 12, color: 'var(--gray-400)', lineHeight: 1.5 }}>
           Everyone sees the alerts for the areas they can access. Marking an alert as read only affects your own browser.
           {!canManage && ' You need the "Manage company settings" permission to change this.'}
@@ -2401,7 +2403,7 @@ export default function SettingsClient({
           <Card title="Integrations" subtitle="Connect third-party apps and services">
             <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
               {[
-                { name: 'Xero', sub: 'Sync invoices, bills and contacts with Xero accounting', icon: '💼', logo: '/integrations/xero.png', status: xeroInstalled ? 'Installed' : 'Talk to sales' },
+                { name: 'Xero', sub: 'Sync invoices, bills and contacts with Xero accounting', icon: '💼', logo: '/integrations/xero.png', status: xeroInstalled ? 'Installed' : 'Talk to us' },
                 { name: 'Email Autobot', sub: 'InventaHQ’s native email automation bot to simplify workflows', icon: '🤖', logo: '/integrations/email-autobot.svg', status: 'Coming soon' },
                 { name: 'MYOB', sub: 'Sync invoices, bills and contacts with MYOB accounting', icon: '💼', logo: '/integrations/myob.png', status: 'Coming soon' },
                 { name: 'Starshipit', sub: 'Generate shipping labels and track parcels', icon: '📦', logo: '/integrations/starshipit.png', status: 'Coming soon' },
@@ -2426,7 +2428,7 @@ export default function SettingsClient({
                       </div>
                     </div>
                     {isXero && !xeroInstalled
-                      ? <button className="btn btn-primary" style={{ height: 32, fontSize: 12.5 }}>Talk to sales</button>
+                      ? <button className="btn btn-primary" style={{ height: 32, fontSize: 12.5 }}>Talk to us</button>
                       : open
                         ? <span style={{ fontSize: 11.5, fontWeight: 600, color: '#047857', background: '#D1FAE5', padding: '3px 10px', borderRadius: 20 }}>Installed</span>
                         : <span style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--gray-400)', background: 'var(--gray-100)', padding: '3px 10px', borderRadius: 20 }}>{int.status}</span>}

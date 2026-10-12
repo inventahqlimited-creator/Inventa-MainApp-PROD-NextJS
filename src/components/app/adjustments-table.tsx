@@ -52,6 +52,9 @@ const TABS = [
 
 type Tab = typeof TABS[number]['key']
 
+// Tabs for a status nobody has hit yet stay out of sight (same as Sales, Purchases and Transfers)
+const HIDE_WHEN_EMPTY = new Set<string>(['draft', 'cancelled'])
+
 const REASONS = ['Stocktake', 'Damaged', 'Expired', 'Found', 'Lost', 'Theft', 'Sample', 'Write-off', 'Other']
 
 export default function AdjustmentsTable({
@@ -102,6 +105,7 @@ export default function AdjustmentsTable({
     cancelled: adjustments.filter(a => a.status.toLowerCase() === 'cancelled').length,
   }), [adjustments])
 
+  const visibleTabs = TABS.filter(t => !HIDE_WHEN_EMPTY.has(t.key) || counts[t.key] > 0)
   const totalPages = Math.max(1, Math.ceil(filtered.length / perPage))
   const paginated = filtered.slice((page - 1) * perPage, page * perPage)
   const locName = locations.find(l => l.id === locFilter)?.name ?? 'All Locations'
@@ -131,7 +135,7 @@ export default function AdjustmentsTable({
           </div>
         </div>
         <div className="tab-bar">
-          {TABS.map(t => (
+          {visibleTabs.map(t => (
             <div key={t.key} className={`tab-item${tab === t.key ? ' active' : ''}`} onClick={() => { setTab(t.key); setPage(1) }}>
               {t.label}<span className="tab-count">{counts[t.key]}</span>
             </div>

@@ -7,7 +7,7 @@ type Sig = { id: string; name: string; body_html: string; is_default: boolean }
 type Tpl = { id: string; name: string; module: string; subject: string; body_html: string; signature_id: string | null; is_default: boolean }
 type Ctx = {
   configured: boolean; sender: { address: string; name: string; verified: boolean } | null
-  replyTo: string; defaultCc: string[]; signatures: Sig[]; templates: Tpl[]
+  replyTo: string; defaultCc: string[]; defaultBcc: string[]; signatures: Sig[]; templates: Tpl[]
   docs: { type: string; label: string }[]
   doc: { ref: string; docLabel: string; recipientName: string; recipientEmail: string }
   vars: Record<string, string>; canManage: boolean
@@ -34,7 +34,7 @@ export default function EmailComposer({ module, id, onClose, onSent }: { module:
       const j = await r.json().catch(() => ({ error: 'Could not load' }))
       if (!r.ok) { setLoadErr(j.error ?? 'Could not load'); return }
       const c = j as Ctx
-      setCtx(c); setTo(c.doc.recipientEmail); setCc(c.defaultCc.join(', ')); setReplyTo(c.replyTo)
+      setCtx(c); setTo(c.doc.recipientEmail); setCc(c.defaultCc.join(', ')); setBcc((c.defaultBcc ?? []).join(', ')); setShowBcc((c.defaultBcc ?? []).length > 0); setReplyTo(c.replyTo)
       const dflt = c.signatures.find(s => s.is_default); if (dflt) setSigId(dflt.id)
       const t = c.templates.find(x => x.is_default)
       if (t) applyTemplate(t, c)

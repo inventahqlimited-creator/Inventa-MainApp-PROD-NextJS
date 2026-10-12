@@ -148,6 +148,8 @@ export default function SalesTable({
 }) {
   const router = useRouter()
   const canEmail = useCan('send_emails')
+  const canPickSales = useCan('pick_sales')
+  const canPackSales = useCan('pack_sales')
   const [emailId, setEmailId] = useState<string | null>(null)
   const [xeroRecords, setXeroRecords] = useState(xero?.records ?? {})
   const xeroCol = useXeroColumn('sales_xero_col')
@@ -169,6 +171,8 @@ export default function SalesTable({
   const [dialog, setDialog] = useState<
     | { kind: 'cancel'; order: Order }
     | { kind: 'close'; order: Order }
+    | { kind: 'unpick'; order: Order }
+    | { kind: 'unpack'; order: Order }
     | { kind: 'po'; order: Order }
     | { kind: 'bulk-close'; ids: string[]; skipped: number }
     | null
@@ -249,7 +253,7 @@ export default function SalesTable({
   const toPack = selectedOrders.filter(o => statusKey(o.status) === 'picked')
   const toClose = selectedOrders.filter(o => statusKey(o.status) === 'packed')
   // Orders a pick list can be printed for (anything that has been, or can be, picked)
-  const toPrint = selectedOrders.filter(o => ['open', 'picking', 'picked', 'packed'].includes(statusKey(o.status)))
+  const toPrint = selectedOrders.filter(o => ['open', 'picking', 'picked', 'packed', 'closed'].includes(statusKey(o.status)))
   // Orders a packing list can be printed for (something has been picked, up to and including closed)
   const toPrintPacking = selectedOrders.filter(o => ['picking', 'picked', 'packed', 'closed'].includes(statusKey(o.status)))
   // Orders an invoice can be printed for (everything except drafts and cancelled orders)
@@ -290,6 +294,17 @@ export default function SalesTable({
       const data = await res.json().catch(() => ({}))
       if (!res.ok) flash(false, `${o.so_number}: ${data.error ?? 'Could not cancel this order'}`)
       else { flash(true, `${o.so_number} cancelled.`); router.refresh() }
+    } catch { flash(false, 'Network error — please try again.') }
+    finally { setBusy(false); setDialog(null) }
+  }
+
+  async function undoOne(o: Order, what: 'unpick' | 'unpack') {
+    setBusy(true)
+    try {
+      const res = await fetch(`/api/org/sales/${o.id}/${what}`, { method: 'POST' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) flash(false, `${o.so_number}: ${data.error ?? `Could not ${what} this order`}`)
+      else { flash(true, `${o.so_number} ${what === 'unpick' ? 'unpicked — stock released.' : 'unpacked — back to Picked.'}`); router.refresh() }
     } catch { flash(false, 'Network error — please try again.') }
     finally { setBusy(false); setDialog(null) }
   }
@@ -599,13 +614,17 @@ export default function SalesTable({
           fulfil = item('Ship Order', () => { setMenu(null); setDialog({ kind: 'close', order: o }) }, { icon: ic('M20 6 9 17l-5-5') })
         }
 
+        const undo: React.ReactNode[] = []
+        if (pickEnabled && canPickSales && ['picking', 'picked', 'packed'].includes(k)) undo.push(item('Unpick Order', () => { setMenu(null); setDialog({ kind: 'unpick', order: o }) }, { icon: ic('M3 12a9 9 0 1 0 3-6.7M3 4v5h5') }))
+        if (packEnabled && canPackSales && k === 'packed') undo.push(item('Unpack Order', () => { setMenu(null); setDialog({ kind: 'unpack', order: o }) }, { icon: ic('M3 12a9 9 0 1 0 3-6.7M3 4v5h5') }))
+
         return (
           <div
             className="inv-dropdown"
             style={{ display: 'block', position: 'fixed', left: menu.x, top: menu.y, width: 230, padding: 6, zIndex: 400 }}
             onClick={e => e.stopPropagation()}
           >
-            {fulfil && <>{fulfil}{sep('s1')}</>}
+            {fulfil}{undo.map((u, i) => <div key={i}>{u}</div>)}{(fulfil || undo.length > 0) && sep('s1')}
             {item('Clone Order', () => router.push(`/sales/new?clone=${o.id}`), { icon: ic('M9 9h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V11a2 2 0 0 1 2-2zM5 15H4a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v1') })}
             {k !== 'cancelled' && k !== 'quote' && item('Create Purchase Order', () => { setMenu(null); setPoScope('all'); setDialog({ kind: 'po', order: o }) }, { icon: ic('M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4zM3 6h18M16 10a4 4 0 0 1-8 0') })}
             {o.related_po_id && item('Open Related Order', () => { setMenu(null); router.push(`/purchases/${o.related_po_id}`) }, { icon: ic('M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71') })}
@@ -615,7 +634,7 @@ export default function SalesTable({
             {item('Print', () => setMenu(m => (m ? { ...m, printOpen: !m.printOpen } : m)), { icon: ic('M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6z'), chevron: true })}
             {menu.printOpen && (
               <div style={{ paddingLeft: 16 }}>
-                {['open', 'picking', 'picked', 'packed'].includes(k)
+                {['open', 'picking', 'picked', 'packed', 'closed'].includes(k)
                   ? item('Pick List', async () => {
                       setMenu(null)
                       const res = await printPickList([o.id], 'single')
@@ -670,6 +689,19 @@ export default function SalesTable({
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
                 <button className="btn btn-outline" style={{ height: 38 }} onClick={() => setDialog(null)} disabled={busy}>Go back</button>
                 <button className="btn btn-primary" style={{ height: 38, padding: '0 20px' }} onClick={() => closeOne(dialog.order)} disabled={busy}>{busy ? 'Please wait…' : 'Yes, ship order'}</button>
+              </div>
+            </>)}
+
+            {(dialog.kind === 'unpick' || dialog.kind === 'unpack') && (<>
+              <div style={{ fontFamily: 'var(--font-display)', fontSize: 17, fontWeight: 700, color: 'var(--slate)', marginBottom: 8 }}>{dialog.kind === 'unpick' ? 'Unpick' : 'Unpack'} {dialog.order.so_number}?</div>
+              <div style={{ fontSize: 13.5, color: 'var(--gray-500)', lineHeight: 1.6, marginBottom: 20 }}>
+                {dialog.kind === 'unpick'
+                  ? 'The order goes back to Open and the stock picked for it is released. Any packing details are removed too. Are you sure?'
+                  : 'The order goes back to Picked and all packing details (cartons, carrier and tracking) are removed. Are you sure?'}
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                <button className="btn btn-ghost" style={{ height: 38, padding: '0 18px' }} onClick={() => setDialog(null)} disabled={busy}>No, keep it</button>
+                <button className="btn btn-primary" style={{ height: 38, padding: '0 20px' }} onClick={() => undoOne(dialog.order, dialog.kind as 'unpick' | 'unpack')} disabled={busy}>{busy ? 'Please wait…' : dialog.kind === 'unpick' ? 'Yes, unpick' : 'Yes, unpack'}</button>
               </div>
             </>)}
 

@@ -131,6 +131,52 @@ export async function loadPickListPayload(db: Db, orgId: string, ids: string[]):
     }
   })
 
+  // Closed orders: show what was actually shipped, from the stock movements written when the order was closed
+  const doneIds = ids.filter(i => !orderIds.includes(i))
+  if (doneIds.length) {
+    const { data: closed } = await db.from('sales_orders')
+      .select('id, so_number, status, customer_name, location_name, expected_date, notes, sales_order_lines ( id, product_id, product_name, product_sku, unit, quantity, line_notes, sort_order )')
+      .eq('org_id', orgId).in('id', doneIds)
+    type CL = { id: string; product_id: string | null; product_name: string | null; product_sku: string | null; unit: string | null; quantity: number; line_notes: string | null; sort_order: number | null }
+    type CO = { id: string; so_number: string | null; status: string; customer_name: string | null; location_name: string | null; expected_date: string | null; notes: string | null; sales_order_lines: CL[] | null }
+    const done = ((closed ?? []) as CO[]).filter(o => ['closed', 'shipped', 'delivered'].includes(String(o.status).toLowerCase()))
+    if (done.length) {
+      const { data: mv } = await db.from('stock_movements')
+        .select('reference_id, product_id, qty, bin_id, batch_number, serial_number, expiry_date')
+        .eq('org_id', orgId).eq('reference_type', 'sales_order').eq('movement_type', 'sale').in('reference_id', done.map(o => o.id))
+      type M = { reference_id: string; product_id: string; qty: number; bin_id: string | null; batch_number: string | null; serial_number: string | null; expiry_date: string | null }
+      const binIds = [...new Set(((mv ?? []) as M[]).map(m => m.bin_id).filter((x): x is string => !!x))]
+      const { data: binRows } = binIds.length ? await db.from('bins').select('id, name').in('id', binIds) : { data: [] }
+      const binName = new Map(((binRows ?? []) as { id: string; name: string }[]).map(b => [b.id, b.name]))
+      for (const o of done) {
+        const lines = [...(o.sales_order_lines ?? [])].sort((x, y) => (x.sort_order ?? 0) - (y.sort_order ?? 0))
+        const rows: PickRow[] = []
+        let needsSerials = false
+        for (const l of lines) {
+          if (!l.product_id) continue
+          const first = lines.find(x => x.product_id === l.product_id)
+          if (first?.id !== l.id) continue // movements are per product: print them once, on the first line for that product
+          const mine = ((mv ?? []) as M[]).filter(m => m.reference_id === o.id && m.product_id === l.product_id)
+          const merged = new Map<string, PickRow>()
+          for (const m of mine) {
+            const qty = Math.abs(Number(m.qty) || 0)
+            if (qty <= 0) continue
+            if (m.serial_number) needsSerials = true
+            const bin = m.bin_id ? (binName.get(m.bin_id) ?? null) : null
+            const key = [bin, m.batch_number, m.serial_number, m.expiry_date].join('|')
+            const hit = merged.get(key)
+            if (hit) hit.qty += qty
+            else merged.set(key, { line_id: l.id, product_id: l.product_id, name: l.product_name ?? '', sku: l.product_sku ?? '', note: (l.line_notes ?? '').trim() || null, unit: l.unit ?? 'Each', qty, bin, batch: m.batch_number, expiry: m.expiry_date, serial: m.serial_number, serialSlots: 0 })
+          }
+          if (merged.size === 0) rows.push({ line_id: l.id, product_id: l.product_id, name: l.product_name ?? '', sku: l.product_sku ?? '', note: (l.line_notes ?? '').trim() || null, unit: l.unit ?? 'Each', qty: Number(l.quantity) || 0, bin: null, batch: null, expiry: null, serial: null, serialSlots: 0 })
+          else rows.push(...merged.values())
+        }
+        rows.sort((a, b) => (a.bin === null ? 1 : 0) - (b.bin === null ? 1 : 0) || natural.compare(a.bin ?? '', b.bin ?? '') || natural.compare(a.name, b.name))
+        orders.push({ id: o.id, so_number: o.so_number ?? '', customer: o.customer_name ?? '', ship_by: o.expected_date, note: (o.notes ?? '').trim() || null, location: o.location_name ?? '', needsSerials, rows })
+      }
+    }
+  }
+
   const orgRow = (org ?? {}) as { timezone?: string | null; pick_list_settings?: unknown }
   return { orders, config: normalizePickListConfig(orgRow.pick_list_settings), timezone: orgRow.timezone || 'Pacific/Auckland' }
 }

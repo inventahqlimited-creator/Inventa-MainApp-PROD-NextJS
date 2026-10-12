@@ -22,9 +22,12 @@ const ALLOWED = {
   allowedTags: ['p', 'br', 'strong', 'b', 'em', 'i', 'u', 'a', 'ul', 'ol', 'li', 'div', 'span', 'h1', 'h2', 'h3', 'blockquote', 'hr', 'img', 'table', 'tbody', 'thead', 'tr', 'td', 'th'],
   allowedAttributes: { a: ['href', 'target', 'rel'], img: ['src', 'alt', 'width', 'height'], '*': ['style'], td: ['colspan', 'rowspan'], th: ['colspan', 'rowspan'] },
   allowedSchemes: ['http', 'https', 'mailto', 'tel'],
-  allowedSchemesByTag: { img: ['https', 'data'] },
-  allowedStyles: { '*': { color: [/^[#a-z0-9(),.\s%-]+$/i], 'font-size': [/^\d+(\.\d+)?(px|pt|em|rem|%)$/], 'font-weight': [/^(bold|normal|\d{3})$/], 'text-align': [/^(left|right|center)$/], 'font-style': [/^(italic|normal)$/], 'text-decoration': [/^[a-z\s-]+$/], 'font-family': [/^[a-z0-9\s,'"-]+$/i], 'background-color': [/^[#a-z0-9(),.\s%-]+$/i] } },
-  transformTags: { a: sanitizeHtml.simpleTransform('a', { rel: 'noopener noreferrer', target: '_blank' }) },
+  allowedSchemesByTag: { img: ['https'] },
+  allowedStyles: { '*': { color: [/^[#a-z0-9(),.\s%-]+$/i], 'font-size': [/^\d+(\.\d+)?(px|pt|em|rem|%)$/], 'font-weight': [/^(bold|normal|\d{3})$/], 'text-align': [/^(left|right|center)$/], 'font-style': [/^(italic|normal)$/], 'text-decoration': [/^[a-z\s-]+$/], 'font-family': [/^[a-z0-9\s,'"-]+$/i], 'max-width': [/^\d+%$/], height: [/^auto$/], border: [/^0$/], 'background-color': [/^[#a-z0-9(),.\s%-]+$/i] } },
+  transformTags: {
+    a: sanitizeHtml.simpleTransform('a', { rel: 'noopener noreferrer', target: '_blank' }),
+    img: (tag: string, attribs: Record<string, string>) => ({ tagName: tag, attribs: { ...attribs, style: 'max-width:100%;height:auto;border:0' } }),
+  },
 }
 export const cleanHtml = (html: string) => sanitizeHtml(html ?? '', ALLOWED)
 

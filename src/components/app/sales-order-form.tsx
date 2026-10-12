@@ -244,11 +244,12 @@ function Dd({ label, value, options, onPick, open, setOpen, disabled, placeholde
 }
 
 // Actions dropdown in the header of a saved order (view mode)
-function ActionsMenu({ orderId, soNumber, statusLower, relatedPoId, canEdit, canCancel, canPo, isQuote, onEdit, onCancel, onPo, onError, xero, onPostXero }: {
+function ActionsMenu({ orderId, soNumber, statusLower, relatedPoId, canEdit, canCancel, canPo, isQuote, onEdit, onCancel, onPo, onError, xero, onPostXero, onUnpick, onUnpack }: {
   orderId: string; soNumber: string; statusLower: string; relatedPoId: string | null
   xero?: { show: boolean; canPost: boolean; info: XeroRowInfo | null }; onPostXero: () => void
   canEdit: boolean; canCancel: boolean; canPo: boolean; isQuote: boolean
   onEdit: () => void; onCancel: () => void; onPo: () => void
+  onUnpick?: () => void; onUnpack?: () => void
   onError: (message: string) => void
 }) {
   const router = useRouter()
@@ -268,7 +269,7 @@ function ActionsMenu({ orderId, soNumber, statusLower, relatedPoId, canEdit, can
 
   const inOpen = OPEN_GROUP.includes(statusLower)
   const inPicking = PICKING_GROUP.includes(statusLower)
-  const canPickList = inOpen || inPicking || ['picked', 'packed'].includes(statusLower)
+  const canPickList = inOpen || inPicking || ['picked', 'packed', 'closed', 'shipped', 'delivered'].includes(statusLower)
   const canPackList = inPicking || ['picked', 'packed', 'closed', 'shipped', 'delivered'].includes(statusLower)
   const canInvoice = isQuote || inOpen || inPicking || ['picked', 'packed', 'closed', 'shipped', 'delivered'].includes(statusLower)
 
@@ -302,6 +303,8 @@ function ActionsMenu({ orderId, soNumber, statusLower, relatedPoId, canEdit, can
       </button>
       {open && (
         <div className="inv-dropdown" role="menu" style={{ display: 'block', position: 'absolute', right: 0, top: 'calc(100% + 6px)', width: 230, padding: 6, zIndex: 60 }}>
+          {onUnpick && item('Unpick Order', () => { shut(); onUnpick() }, { icon: ic('M3 12a9 9 0 1 0 3-6.7M3 4v5h5') })}
+          {onUnpack && item('Unpack Order', () => { shut(); onUnpack() }, { icon: ic('M3 12a9 9 0 1 0 3-6.7M3 4v5h5') })}
           {canEdit && item('Edit Order', () => { shut(); onEdit() }, { icon: ic('M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z') })}
           {(canPickList || canPackList || canInvoice) && item('Print', () => setPrintOpen(o => !o), { icon: ic('M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6z'), chevron: true })}
           {printOpen && (
@@ -458,6 +461,10 @@ function SalesOrderFormInner({
   const xeroPost = usePostToXero('invoice', (_id, info) => { setXeroInfo(info) })
   const [confirmLeave, setConfirmLeave] = useState(false)
   const [confirmCancelOrder, setConfirmCancelOrder] = useState(false)
+  const [confirmUndo, setConfirmUndo] = useState<null | 'unpick' | 'unpack'>(null)
+  const [undoing, setUndoing] = useState(false)
+  const canPickSales = useCan('pick_sales')
+  const canPackSales = useCan('pack_sales')
   const [poOpen, setPoOpen] = useState(false)
   const [convertOpen, setConvertOpen] = useState(false)
   const [convertMode, setConvertMode] = useState<'copy' | 'convert'>('copy')
@@ -778,6 +785,23 @@ function SalesOrderFormInner({
     }
   }
 
+  async function undoFulfilment(what: 'unpick' | 'unpack') {
+    setUndoing(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/org/sales/${order!.id}/${what}`, { method: 'POST' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { setError(data.error ?? `Could not ${what} this order`); return }
+      setConfirmUndo(null)
+      toast.success(what === 'unpick' ? 'Order unpicked — stock released' : 'Order unpacked')
+      router.refresh()
+    } catch {
+      setError('Network error — please try again.')
+    } finally {
+      setUndoing(false)
+    }
+  }
+
   // Save errors render at the top of the scroll area — always bring them into view
   useEffect(() => {
     if (error) scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
@@ -845,6 +869,8 @@ function SalesOrderFormInner({
               onEdit={() => { setError(null); setMode('edit') }}
               onCancel={() => setConfirmCancelOrder(true)}
               onPo={() => { setPoScope('all'); setPoOpen(true) }}
+              onUnpick={fulfilmentMode !== 'none' && canPickSales && (inPicking || isPacked) ? () => setConfirmUndo('unpick') : undefined}
+              onUnpack={fulfilmentMode === 'full' && canPackSales && isPacked ? () => setConfirmUndo('unpack') : undefined}
               onError={setError}
             />
           )}
@@ -1469,6 +1495,18 @@ function SalesOrderFormInner({
             </div>
           </div>
         </div>
+      )}
+      {confirmUndo && (
+        <ConfirmModal
+          title={confirmUndo === 'unpick' ? 'Unpick sales order?' : 'Unpack sales order?'}
+          message={confirmUndo === 'unpick'
+            ? `Are you sure you want to unpick ${order?.so_number ?? 'this order'}? It goes back to Open and the picked stock is released. Any packing details are removed too.`
+            : `Are you sure you want to unpack ${order?.so_number ?? 'this order'}? It goes back to Picked and all packing details are removed.`}
+          confirmLabel={confirmUndo === 'unpick' ? 'Yes, unpick' : 'Yes, unpack'}
+          busy={undoing}
+          onConfirm={() => undoFulfilment(confirmUndo)}
+          onCancel={() => setConfirmUndo(null)}
+        />
       )}
       {confirmCancelOrder && (
         <ConfirmModal

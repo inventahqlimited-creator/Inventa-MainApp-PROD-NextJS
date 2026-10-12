@@ -5,25 +5,26 @@
 
 export type InvoiceConfig = {
   header: { logo: boolean; businessDetails: boolean }
-  details: { invoiceDate: boolean; dueDate: boolean; terms: boolean; orderNumber: boolean; customerPo: boolean }
+  details: { invoiceDate: boolean; dueDate: boolean; terms: boolean; orderNumber: boolean; customerPo: boolean; carrier: boolean; shippingMethod: boolean; serviceType: boolean; trackingNumber: boolean }
   addresses: { billTo: boolean; shipTo: boolean }
-  columns: { sku: boolean; unitPrice: boolean; discount: boolean; tax: boolean }
+  columns: { sku: boolean; serial: boolean; batch: boolean; expiry: boolean; unitPrice: boolean; discount: boolean; tax: boolean }
   footer: { paymentDetails: boolean; notes: boolean }
   content: { numberPrefix: string; bankName: string; accountName: string; accountNumber: string; notes: string }
 }
 
 export const DEFAULT_INVOICE_CONFIG: InvoiceConfig = {
   header: { logo: true, businessDetails: true },
-  details: { invoiceDate: true, dueDate: true, terms: true, orderNumber: true, customerPo: true },
+  // carrier, shipping method, service, tracking number and the serial / batch / expiry columns are OFF until switched on in Settings
+  details: { invoiceDate: true, dueDate: true, terms: true, orderNumber: true, customerPo: true, carrier: false, shippingMethod: false, serviceType: false, trackingNumber: false },
   addresses: { billTo: true, shipTo: true },
-  columns: { sku: true, unitPrice: true, discount: true, tax: true },
+  columns: { sku: true, serial: false, batch: false, expiry: false, unitPrice: true, discount: true, tax: true },
   footer: { paymentDetails: true, notes: true },
   content: { numberPrefix: 'INV-', bankName: '', accountName: '', accountNumber: '', notes: '' },
 }
 
 type Toggles = Exclude<keyof InvoiceConfig, 'content'>
 
-// Anything missing or malformed falls back to "show it", so a half-saved setting can never hide something by accident.
+// Anything missing or malformed falls back to the default (most things are shown; the shipping and tracking extras are off).
 export function normalizeInvoiceConfig(raw: unknown): InvoiceConfig {
   const src = (raw && typeof raw === 'object' ? raw : {}) as Record<string, Record<string, unknown> | undefined>
   const pick = <K extends Toggles>(group: K): InvoiceConfig[K] => {
@@ -73,6 +74,10 @@ export const INVOICE_OPTIONS: { group: Toggles; title: string; items: { key: str
       { key: 'terms', label: 'Terms' },
       { key: 'orderNumber', label: 'Order #' },
       { key: 'customerPo', label: 'Customer PO' },
+      { key: 'carrier', label: 'Carrier' },
+      { key: 'shippingMethod', label: 'Shipping method' },
+      { key: 'serviceType', label: 'Service' },
+      { key: 'trackingNumber', label: 'Tracking number' },
     ],
   },
   {
@@ -81,6 +86,9 @@ export const INVOICE_OPTIONS: { group: Toggles; title: string; items: { key: str
     items: [
       { key: 'description', label: 'Description', always: true },
       { key: 'sku', label: 'SKU' },
+      { key: 'serial', label: 'Serial numbers' },
+      { key: 'batch', label: 'Batch' },
+      { key: 'expiry', label: 'Expiry' },
       { key: 'qty', label: 'Qty', always: true },
       { key: 'unitPrice', label: 'Unit price' },
       { key: 'discount', label: 'Discount' },

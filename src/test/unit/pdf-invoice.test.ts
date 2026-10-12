@@ -24,7 +24,7 @@ describe('invoice pdf', () => {
     expect(po.filename).toBe('Purchase-Order-PO-0007.pdf')
   })
   it('works with every layout toggle off and with a bare order', async () => {
-    const off = { header: { logo: false, businessDetails: false }, details: { invoiceDate: false, dueDate: false, terms: false, orderNumber: false, customerPo: false }, addresses: { billTo: false, shipTo: false }, columns: { sku: false, unitPrice: false, discount: false, tax: false }, footer: { paymentDetails: false, notes: false }, content: DEFAULT_INVOICE_CONFIG.content }
+    const off = { header: { logo: false, businessDetails: false }, details: { invoiceDate: false, dueDate: false, terms: false, orderNumber: false, customerPo: false, carrier: false, shippingMethod: false, serviceType: false, trackingNumber: false }, addresses: { billTo: false, shipTo: false }, columns: { sku: false, serial: false, batch: false, expiry: false, unitPrice: false, discount: false, tax: false }, footer: { paymentDetails: false, notes: false }, content: DEFAULT_INVOICE_CONFIG.content }
     expect((await renderInvoicePdf(payload({ config: off }))).buffer.length).toBeGreaterThan(1000)
     const bare = { ...SAMPLE_INVOICES[0], bill_to: null, ship_to: null, terms: null, customer_po: null, notes: null, costs: [], taxes: [], invoice_date: null }
     expect((await renderInvoicePdf(payload({ orders: [bare] }))).buffer.length).toBeGreaterThan(1000)

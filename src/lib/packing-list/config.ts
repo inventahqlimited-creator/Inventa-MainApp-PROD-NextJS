@@ -16,13 +16,14 @@ export const DEFAULT_PACKING_LIST_CONFIG: PackingListConfig = {
   header: { logo: true, businessDetails: true, barcode: true },
   meta: { orderDate: true, shipDate: true, customerRef: true, shipBy: true },
   addresses: { shipFrom: true, shipTo: true },
-  shipping: { carrier: true, service: true, tracking: true, packages: true },
-  columns: { notes: true, batch: true, serial: true, expiry: true, ordered: true, backorder: true },
+  // carrier, service, tracking number and the batch / serial / expiry columns are OFF until switched on in Settings
+  shipping: { carrier: false, service: false, tracking: false, packages: true },
+  columns: { notes: true, batch: false, serial: false, expiry: false, ordered: true, backorder: true },
   stats: { lines: true, units: true, backordered: true, packages: true },
   footer: { deliveryNotes: true, packedBy: true, receivedBy: true },
 }
 
-// Anything missing or malformed falls back to "show it", so a half-saved setting can never hide something by accident.
+// Anything missing or malformed falls back to the default (most things are shown; the shipping and tracking extras are off).
 export function normalizePackingListConfig(raw: unknown): PackingListConfig {
   const src = (raw && typeof raw === 'object' ? raw : {}) as Record<string, Record<string, unknown> | undefined>
   const pick = <K extends keyof PackingListConfig>(group: K): PackingListConfig[K] => {
@@ -72,7 +73,7 @@ export const PACKING_LIST_OPTIONS: { group: keyof PackingListConfig; title: stri
     title: 'Shipping details',
     items: [
       { key: 'carrier', label: 'Carrier' },
-      { key: 'service', label: 'Service' },
+      { key: 'service', label: 'Shipping method & service' },
       { key: 'tracking', label: 'Tracking number' },
       { key: 'packages', label: 'Packages' },
     ],

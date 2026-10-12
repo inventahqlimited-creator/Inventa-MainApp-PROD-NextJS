@@ -1,3 +1,4 @@
+import { saveError } from '@/lib/api/db-error'
 import { NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { pick, badForeignKey, PRODUCT_FIELDS, PRODUCT_LINKS } from '@/lib/api/sanitize'
@@ -30,6 +31,6 @@ export async function POST(request: Request) {
     .select('id')
     .single()
 
-  if (error) { console.error('products insert failed', error.message); return NextResponse.json({ error: 'Could not save the product' }, { status: 500 }) }
+  if (error) { console.error('products insert failed', error.message); const e = saveError(error, 'product'); return NextResponse.json({ error: e.message }, { status: e.status }) }
   return NextResponse.json({ id: (data as { id: string }).id })
 }

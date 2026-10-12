@@ -1,3 +1,4 @@
+import { saveError } from '@/lib/api/db-error'
 import { NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { pick, TAX_RATE_FIELDS } from '@/lib/api/sanitize'
@@ -15,6 +16,6 @@ export async function POST(request: Request) {
   const clean = pick(await request.json().catch(() => null), TAX_RATE_FIELDS)
   if (!clean) return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
   const { data, error } = await adminClient.from('tax_rates').insert({ ...clean, org_id: (m as { org_id: string }).org_id }).select('id').single()
-  if (error) { console.error('tax rate insert failed', error.message); return NextResponse.json({ error: 'Could not save the tax rate' }, { status: 500 }) }
+  if (error) { console.error('tax rate insert failed', error.message); const e = saveError(error, 'tax rate'); return NextResponse.json({ error: e.message }, { status: e.status }) }
   return NextResponse.json({ id: (data as { id: string }).id })
 }

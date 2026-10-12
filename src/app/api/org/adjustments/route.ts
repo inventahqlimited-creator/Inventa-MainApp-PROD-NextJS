@@ -1,3 +1,4 @@
+import { saveError } from '@/lib/api/db-error'
 import { NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { cleanAdjustment, checkOwnership } from '@/lib/adjustments/validate'
@@ -34,7 +35,7 @@ export async function POST(request: Request) {
     .select('id')
     .single()
 
-  if (adjError) { console.error('adjustment insert failed', adjError.message); return NextResponse.json({ error: 'Could not save the adjustment' }, { status: 500 }) }
+  if (adjError) { console.error('adjustment insert failed', adjError.message); const e = saveError(adjError, 'adjustment'); return NextResponse.json({ error: e.message }, { status: e.status }) }
   const adjId = (adj as { id: string }).id
 
   if (lines && lines.length > 0) {

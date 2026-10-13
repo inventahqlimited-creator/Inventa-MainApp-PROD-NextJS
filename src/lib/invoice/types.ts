@@ -13,6 +13,10 @@ export type InvoiceLine = {
   discount: number // percent
   taxRate: number // percent
   amount: number // after discount, before tax
+  /** What was shipped, from the picks (or the stock movements once shipped) */
+  serials?: string[]
+  batches?: string[]
+  expiries?: string[] // YYYY-MM-DD
 }
 
 export type InvoiceCost = { name: string; sub: string; taxRate: number; amount: number }
@@ -33,6 +37,11 @@ export type InvoiceOrder = {
   invoice_date: string | null
   terms: string | null
   customer_po: string | null
+  /** Shipping details saved on the order (Pack screen) */
+  carrier?: string
+  shipping_method?: string
+  service_type?: string
+  tracking_number?: string
   notes: string | null
   currency: string
   bill_to: InvoiceAddress | null
@@ -64,4 +73,8 @@ export type InvoicePayload = {
   config: InvoiceConfig
   timezone: string
   decimals: number
+  /** how stock quantities are shown (Settings → Allow Decimal Quantities) */
+  qty?: import('@/lib/qty').QtyFmt
+  /** The organisation's payment terms, used to work out due dates. */
+  paymentTerms?: import('@/lib/payment-terms').PaymentTerm[]
 }

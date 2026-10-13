@@ -1,5 +1,6 @@
 // src/app/api/org/transfers/[id]/route.ts
 import { NextResponse } from 'next/server'
+import { checkLineQuantities } from '@/lib/qty-server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { pickTR, lineRow, validateTransfer } from '../shared'
 import { requireEditOrCancel } from '@/lib/auth/access'
@@ -72,6 +73,7 @@ export async function PATCH(request: Request, { params }: Params) {
     return NextResponse.json({ error: 'The From location can\'t change once items have been picked.' }, { status: 400 })
   }
 
+  if (Array.isArray(body.lines)) { const e = await checkLineQuantities(db, ctx.org_id, body.lines as Record<string, unknown>[], 'quantity'); if (e) return NextResponse.json({ error: e }, { status: 400 }) }
   // Validate lines before writing anything
   if (Array.isArray(body.lines)) {
     const incoming = body.lines as Record<string, unknown>[]

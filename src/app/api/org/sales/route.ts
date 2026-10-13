@@ -1,5 +1,6 @@
 // src/app/api/org/sales/route.ts
 import { NextResponse } from 'next/server'
+import { checkLineQuantities } from '@/lib/qty-server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { pickSO, lineRow, costLineRow, nextSoNumber } from './shared'
 import { ownsOrder } from '@/lib/related'
@@ -24,6 +25,7 @@ export async function POST(request: Request) {
 
   const body = await request.json()
   const lines: Record<string, unknown>[] = Array.isArray(body.lines) ? body.lines : []
+  { const e = await checkLineQuantities(adminClient, orgId, lines, 'quantity'); if (e) return NextResponse.json({ error: e }, { status: 400 }) }
   const costLines: Record<string, unknown>[] = Array.isArray(body.cost_lines) ? body.cost_lines : []
   if (lines.length === 0) return NextResponse.json({ error: 'Add at least one line item.' }, { status: 400 })
 

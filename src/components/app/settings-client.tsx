@@ -1,5 +1,6 @@
 'use client'
 
+import { useTermNames } from '@/components/app/payment-terms-provider'
 import { useState, useRef, useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
@@ -746,6 +747,9 @@ function ContactsTab({ taxRates, currencies, locations, priceLevels, orgId, show
   const [defCurrency, setDefCurrency] = useState('')
   const [defLocation, setDefLocation] = useState('')
   const [defPaymentTerms, setDefPaymentTerms] = useState('Net 30')
+  const termNames = useTermNames()
+  const canC = useCan('manage_contact_settings'), canS = useCan('manage_sales_settings'), canP = useCan('manage_purchase_settings')
+  const canManageTerms = canC || canS || canP
   const [defPriceTier, setDefPriceTier] = useState('')
   const [saving, setSaving] = useState(false)
 
@@ -783,13 +787,15 @@ function ContactsTab({ taxRates, currencies, locations, priceLevels, orgId, show
             <Select value={defLocation} onChange={setDefLocation} options={locationOptions} />
           </Field>
           <Field label="Default Payment Terms">
-            <Select value={defPaymentTerms} onChange={setDefPaymentTerms} options={['Net 7','Net 14','Net 30','Net 60','COD','Prepaid'].map(t => ({ value: t, label: t }))} />
+            <Select value={defPaymentTerms} onChange={setDefPaymentTerms} options={termNames.map(t => ({ value: t, label: t }))} />
           </Field>
           <Field label="Default Price Tier">
             <Select value={defPriceTier} onChange={setDefPriceTier} options={[{ value: '', label: '— None —' }, ...priceLevels.map(pl => ({ value: pl.id, label: pl.name }))]} />
           </Field>
         </div>
       </Card>
+
+      <PaymentTermsCard canManage={canManageTerms} showToast={showToast} />
 
       <CustomFieldsAndLists
         apiBase="/api/org/contact-custom"
@@ -808,6 +814,7 @@ import RolesModal from '@/components/app/roles-modal'
 import { normalizeSecurity, SESSION_TIMEOUT_OPTIONS, sessionTimeoutLabel, parseIpRule, isIpAllowed, MAX_IP_RULES, type SecuritySettings } from '@/lib/auth/security-settings'
 import { normalizeNotifications, type NotificationSettings, type OverdueRule } from '@/lib/notifications/config'
 import { useCan } from '@/components/app/permissions-provider'
+import PaymentTermsCard from '@/components/app/payment-terms-card'
 import { normalizePolicy, ROTATION_DAYS, MIN_LENGTH_FLOOR, MIN_LENGTH_CAP, type PasswordPolicy } from '@/lib/auth/password-policy'
 
 // ── Notifications ─────────────────────────────────────────────────────
@@ -816,8 +823,8 @@ function NotificationsCard({ initial, canManage, showToast }: {
   initial: unknown; canManage: boolean; showToast: (type: 'success' | 'error', msg: string) => void
 }) {
   const [n, setN] = useState<NotificationSettings>(() => normalizeNotifications(initial))
-  const [warnTxt, setWarnTxt] = useState({ sales: String(n.sales_overdue.warn_days), purchase: String(n.purchase_overdue.warn_days) })
-  const [critTxt, setCritTxt] = useState({ sales: String(n.sales_overdue.critical_days), purchase: String(n.purchase_overdue.critical_days) })
+  const [warnTxt, setWarnTxt] = useState({ sales: String(n.sales_overdue.warn_days), purchase: String(n.purchase_overdue.warn_days), transfer: String(n.transfer_overdue.warn_days) })
+  const [critTxt, setCritTxt] = useState({ sales: String(n.sales_overdue.critical_days), purchase: String(n.purchase_overdue.critical_days), transfer: String(n.transfer_overdue.critical_days) })
   const [saving, setSaving] = useState(false)
 
   async function save() {
@@ -826,8 +833,9 @@ function NotificationsCard({ initial, canManage, showToast }: {
       ...n,
       sales_overdue: build(n.sales_overdue, warnTxt.sales, critTxt.sales),
       purchase_overdue: build(n.purchase_overdue, warnTxt.purchase, critTxt.purchase),
+      transfer_overdue: build(n.transfer_overdue, warnTxt.transfer, critTxt.transfer),
     }
-    for (const r of [next.sales_overdue, next.purchase_overdue]) {
+    for (const r of [next.sales_overdue, next.purchase_overdue, next.transfer_overdue]) {
       if (r.critical_days < r.warn_days) { showToast('error', 'Critical days must be the same as or more than the first alert'); return }
     }
     setSaving(true)
@@ -840,8 +848,8 @@ function NotificationsCard({ initial, canManage, showToast }: {
       const d = await res.json().catch(() => null)
       const saved = normalizeNotifications(d?.notification_settings ?? next)
       setN(saved)
-      setWarnTxt({ sales: String(saved.sales_overdue.warn_days), purchase: String(saved.purchase_overdue.warn_days) })
-      setCritTxt({ sales: String(saved.sales_overdue.critical_days), purchase: String(saved.purchase_overdue.critical_days) })
+      setWarnTxt({ sales: String(saved.sales_overdue.warn_days), purchase: String(saved.purchase_overdue.warn_days), transfer: String(saved.transfer_overdue.warn_days) })
+      setCritTxt({ sales: String(saved.sales_overdue.critical_days), purchase: String(saved.purchase_overdue.critical_days), transfer: String(saved.transfer_overdue.critical_days) })
       showToast('success', 'Notification settings saved')
     } else showToast('error', 'Failed to save')
   }
@@ -855,9 +863,9 @@ function NotificationsCard({ initial, canManage, showToast }: {
     </div>
   )
 
-  const overdue = (key: 'sales' | 'purchase', label: string, sub: string) => {
-    const r = key === 'sales' ? n.sales_overdue : n.purchase_overdue
-    const field = key === 'sales' ? 'sales_overdue' : 'purchase_overdue'
+  const overdue = (key: 'sales' | 'purchase' | 'transfer', label: string, sub: string) => {
+    const field = (key + '_overdue') as 'sales_overdue' | 'purchase_overdue' | 'transfer_overdue'
+    const r = n[field]
     return (
       <>
         <ToggleRow label={label} sub={sub} active={r.enabled} onChange={v => canManage && setN(p => ({ ...p, [field]: { ...p[field], enabled: v } }))} />
@@ -886,6 +894,7 @@ function NotificationsCard({ initial, canManage, showToast }: {
         />
         {overdue('sales', 'Overdue sales orders', 'Alert when an open sales order is past its delivery date')}
         {overdue('purchase', 'Late purchase orders', 'Alert when a purchase order has not been received by its expected delivery date')}
+        {overdue('transfer', 'Overdue transfers', 'Alert when a transfer has not been completed by its expected date')}
         <div style={{ fontSize: 12, color: 'var(--gray-400)', lineHeight: 1.5 }}>
           Everyone sees the alerts for the areas they can access. Marking an alert as read only affects your own browser.
           {!canManage && ' You need the "Manage company settings" permission to change this.'}
@@ -1213,12 +1222,18 @@ export default function SettingsClient({
   // Confirm modal for disabling global tracking when products with stock exist
   const [trackingConfirm, setTrackingConfirm] = useState<{ key: string; label: string; lockedCount: number } | null>(null)
 
-  async function saveProductSetting(key: string, value: unknown) {
-    await fetch('/api/org/settings', {
+  async function saveProductSetting(key: string, value: unknown): Promise<boolean> {
+    const res = await fetch('/api/org/settings', {
       method: 'PATCH', headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ [key]: value }),
     })
-    showToast('success', 'Setting saved')
+    if (!res.ok) {
+      const d = await res.json().catch(() => ({}))
+      showToast('error', d.error ?? 'Could not save this setting')
+      return false
+    }
+    showToast('success', key.startsWith('decimal_qty') ? 'Setting saved — refresh the page to see quantities in the new format' : 'Setting saved')
+    return true
   }
 
   async function handleTrackingToggle(key: 'serial_tracking' | 'batch_tracking' | 'expiry_tracking', newValue: boolean, setFn: (v: boolean) => void, label: string) {
@@ -1333,6 +1348,7 @@ export default function SettingsClient({
   const [poStart, setPoStart] = useState(String(org.po_start ?? '1'))
   const [poDigits, setPoDigits] = useState(String(org.po_digits ?? '4'))
   const [poDefaultPaymentTerms, setPoDefaultPaymentTerms] = useState(String(org.po_default_payment_terms ?? 'Net 30'))
+  const termNames = useTermNames()
   const [poDefaultDeliverTo, setPoDefaultDeliverTo] = useState(String(org.po_default_deliver_to ?? ''))
   const [savingPoDefaults, setSavingPoDefaults] = useState(false)
   const [poDocCfg, setPoDocCfg] = useState<PurchaseOrderConfig>(() => normalizePurchaseOrderConfig(org.purchase_order_settings))
@@ -1888,7 +1904,7 @@ export default function SettingsClient({
             </Card>
             <Card title="Quantity Settings" subtitle="Control how quantities are entered and displayed">
               <div style={{ padding: '16px 20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
-                <ToggleRow label="Allow Decimal Quantities" sub="Enables buying and selling in fractional quantities (e.g. 0.5, 1.25)" active={decimalQty} onChange={v => { setDecimalQty(v); saveProductSetting('decimal_qty', v) }} />
+                <ToggleRow label="Allow Decimal Quantities" sub="Show every stock quantity with decimals (1.00) and allow part-units such as 0.5. Off = whole numbers only. Serial-tracked products are always whole." active={decimalQty} onChange={async v => { setDecimalQty(v); if (!(await saveProductSetting('decimal_qty', v))) setDecimalQty(!v) }} />
                 {decimalQty && (
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '14px 16px', background: 'var(--gray-50)', border: '1.5px solid var(--gray-200)', borderRadius: 10 }}>
                     <div>
@@ -2024,7 +2040,7 @@ export default function SettingsClient({
             <Card title="Purchase Order Defaults" subtitle="Default values for new purchase orders" action={<SaveBtn onClick={savePoDefaults} saving={savingPoDefaults} label="Save Defaults" />}>
               <div style={{ padding: '18px 20px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
                 <Field label="Default Payment Terms">
-                  <Select value={poDefaultPaymentTerms} onChange={setPoDefaultPaymentTerms} options={['Net 7','Net 14','Net 30','Net 60','COD','Prepaid'].map(t => ({ value: t, label: t }))} />
+                  <Select value={poDefaultPaymentTerms} onChange={setPoDefaultPaymentTerms} options={termNames.map(t => ({ value: t, label: t }))} />
                 </Field>
                 <Field label="Default Deliver To">
                   <Select value={poDefaultDeliverTo} onChange={setPoDefaultDeliverTo} options={[{ value: '', label: '— None —' }, ...locations.filter(l => l.active).map(l => ({ value: l.id, label: l.name }))]} />
@@ -2156,7 +2172,7 @@ export default function SettingsClient({
             <Card title="Sales Order Defaults" subtitle="Default values for new sales orders" action={<SaveBtn onClick={saveSoDefaults} saving={savingSoDefaults} label="Save Defaults" />}>
               <div style={{ padding: '18px 20px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
                 <Field label="Default Payment Terms">
-                  <Select value={soDefaultPaymentTerms} onChange={setSoDefaultPaymentTerms} options={['Net 7','Net 14','Net 30','Net 60','COD','Prepaid'].map(t => ({ value: t, label: t }))} />
+                  <Select value={soDefaultPaymentTerms} onChange={setSoDefaultPaymentTerms} options={termNames.map(t => ({ value: t, label: t }))} />
                 </Field>
                 <Field label="Default Ship From">
                   <Select value={soDefaultShipFrom} onChange={setSoDefaultShipFrom} options={[{ value: '', label: '— None —' }, ...locations.filter(l => l.active).map(l => ({ value: l.id, label: l.name }))]} />
@@ -2401,7 +2417,7 @@ export default function SettingsClient({
           <Card title="Integrations" subtitle="Connect third-party apps and services">
             <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: 12 }}>
               {[
-                { name: 'Xero', sub: 'Sync invoices, bills and contacts with Xero accounting', icon: '💼', logo: '/integrations/xero.png', status: xeroInstalled ? 'Installed' : 'Talk to sales' },
+                { name: 'Xero', sub: 'Sync invoices, bills and contacts with Xero accounting', icon: '💼', logo: '/integrations/xero.png', status: xeroInstalled ? 'Installed' : 'Talk to us' },
                 { name: 'Email Autobot', sub: 'InventaHQ’s native email automation bot to simplify workflows', icon: '🤖', logo: '/integrations/email-autobot.svg', status: 'Coming soon' },
                 { name: 'MYOB', sub: 'Sync invoices, bills and contacts with MYOB accounting', icon: '💼', logo: '/integrations/myob.png', status: 'Coming soon' },
                 { name: 'Starshipit', sub: 'Generate shipping labels and track parcels', icon: '📦', logo: '/integrations/starshipit.png', status: 'Coming soon' },
@@ -2426,7 +2442,7 @@ export default function SettingsClient({
                       </div>
                     </div>
                     {isXero && !xeroInstalled
-                      ? <button className="btn btn-primary" style={{ height: 32, fontSize: 12.5 }}>Talk to sales</button>
+                      ? <button className="btn btn-primary" style={{ height: 32, fontSize: 12.5 }}>Talk to us</button>
                       : open
                         ? <span style={{ fontSize: 11.5, fontWeight: 600, color: '#047857', background: '#D1FAE5', padding: '3px 10px', borderRadius: 20 }}>Installed</span>
                         : <span style={{ fontSize: 11.5, fontWeight: 600, color: 'var(--gray-400)', background: 'var(--gray-100)', padding: '3px 10px', borderRadius: 20 }}>{int.status}</span>}

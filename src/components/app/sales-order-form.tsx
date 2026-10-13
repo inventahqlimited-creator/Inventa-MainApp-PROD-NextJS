@@ -4,8 +4,10 @@
 // New order  : <SalesOrderForm … />                     (starts in edit mode)
 // Saved order: <SalesOrderForm order={…} … />           (opens in view mode, Edit button switches to edit)
 
+import { useTermNames } from '@/components/app/payment-terms-provider'
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import { useQty } from '@/components/app/qty-provider'
 import NumInput from '@/components/app/num-input'
 import TaxSelect from '@/components/app/tax-select'
 import { printPickList } from '@/lib/pick-list/print'
@@ -14,6 +16,7 @@ import { printInvoice } from '@/lib/invoice/print'
 import { XeroPostNotice, XeroStatusBadge, usePostToXero, type XeroRowInfo } from '@/components/app/xero-sync-ui'
 import { toast } from '@/components/app/toast'
 import OrderHistory from '@/components/app/order-history'
+import { AttachmentsBadge, AttachmentsModal } from '@/components/app/attachments'
 import EmailComposer from '@/components/app/email/email-composer'
 import { useCan } from '@/components/app/permissions-provider'
 
@@ -145,7 +148,6 @@ type Props = {
 
 // Item picker columns: SKU | Product | Unit | Available | Committed | Price
 const PICK_COLS = '110px minmax(160px, 1fr) 70px 80px 85px 90px'
-const TERMS = ['Net 7', 'Net 14', 'Net 30', 'Net 60', 'COD', 'Prepaid']
 
 function fmtMoney(n: number) {
   return `$${n.toFixed(2)}`
@@ -244,17 +246,19 @@ function Dd({ label, value, options, onPick, open, setOpen, disabled, placeholde
 }
 
 // Actions dropdown in the header of a saved order (view mode)
-function ActionsMenu({ orderId, soNumber, statusLower, relatedPoId, canEdit, canCancel, canPo, isQuote, onEdit, onCancel, onPo, onError, xero, onPostXero }: {
+function ActionsMenu({ orderId, soNumber, statusLower, relatedPoId, canEdit, canCancel, canPo, isQuote, onEdit, onCancel, onPo, onError, xero, onPostXero, onUnpick, onUnpack }: {
   orderId: string; soNumber: string; statusLower: string; relatedPoId: string | null
   xero?: { show: boolean; canPost: boolean; info: XeroRowInfo | null }; onPostXero: () => void
   canEdit: boolean; canCancel: boolean; canPo: boolean; isQuote: boolean
   onEdit: () => void; onCancel: () => void; onPo: () => void
+  onUnpick?: () => void; onUnpack?: () => void
   onError: (message: string) => void
 }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [printOpen, setPrintOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [attOpen, setAttOpen] = useState(false)
   const box = useRef<HTMLDivElement>(null)
   const canEmail = useCan('send_emails')
   const [emailOpen, setEmailOpen] = useState(false)
@@ -268,7 +272,7 @@ function ActionsMenu({ orderId, soNumber, statusLower, relatedPoId, canEdit, can
 
   const inOpen = OPEN_GROUP.includes(statusLower)
   const inPicking = PICKING_GROUP.includes(statusLower)
-  const canPickList = inOpen || inPicking || ['picked', 'packed'].includes(statusLower)
+  const canPickList = inOpen || inPicking || ['picked', 'packed', 'closed', 'shipped', 'delivered'].includes(statusLower)
   const canPackList = inPicking || ['picked', 'packed', 'closed', 'shipped', 'delivered'].includes(statusLower)
   const canInvoice = isQuote || inOpen || inPicking || ['picked', 'packed', 'closed', 'shipped', 'delivered'].includes(statusLower)
 
@@ -302,6 +306,8 @@ function ActionsMenu({ orderId, soNumber, statusLower, relatedPoId, canEdit, can
       </button>
       {open && (
         <div className="inv-dropdown" role="menu" style={{ display: 'block', position: 'absolute', right: 0, top: 'calc(100% + 6px)', width: 230, padding: 6, zIndex: 60 }}>
+          {onUnpick && item('Unpick Order', () => { shut(); onUnpick() }, { icon: ic('M3 12a9 9 0 1 0 3-6.7M3 4v5h5') })}
+          {onUnpack && item('Unpack Order', () => { shut(); onUnpack() }, { icon: ic('M3 12a9 9 0 1 0 3-6.7M3 4v5h5') })}
           {canEdit && item('Edit Order', () => { shut(); onEdit() }, { icon: ic('M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z') })}
           {(canPickList || canPackList || canInvoice) && item('Print', () => setPrintOpen(o => !o), { icon: ic('M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6z'), chevron: true })}
           {printOpen && (
@@ -319,10 +325,12 @@ function ActionsMenu({ orderId, soNumber, statusLower, relatedPoId, canEdit, can
           {relatedPoId && item('Open Related Order', () => { shut(); router.push(`/purchases/${relatedPoId}`) }, { icon: ic('M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71') })}
           {xero?.show && xero.canPost && statusLower === 'closed' && xero.info?.status !== 'synced' && item('Post to Xero', () => { shut(); onPostXero() }, { icon: ic('M16 16l-4-4-4 4M12 12v9M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3') })}
           {xero?.show && xero.info?.status === 'synced' && xero.info.url && item('Open in Xero', () => { shut(); window.open(xero.info?.url ?? '', '_blank', 'noopener') }, { icon: ic('M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3') })}
+          {item('Attachments', () => { shut(); setAttOpen(true) }, { icon: ic('M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48') })}
           {item('Order History', () => { shut(); setHistoryOpen(true) }, { icon: ic('M12 8v4l3 3M3.05 11a9 9 0 1 1 .5 4M3 4v5h5') })}
           {canCancel && <>{sep('s2')}{item('Cancel Order', () => { shut(); onCancel() }, { danger: true, icon: ic('M18 6 6 18M6 6l12 12') })}</>}
         </div>
       )}
+      {attOpen && <AttachmentsModal type="sales" id={orderId} label={soNumber} onClose={() => setAttOpen(false)} />}
       {historyOpen && <OrderHistory type="sales" id={orderId} label={soNumber} onClose={() => setHistoryOpen(false)} />}
       {emailOpen && <EmailComposer module="sales" id={orderId} onClose={() => setEmailOpen(false)} />}
     </div>
@@ -371,6 +379,8 @@ function SalesOrderFormInner({
   onDiscard: () => void
 }) {
   const router = useRouter()
+  const termNames = useTermNames()
+  const { q, places } = useQty()
   const isNew = !order
 
   // ── Tax helpers: lines store the chosen tax (id + name) plus its numeric rate ──
@@ -458,6 +468,10 @@ function SalesOrderFormInner({
   const xeroPost = usePostToXero('invoice', (_id, info) => { setXeroInfo(info) })
   const [confirmLeave, setConfirmLeave] = useState(false)
   const [confirmCancelOrder, setConfirmCancelOrder] = useState(false)
+  const [confirmUndo, setConfirmUndo] = useState<null | 'unpick' | 'unpack'>(null)
+  const [undoing, setUndoing] = useState(false)
+  const canPickSales = useCan('pick_sales')
+  const canPackSales = useCan('pack_sales')
   const [poOpen, setPoOpen] = useState(false)
   const [convertOpen, setConvertOpen] = useState(false)
   const [convertMode, setConvertMode] = useState<'copy' | 'convert'>('copy')
@@ -519,8 +533,8 @@ function SalesOrderFormInner({
     const picked = Number(l.quantity_picked ?? 0)
     const packed = Number(l.quantity_packed ?? 0)
     if (qty > 0 && packed >= qty) return 'packed'
-    if (picked > 0 && picked >= qty) return packed > 0 ? { partial: `Partly Packed (${packed}/${qty})` } : 'picked'
-    if (picked > 0) return { partial: `Partially Picked (${picked}/${qty})` }
+    if (picked > 0 && picked >= qty) return packed > 0 ? { partial: `Partly Packed (${q(packed, l.product_id)}/${q(qty, l.product_id)})` } : 'picked'
+    if (picked > 0) return { partial: `Partially Picked (${q(picked, l.product_id)}/${q(qty, l.product_id)})` }
     const needed = lines.filter(x => x.product_id === l.product_id).reduce((sum, x) => sum + (Number(x.quantity) || 0), 0)
     return (stockByProduct[l.product_id]?.onHand ?? 0) >= needed ? 'in' : 'no'
   }
@@ -778,6 +792,23 @@ function SalesOrderFormInner({
     }
   }
 
+  async function undoFulfilment(what: 'unpick' | 'unpack') {
+    setUndoing(true)
+    setError(null)
+    try {
+      const res = await fetch(`/api/org/sales/${order!.id}/${what}`, { method: 'POST' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) { setError(data.error ?? `Could not ${what} this order`); return }
+      setConfirmUndo(null)
+      toast.success(what === 'unpick' ? 'Order unpicked — stock released' : 'Order unpacked')
+      router.refresh()
+    } catch {
+      setError('Network error — please try again.')
+    } finally {
+      setUndoing(false)
+    }
+  }
+
   // Save errors render at the top of the scroll area — always bring them into view
   useEffect(() => {
     if (error) scrollRef.current?.scrollTo({ top: 0, behavior: 'smooth' })
@@ -830,6 +861,7 @@ function SalesOrderFormInner({
           {!isNew && xeroInfo?.status === 'synced' && (xeroInfo.url
             ? <a href={xeroInfo.url} target="_blank" rel="noreferrer" title="Open in Xero" style={{ textDecoration: 'none' }}><XeroStatusBadge info={xeroInfo} /></a>
             : <XeroStatusBadge info={xeroInfo} />)}
+          {!isNew && <AttachmentsBadge type="sales" id={order!.id} label={order!.so_number ?? 'Order'} />}
           {!isNew && mode === 'view' && (
             <ActionsMenu
               orderId={order!.id}
@@ -845,6 +877,8 @@ function SalesOrderFormInner({
               onEdit={() => { setError(null); setMode('edit') }}
               onCancel={() => setConfirmCancelOrder(true)}
               onPo={() => { setPoScope('all'); setPoOpen(true) }}
+              onUnpick={fulfilmentMode !== 'none' && canPickSales && inPicking && !statusLower.includes('pack') ? () => setConfirmUndo('unpick') : undefined}
+              onUnpack={fulfilmentMode === 'full' && canPackSales && isPacked ? () => setConfirmUndo('unpack') : undefined}
               onError={setError}
             />
           )}
@@ -994,7 +1028,7 @@ function SalesOrderFormInner({
               <label className="modal-label">Delivery Date</label>
               <input className="modal-input" type="date" value={expectedDate} onChange={e => setExpectedDate(e.target.value)} disabled={!editable} style={{ background: editable ? 'var(--white)' : 'var(--gray-50)' }} />
             </div>
-            <Dd label="Payment Terms" value={terms} options={TERMS.map(t => ({ id: t, label: t }))} onPick={setTerms} open={openDd === 'terms'} setOpen={o => setOpenDd(o ? 'terms' : null)} disabled={!editable} />
+            <Dd label="Payment Terms" value={terms} options={termNames.map(t => ({ id: t, label: t }))} onPick={setTerms} open={openDd === 'terms'} setOpen={o => setOpenDd(o ? 'terms' : null)} disabled={!editable} />
             <Dd label="Price Level" value={levelName} options={levelOptions} onPick={changePriceLevel} open={openDd === 'level'} setOpen={o => setOpenDd(o ? 'level' : null)} disabled={!editable} />
             <Dd label="Currency" value={currency} options={currencyOptions} onPick={setCurrency} open={openDd === 'currency'} setOpen={o => setOpenDd(o ? 'currency' : null)} disabled={!editable} />
             <div />
@@ -1049,8 +1083,8 @@ function SalesOrderFormInner({
                     </td>
                     <td className="li-td" style={{ textAlign: 'right' }}>
                       {rowEd
-                        ? <NumInput className="li-input right" value={l.quantity} onChange={n => updateLine(idx, 'quantity', Math.max(n, Number(l.quantity_picked ?? 0)))} min={Number(l.quantity_picked ?? 0)} style={{ width: 70, textAlign: 'right' }} />
-                        : <span style={{ fontSize: 13 }}>{l.quantity}</span>}
+                        ? <NumInput className="li-input right" value={l.quantity} decimals={places(l.product_id)} onChange={n => updateLine(idx, 'quantity', Math.max(n, Number(l.quantity_picked ?? 0)))} min={Number(l.quantity_picked ?? 0)} style={{ width: 70, textAlign: 'right' }} />
+                        : <span style={{ fontSize: 13 }}>{q(l.quantity, l.product_id)}</span>}
                     </td>
                     {showStock && (
                       <td className="li-td">
@@ -1061,7 +1095,7 @@ function SalesOrderFormInner({
                           if (st === 'picked') return <span className="badge" style={{ background: '#DBEAFE', color: '#1D4ED8' }}>Picked</span>
                           if (typeof st === 'object') return <span className="badge" style={{ background: '#FEF3C7', color: '#B45309' }}>{st.partial}</span>
                           return st === 'no'
-                            ? <span className="badge" style={{ background: '#FEE2E2', color: '#B91C1C' }} title={`${stockByProduct[l.product_id]?.onHand ?? 0} on hand`}>No Stock ({stockByProduct[l.product_id]?.onHand ?? 0} on hand)</span>
+                            ? <span className="badge" style={{ background: '#FEE2E2', color: '#B91C1C' }} title={`${q(stockByProduct[l.product_id]?.onHand ?? 0, l.product_id)} on hand`}>No Stock ({q(stockByProduct[l.product_id]?.onHand ?? 0, l.product_id)} on hand)</span>
                             : <span className="badge" style={{ background: '#DCFCE7', color: '#15803D' }}>In Stock</span>
                         })()}
                       </td>
@@ -1137,7 +1171,7 @@ function SalesOrderFormInner({
                               <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--gray-400)' }}>{p.sku ?? '—'}</span>
                               <span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{p.name}</span>
                               <span style={{ fontSize: 12, color: 'var(--gray-400)', textAlign: 'center' }}>{p.sell_uom ?? 'Each'}</span>
-                              <span style={{ fontSize: 13, fontWeight: 600, textAlign: 'right', color: !tracked ? 'var(--gray-400)' : st.available <= 0 ? 'var(--danger)' : '#059669' }}>{tracked ? st.available : '—'}</span>
+                              <span style={{ fontSize: 13, fontWeight: 600, textAlign: 'right', color: !tracked ? 'var(--gray-400)' : st.available <= 0 ? 'var(--danger)' : '#059669' }}>{tracked ? q(st.available, p.id) : '—'}</span>
                               <span style={{ fontSize: 13, textAlign: 'right', color: 'var(--gray-400)' }}>{tracked ? st.committed : '—'}</span>
                               <span style={{ fontSize: 13, color: 'var(--teal)', fontWeight: 600, textAlign: 'right' }}>{price ? `$${price.toFixed(decimalPlaces)}` : '—'}</span>
                             </div>
@@ -1371,7 +1405,7 @@ function SalesOrderFormInner({
             {showClose && (
               <button className="btn btn-primary" style={{ height: 38, padding: '0 20px', fontSize: 14 }} onClick={() => setConfirmClose(true)} disabled={closing}>
                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
-                Close Order
+                Ship Order
               </button>
             )}
           </div>
@@ -1417,11 +1451,11 @@ function SalesOrderFormInner({
       )}
       {confirmClose && (
         <ConfirmModal
-          title="Close sales order?"
+          title="Ship sales order?"
           message={anyPicked
-            ? `${order?.so_number ?? 'This order'} will be closed and the picked stock will be taken out of inventory. This can't be undone.`
-            : `Stock for ${order?.so_number ?? 'this order'} will be allocated automatically (oldest stock first, including batch, serial, expiry and bin where tracked) and the order will be closed. This can't be undone.`}
-          confirmLabel="Yes, close order"
+            ? `${order?.so_number ?? 'This order'} will be shipped and the picked stock will be taken out of inventory. This can't be undone.`
+            : `Stock for ${order?.so_number ?? 'this order'} will be allocated automatically (oldest stock first, including batch, serial, expiry and bin where tracked) and the order will be shipped. This can't be undone.`}
+          confirmLabel="Yes, ship order"
           busy={closing}
           onConfirm={closeOrder}
           onCancel={() => setConfirmClose(false)}
@@ -1469,6 +1503,18 @@ function SalesOrderFormInner({
             </div>
           </div>
         </div>
+      )}
+      {confirmUndo && (
+        <ConfirmModal
+          title={confirmUndo === 'unpick' ? 'Unpick sales order?' : 'Unpack sales order?'}
+          message={confirmUndo === 'unpick'
+            ? `Are you sure you want to unpick ${order?.so_number ?? 'this order'}? It goes back to Open and the picked stock is released.`
+            : `Are you sure you want to unpack ${order?.so_number ?? 'this order'}? It goes back to Picked and all packing details are removed.`}
+          confirmLabel={confirmUndo === 'unpick' ? 'Yes, unpick' : 'Yes, unpack'}
+          busy={undoing}
+          onConfirm={() => undoFulfilment(confirmUndo)}
+          onCancel={() => setConfirmUndo(null)}
+        />
       )}
       {confirmCancelOrder && (
         <ConfirmModal

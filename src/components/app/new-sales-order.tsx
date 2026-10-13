@@ -4,8 +4,10 @@
 // New order  : <SalesOrderForm … />                     (starts in edit mode)
 // Saved order: <SalesOrderForm order={…} … />           (opens in view mode, Edit button switches to edit)
 
+import { useTermNames } from '@/components/app/payment-terms-provider'
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import { useQty } from '@/components/app/qty-provider'
 import NumInput from '@/components/app/num-input'
 import TaxSelect from '@/components/app/tax-select'
 
@@ -129,7 +131,6 @@ type Props = {
 
 // Item picker columns: SKU | Product | Unit | Available | Committed | Price
 const PICK_COLS = '110px minmax(160px, 1fr) 70px 80px 85px 90px'
-const TERMS = ['Net 7', 'Net 14', 'Net 30', 'Net 60', 'COD', 'Prepaid']
 
 function fmtMoney(n: number) {
   return `$${n.toFixed(2)}`
@@ -259,6 +260,8 @@ function SalesOrderFormInner({
   onDiscard: () => void
 }) {
   const router = useRouter()
+  const termNames = useTermNames()
+  const { q, places } = useQty()
   const isNew = !order
 
   // ── Tax helpers: lines store the chosen tax (id + name) plus its numeric rate ──
@@ -767,7 +770,7 @@ function SalesOrderFormInner({
               <label className="modal-label">Delivery Date</label>
               <input className="modal-input" type="date" value={expectedDate} onChange={e => setExpectedDate(e.target.value)} disabled={!editable} style={{ background: editable ? 'var(--white)' : 'var(--gray-50)' }} />
             </div>
-            <Dd label="Payment Terms" value={terms} options={TERMS.map(t => ({ id: t, label: t }))} onPick={setTerms} open={openDd === 'terms'} setOpen={o => setOpenDd(o ? 'terms' : null)} disabled={!editable} />
+            <Dd label="Payment Terms" value={terms} options={termNames.map(t => ({ id: t, label: t }))} onPick={setTerms} open={openDd === 'terms'} setOpen={o => setOpenDd(o ? 'terms' : null)} disabled={!editable} />
             <Dd label="Price Level" value={levelName} options={levelOptions} onPick={changePriceLevel} open={openDd === 'level'} setOpen={o => setOpenDd(o ? 'level' : null)} disabled={!editable} />
             <Dd label="Currency" value={currency} options={currencyOptions} onPick={setCurrency} open={openDd === 'currency'} setOpen={o => setOpenDd(o ? 'currency' : null)} disabled={!editable} />
             <div />
@@ -818,8 +821,8 @@ function SalesOrderFormInner({
                     </td>
                     <td className="li-td" style={{ textAlign: 'right' }}>
                       {editable
-                        ? <NumInput className="li-input right" value={l.quantity} onChange={n => updateLine(idx, 'quantity', n)} min={0} style={{ width: 70, textAlign: 'right' }} />
-                        : <span style={{ fontSize: 13 }}>{l.quantity}</span>}
+                        ? <NumInput className="li-input right" value={l.quantity} decimals={places(l.product_id)} onChange={n => updateLine(idx, 'quantity', n)} min={0} style={{ width: 70, textAlign: 'right' }} />
+                        : <span style={{ fontSize: 13 }}>{q(l.quantity, l.product_id)}</span>}
                     </td>
                     <td className="li-td" style={{ textAlign: 'right' }}>
                       {editable
@@ -889,7 +892,7 @@ function SalesOrderFormInner({
                               <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--gray-400)' }}>{p.sku ?? '—'}</span>
                               <span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{p.name}</span>
                               <span style={{ fontSize: 12, color: 'var(--gray-400)', textAlign: 'center' }}>{p.sell_uom ?? 'Each'}</span>
-                              <span style={{ fontSize: 13, fontWeight: 600, textAlign: 'right', color: !tracked ? 'var(--gray-400)' : st.available <= 0 ? 'var(--danger)' : '#059669' }}>{tracked ? st.available : '—'}</span>
+                              <span style={{ fontSize: 13, fontWeight: 600, textAlign: 'right', color: !tracked ? 'var(--gray-400)' : st.available <= 0 ? 'var(--danger)' : '#059669' }}>{tracked ? q(st.available, p.id) : '—'}</span>
                               <span style={{ fontSize: 13, textAlign: 'right', color: 'var(--gray-400)' }}>{tracked ? st.committed : '—'}</span>
                               <span style={{ fontSize: 13, color: 'var(--teal)', fontWeight: 600, textAlign: 'right' }}>{price ? `$${price.toFixed(decimalPlaces)}` : '—'}</span>
                             </div>

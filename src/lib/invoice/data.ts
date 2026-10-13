@@ -3,6 +3,9 @@
 // billed (the units that shipped; the ordered units while nothing has been picked yet), the additional costs, the order
 // discount and the tax, using the same maths as the sales order screen. The business details come from Settings.
 
+import { loadLineTracking, uniq, type TrackedQty } from '@/lib/doc-tracking'
+import { loadTerms } from '@/lib/payment-terms-server'
+import { qtyFmtFromOrg } from '@/lib/qty'
 import { normalizeInvoiceConfig } from './config'
 import type { InvoiceAddress, InvoiceBusiness, InvoiceCost, InvoiceLine, InvoiceOrder, InvoicePayload, InvoiceTax } from './types'
 
@@ -14,7 +17,7 @@ const OPEN_GROUP = ['open', 'no stock', 'stock available', 'partial stock']
 export const INVOICE_STATUSES = [...OPEN_GROUP, 'picking', 'partially picked', 'partially packed', 'picked', 'packed', 'closed', 'shipped', 'delivered', 'quote']
 
 type LineDb = {
-  id: string; product_name: string | null; product_sku: string | null
+  id: string; product_id?: string | null; product_name: string | null; product_sku: string | null
   quantity: number | null; quantity_picked: number | null; quantity_packed: number | null; quantity_shipped: number | null
   unit_price: number | null; discount: number | null; tax_rate: number | null; sort_order: number | null
 }
@@ -23,6 +26,7 @@ type OrderDb = {
   order_date: string | null; shipped_date: string | null; closed_at: string | null
   terms: string | null; ref: string | null; notes: string | null; currency: string | null
   order_discount: number | null; order_discount_type: string | null
+  carrier?: string | null; shipping_method?: string | null; service_type?: string | null; tracking_number?: string | null
   sales_order_lines: LineDb[] | null
 }
 type CostDb = { so_id: string; product_name: string | null; description: string | null; amount: number | null; tax_rate: number | null; sort_order: number | null }
@@ -97,7 +101,8 @@ export async function loadInvoicePayload(db: Db, orgId: string, ids: string[]): 
     .select(`
       id, so_number, status, customer_id, customer_name, order_date, shipped_date, closed_at,
       terms, ref, notes, currency, order_discount, order_discount_type,
-      sales_order_lines ( id, product_name, product_sku, quantity, quantity_picked, quantity_packed, quantity_shipped, unit_price, discount, tax_rate, sort_order )
+      carrier, shipping_method, service_type, tracking_number,
+      sales_order_lines ( id, product_id, product_name, product_sku, quantity, quantity_picked, quantity_packed, quantity_shipped, unit_price, discount, tax_rate, sort_order )
     `)
     .eq('org_id', orgId)
     .in('id', ids)
@@ -109,13 +114,18 @@ export async function loadInvoicePayload(db: Db, orgId: string, ids: string[]): 
   const orderIds = orders.map(o => o.id)
   const customerIds = [...new Set(orders.map(o => o.customer_id).filter((x): x is string => !!x))]
   const none = Promise.resolve({ data: [] })
+  // serial / batch / expiry per line (only needed when the invoice is set up to print them)
   const [{ data: org }, { data: costs }, { data: contacts }] = await Promise.all([
-    db.from('organisations').select('name, trading_name, abn_nzbn, gst_number, logo_url, phone, email, contact_phone, contact_email, address, address_line1, address_line2, city, state, postcode, country, currency, base_currency, decimal_places, timezone, so_prefix, so_suffix, invoice_settings').eq('id', orgId).single(),
+    db.from('organisations').select('name, trading_name, abn_nzbn, gst_number, logo_url, phone, email, contact_phone, contact_email, address, address_line1, address_line2, city, state, postcode, country, currency, base_currency, decimal_places, timezone, so_prefix, so_suffix, invoice_settings, decimal_qty, decimal_qty_places').eq('id', orgId).single(),
     orderIds.length ? db.from('sales_order_cost_lines').select('so_id, product_name, description, amount, tax_rate, sort_order').in('so_id', orderIds).order('sort_order') : none,
     customerIds.length ? db.from('contacts').select('id, name, email, address, city, country, bill_name, bill_email, bill_street, bill_city, bill_postcode, bill_country, ship_name, ship_street, ship_city, ship_postcode, ship_country').eq('org_id', orgId).in('id', customerIds) : none,
   ])
   const orgRow = (org ?? {}) as OrgDb
   const config = normalizeInvoiceConfig(orgRow.invoice_settings)
+  const wantsTracking = config.columns.serial || config.columns.batch || config.columns.expiry
+  const trackByLine = wantsTracking
+    ? await loadLineTracking(db, orgId, orders.map(o => ({ id: o.id, status: o.status, lines: (o.sales_order_lines ?? []).map(l => ({ id: l.id, product_id: l.product_id ?? null })) })))
+    : new Map<string, TrackedQty[]>()
   const contactById = new Map(((contacts ?? []) as ContactDb[]).map(c => [c.id, c]))
   const costsByOrder = new Map<string, CostDb[]>()
   for (const c of (costs ?? []) as CostDb[]) costsByOrder.set(c.so_id, [...(costsByOrder.get(c.so_id) ?? []), c])
@@ -130,9 +140,13 @@ export async function loadInvoicePayload(db: Db, orgId: string, ids: string[]): 
       const qty = nothingPickedYet ? num(l.quantity) : sent > 0 ? sent : packed > 0 ? packed : picked
       if (qty <= 0) continue
       const unitPrice = num(l.unit_price), discount = num(l.discount)
+      const tracked = trackByLine.get(l.id) ?? []
       lines.push({
         name: clean(l.product_name), sku: clean(l.product_sku), qty, unitPrice, discount,
         taxRate: num(l.tax_rate), amount: r2(qty * unitPrice * (1 - discount / 100)),
+        serials: uniq(tracked.map(t => t.serial_number)),
+        batches: uniq(tracked.map(t => t.batch_number)),
+        expiries: uniq(tracked.map(t => (t.expiry_date ? String(t.expiry_date).slice(0, 10) : null))),
       })
     }
     const costLines: InvoiceCost[] = (costsByOrder.get(o.id) ?? [])
@@ -168,6 +182,10 @@ export async function loadInvoicePayload(db: Db, orgId: string, ids: string[]): 
       invoice_date: isQuote ? (o.order_date ? String(o.order_date).slice(0, 10) : null) : (o.shipped_date ?? (o.closed_at ? String(o.closed_at).slice(0, 10) : null)),
       terms: clean(o.terms) || null,
       customer_po: clean(o.ref) || null,
+      carrier: clean(o.carrier),
+      shipping_method: clean(o.shipping_method),
+      service_type: clean(o.service_type),
+      tracking_number: clean(o.tracking_number),
       notes: clean(o.notes) || null,
       currency: clean(o.currency) || clean(orgRow.base_currency) || clean(orgRow.currency) || 'NZD',
       bill_to: billTo(o.customer_id ? contactById.get(o.customer_id) : undefined, clean(o.customer_name)),
@@ -178,5 +196,5 @@ export async function loadInvoicePayload(db: Db, orgId: string, ids: string[]): 
     }
   })
 
-  return { orders: out, business: business(orgRow), config, timezone: clean(orgRow.timezone) || 'Pacific/Auckland', decimals: dp }
+  return { orders: out, business: business(orgRow), config, timezone: clean(orgRow.timezone) || 'Pacific/Auckland', decimals: dp, qty: qtyFmtFromOrg(orgRow as { decimal_qty?: unknown; decimal_qty_places?: unknown }), paymentTerms: await loadTerms(db, orgId) }
 }

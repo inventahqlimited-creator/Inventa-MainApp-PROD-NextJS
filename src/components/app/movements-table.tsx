@@ -2,6 +2,8 @@
 // src/components/app/movements-table.tsx
 
 import React, { useState, useRef, useCallback, useEffect } from 'react'
+import { fmtQtyPlain } from '@/lib/qty'
+import { useQty } from '@/components/app/qty-provider'
 import { useRouter, useSearchParams, usePathname } from 'next/navigation'
 
 type Product = {
@@ -109,6 +111,7 @@ export default function MovementsTable({
   products: Product[]
   locations: Location[]
 }) {
+  const { q, format: qf } = useQty()
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
@@ -353,7 +356,7 @@ export default function MovementsTable({
       ...(showBinCsv  ? [m.bin_name ?? m.bin_id ?? '—'] : []),
       ...(showSerial ? [m.serial_number ?? '—'] : []),
       ...(showBatch  ? [m.batch_number  ?? '—'] : []),
-      m.qty > 0 ? `+${m.qty}` : String(m.qty),
+      m.qty > 0 ? `+${fmtQtyPlain(m.qty, qf, !!m.serial_number)}` : fmtQtyPlain(m.qty, qf, !!m.serial_number),
       m.note ?? '—',
     ])
     const esc = (v: string) => v.includes(',') || v.includes('"') ? `"${v.replace(/"/g, '""')}"` : v
@@ -725,7 +728,7 @@ export default function MovementsTable({
                           <span title={m.note ?? ''} style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block' }}>{m.note || '—'}</span>
                         </td>
                         <td className="li-td" style={{ textAlign: 'right', paddingRight: 24, fontWeight: 700, fontSize: 13, fontFamily: 'var(--font-display)', color: m.qty < 0 ? 'var(--danger)' : m.qty > 0 ? 'var(--teal)' : 'var(--slate)' }}>
-                          {m.qty > 0 ? '+' : ''}{m.qty}
+                          {m.qty > 0 ? '+' : ''}{q(m.qty, !!m.serial_number)}
                         </td>
                       </tr>
                     )

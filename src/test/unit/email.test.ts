@@ -12,7 +12,7 @@ describe('email settings', () => {
     expect(r.bad).toEqual(['nope'])
   })
   it('validates the editable settings', () => {
-    expect(validateSettingsInput({ from_name: 'Acme "Ltd"', from_local: 'Accounts', reply_to: 'x@acme.nz', default_cc: 'a@b.co' })).toEqual({ value: { from_name: 'Acme Ltd', from_local: 'accounts', reply_to: 'x@acme.nz', default_cc: ['a@b.co'], default_recipient: 'billing' } })
+    expect(validateSettingsInput({ from_name: 'Acme "Ltd"', from_local: 'Accounts', reply_to: 'x@acme.nz', default_cc: 'a@b.co' })).toEqual({ value: { from_name: 'Acme Ltd', from_local: 'accounts', reply_to: 'x@acme.nz', default_cc: ['a@b.co'], default_bcc: [], default_recipient: 'billing' } })
     expect('error' in validateSettingsInput({ from_local: 'bad local' })).toBe(true)
     expect('error' in validateSettingsInput({ reply_to: 'nope' })).toBe(true)
     expect('error' in validateSettingsInput({ default_cc: 'a@b.co, x' })).toBe(true)

@@ -2,6 +2,7 @@
 
 import { useState, useMemo } from 'react'
 import { useRouter } from 'next/navigation'
+import { useQty } from '@/components/app/qty-provider'
 
 type Location = { id: string; name: string }
 type Product = { id: string; name: string; sku: string | null; sell_uom: string | null; track_stock: boolean | null; type: string }
@@ -17,6 +18,7 @@ export default function NewTransfer({
   products: Product[]
 }) {
   const router = useRouter()
+  const { step, round } = useQty()
   const [fromLocation, setFromLocation] = useState<Location | null>(null)
   const [toLocation, setToLocation] = useState<Location | null>(null)
   const [fromOpen, setFromOpen] = useState(false)
@@ -229,8 +231,8 @@ export default function NewTransfer({
                     <td className="li-td"><span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{l.product_name}</span></td>
                     <td className="li-td" style={{ textAlign: 'center', color: 'var(--gray-400)', fontSize: 13 }}>{l.unit}</td>
                     <td className="li-td" style={{ textAlign: 'right' }}>
-                      <input className="li-input right" type="number" min="1" step="1" value={l.quantity}
-                        onChange={e => updateQty(idx, parseInt(e.target.value) || 1)}
+                      <input className="li-input right" type="number" min={step(l.product_id)} step={step(l.product_id)} value={l.quantity}
+                        onChange={e => updateQty(idx, round(parseFloat(e.target.value) || step(l.product_id), l.product_id))}
                         style={{ width: 80, textAlign: 'right' }} />
                     </td>
                     <td className="li-td">

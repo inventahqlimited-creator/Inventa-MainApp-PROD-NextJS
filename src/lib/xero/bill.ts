@@ -10,7 +10,8 @@ import { xeroPost } from './api'
 import type { XeroSettings } from './mapping'
 import type { XeroPrefs } from './prefs'
 import { runSync } from './sync'
-import { addDays, clean, dueInDays, money, n, r2, saveRecord, sleep, taxTypeFor, type PostResult, type BulkSummary } from './invoice'
+import { loadTerms } from '@/lib/payment-terms-server'
+import { clean, money, n, r2, saveRecord, sleep, xeroDueDate, taxTypeFor, type PostResult, type BulkSummary } from './invoice'
 
 type Row = Record<string, unknown>
 type Db = SupabaseClient
@@ -140,14 +141,14 @@ export async function postBill(db: Db, orgId: string, poId: string, settings: Xe
     ? day(order.order_date) || day(order.created_at)
     : day(order.received_date) || day(order.expected_date) || day(order.order_date)
   ) || new Date().toISOString().slice(0, 10)
-  const days = dueInDays(clean(order.terms))
+  const dueDate = xeroDueDate(clean(order.terms), date, await loadTerms(db, orgId))
   const poNumber = clean(order.po_number)
   const body = {
     Invoices: [{
       Type: 'ACCPAY',
       Contact: { ContactID: contactId },
       Date: date,
-      ...(days !== null ? { DueDate: addDays(date, days) } : {}),
+      ...(dueDate ? { DueDate: dueDate } : {}),
       ...(poNumber ? { Reference: poNumber } : {}),
       ...(clean(order.currency) ? { CurrencyCode: clean(order.currency) } : {}),
       Status: prefs.bill_status,

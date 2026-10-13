@@ -30,6 +30,7 @@ export async function GET(req: Request) {
     sender: from ? { address: from.address, name: s.from_name || companyName, verified: from.verified } : null,
     replyTo: s.reply_to || access.email || '',
     defaultCc: s.default_cc,
+    defaultBcc: s.default_bcc,
     signatures: signatures ?? [],
     templates: templates ?? [],
     docs: MODULE_DOCS[module].filter(d => can(access, DOC_PERM[d.type])),

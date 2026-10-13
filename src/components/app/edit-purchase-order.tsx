@@ -1,13 +1,16 @@
 'use client'
 
+import { useTermNames } from '@/components/app/payment-terms-provider'
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import { useQty } from '@/components/app/qty-provider'
 import NumInput from '@/components/app/num-input'
 import TaxSelect from '@/components/app/tax-select'
 import { printPurchaseOrder } from '@/lib/purchase-order/print'
 import { XeroPostNotice, XeroStatusBadge, usePostToXero, type XeroRowInfo } from '@/components/app/xero-sync-ui'
 import { toast } from '@/components/app/toast'
 import OrderHistory from '@/components/app/order-history'
+import { AttachmentsBadge, AttachmentsModal } from '@/components/app/attachments'
 import EmailComposer from '@/components/app/email/email-composer'
 import { useCan } from '@/components/app/permissions-provider'
 
@@ -216,6 +219,7 @@ function ActionsMenu({ orderId, poNumber, status, relatedSoId, canEdit, canCance
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [attOpen, setAttOpen] = useState(false)
   const box = useRef<HTMLDivElement>(null)
   const canEmail = useCan('send_emails')
   const [emailOpen, setEmailOpen] = useState(false)
@@ -264,10 +268,12 @@ function ActionsMenu({ orderId, poNumber, status, relatedSoId, canEdit, canCance
           {!cancelled && item('Create Sales Order', () => { setOpen(false); router.push(`/sales/new?from_po=${orderId}`) }, { icon: ic('M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4zM3 6h18M16 10a4 4 0 0 1-8 0') })}
           {xero?.show && xero.canPost && xero.ready && xero.info?.status !== 'synced' && item('Post bill to Xero', () => { setOpen(false); onPostXero() }, { icon: ic('M16 16l-4-4-4 4M12 12v9M20.39 18.39A5 5 0 0 0 18 9h-1.26A8 8 0 1 0 3 16.3') })}
           {xero?.show && xero.info?.status === 'synced' && xero.info.url && item('Open bill in Xero', () => { setOpen(false); window.open(xero.info?.url ?? '', '_blank', 'noopener') }, { icon: ic('M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6M15 3h6v6M10 14L21 3') })}
+          {item('Attachments', () => { setOpen(false); setAttOpen(true) }, { icon: ic('M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48') })}
           {item('Order History', () => { setOpen(false); setHistoryOpen(true) }, { icon: ic('M12 8v4l3 3M3.05 11a9 9 0 1 1 .5 4M3 4v5h5') })}
           {canCancel && <>{sep('s2')}{item('Cancel Order', () => { setOpen(false); onCancel() }, { danger: true, icon: ic('M18 6 6 18M6 6l12 12') })}</>}
         </div>
       )}
+      {attOpen && <AttachmentsModal type="purchases" id={orderId} label={poNumber} onClose={() => setAttOpen(false)} />}
       {historyOpen && <OrderHistory type="purchase" id={orderId} label={poNumber} onClose={() => setHistoryOpen(false)} />}
       {emailOpen && <EmailComposer module="purchases" id={orderId} onClose={() => setEmailOpen(false)} />}
     </div>
@@ -312,6 +318,8 @@ function PurchaseOrderForm({
   onDiscard: () => void
 }) {
   const router = useRouter()
+  const termNames = useTermNames()
+  const { q, places } = useQty()
   const [xeroInfo, setXeroInfo] = useState<XeroRowInfo | null>(xeroBill?.info ?? null)
   const xeroPost = usePostToXero('bill', (_id, info) => { setXeroInfo(info) })
 
@@ -650,6 +658,7 @@ function PurchaseOrderForm({
           {xeroInfo?.status === 'synced' && (xeroInfo.url
             ? <a href={xeroInfo.url} target="_blank" rel="noreferrer" title="Open bill in Xero" style={{ textDecoration: 'none' }}><XeroStatusBadge info={xeroInfo} /></a>
             : <XeroStatusBadge info={xeroInfo} />)}
+          <AttachmentsBadge type="purchases" id={order.id} label={order.po_number ?? 'Order'} />
           {mode === 'view' && (
             <ActionsMenu
               orderId={order.id}
@@ -857,7 +866,7 @@ function PurchaseOrderForm({
                   {termsOpen && (
                     <div className="inv-dropdown filter-pick-dropdown" style={{ display: 'block', minWidth: 160 }}>
                       <div className="col-dropdown-title">Payment Terms</div>
-                      {['Net 7', 'Net 14', 'Net 30', 'Net 60', 'COD', 'Prepaid'].map(t => (
+                      {termNames.map(t => (
                         <div key={t} className={`fp-item${terms === t ? ' active' : ''}`} onClick={() => { setTerms(t); setTermsOpen(false) }}>{t}</div>
                       ))}
                     </div>
@@ -924,13 +933,13 @@ function PurchaseOrderForm({
                     </td>
                     <td className="li-td" style={{ textAlign: 'right' }}>
                       {editable
-                        ? <NumInput className="li-input right" value={l.quantity_ordered} onChange={n => updateLine(idx, 'quantity_ordered', n)} min={0} style={{ width: 70, textAlign: 'right' }} />
-                        : <span style={{ fontSize: 13 }}>{l.quantity_ordered}</span>
+                        ? <NumInput className="li-input right" value={l.quantity_ordered} decimals={places(l.product_id)} onChange={n => updateLine(idx, 'quantity_ordered', n)} min={0} style={{ width: 70, textAlign: 'right' }} />
+                        : <span style={{ fontSize: 13 }}>{q(l.quantity_ordered, l.product_id)}</span>
                       }
                     </td>
                     {showReceived && (
                       <td className="li-td" style={{ textAlign: 'right' }}>
-                        <span style={{ fontSize: 13, fontWeight: 600, color: Number(l.quantity_received) > 0 ? (Number(l.quantity_received) >= l.quantity_ordered ? '#059669' : '#B45309') : 'var(--gray-400)' }}>{Number(l.quantity_received) || 0}</span>
+                        <span style={{ fontSize: 13, fontWeight: 600, color: Number(l.quantity_received) > 0 ? (Number(l.quantity_received) >= l.quantity_ordered ? '#059669' : '#B45309') : 'var(--gray-400)' }}>{q(Number(l.quantity_received) || 0, l.product_id)}</span>
                       </td>
                     )}
                     <td className="li-td" style={{ textAlign: 'right' }}>
@@ -1010,7 +1019,7 @@ function PurchaseOrderForm({
                             const tracked = p.track_stock !== false && p.type === 'Stock'
                             return (
                               <>
-                                <span style={{ fontSize: 13, fontWeight: 600, textAlign: 'right', color: !tracked ? 'var(--gray-400)' : st.available <= 0 ? 'var(--danger)' : '#059669' }}>{tracked ? st.available : '—'}</span>
+                                <span style={{ fontSize: 13, fontWeight: 600, textAlign: 'right', color: !tracked ? 'var(--gray-400)' : st.available <= 0 ? 'var(--danger)' : '#059669' }}>{tracked ? q(st.available, p.id) : '—'}</span>
                                 <span style={{ fontSize: 13, textAlign: 'right', color: 'var(--gray-400)' }}>{tracked ? st.committed : '—'}</span>
                               </>
                             )

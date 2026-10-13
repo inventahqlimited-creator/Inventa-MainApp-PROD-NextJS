@@ -4,6 +4,7 @@ import { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
 import { toast } from '@/components/app/toast'
+import { useQty } from '@/components/app/qty-provider'
 
 type Location = { id: string; name: string; bins?: { id: string; name: string }[] }
 type Product = {
@@ -231,6 +232,7 @@ export default function EditAdjustment({
   trackingFlags?: TrackingFlags
 }) {
   const router = useRouter()
+  const { q, step: qStep, round: qRound } = useQty()
 
   // Build a product lookup map for tracking flags
   const productMap = useMemo(() => {
@@ -433,9 +435,10 @@ export default function EditAdjustment({
     return Object.keys(errs).length === 0
   }
 
-  function handleQtyChange(idx: number, val: number) {
-    updateLine(idx, 'quantity_after', val)
+  function handleQtyChange(idx: number, rawVal: number) {
     const l = lines[idx]
+    const val = qRound(rawVal, l.needs_serial)
+    updateLine(idx, 'quantity_after', val)
     if (l.needs_serial && l.serial_number.trim()) {
       const change = val - l.quantity_before
       if (Math.abs(change) !== 1) {
@@ -629,7 +632,7 @@ export default function EditAdjustment({
                   </tr>
                 )}
                 {lines.map((l, idx) => {
-                  const change = l.quantity_after - l.quantity_before
+                  const change = Number((l.quantity_after - l.quantity_before).toFixed(4))
                   const errs = lineErrors[idx] ?? {}
                   return (
                     <tr key={l._key} style={{ borderBottom: '1px solid var(--gray-100)', verticalAlign: 'top' }}>
@@ -641,16 +644,16 @@ export default function EditAdjustment({
                         {l.needs_expiry && <span style={{ display: 'block', fontSize: 10, color: 'var(--teal)', marginTop: 1, fontWeight: 600 }}>Expiry tracked</span>}
                       </td>
                       <td className="li-td" style={{ textAlign: 'center', color: 'var(--gray-400)', fontSize: 13 }}>{l.unit}</td>
-                      <td className="li-td" style={{ textAlign: 'right', color: 'var(--gray-400)', fontWeight: 500 }}>{l.quantity_before}</td>
+                      <td className="li-td" style={{ textAlign: 'right', color: 'var(--gray-400)', fontWeight: 500 }}>{q(l.quantity_before, l.needs_serial)}</td>
                       <td className="li-td" style={{ textAlign: 'right' }}>
-                        <input className={`li-input right${errs.quantity_after ? ' li-input-error' : ''}`} type="number" step="1" value={l.quantity_after}
+                        <input className={`li-input right${errs.quantity_after ? ' li-input-error' : ''}`} type="number" step={qStep(l.needs_serial)} value={l.quantity_after}
                           onChange={e => handleQtyChange(idx, parseFloat(e.target.value) || 0)}
                           onFocus={e => e.target.select()}
                           style={{ width: 90, textAlign: 'right' }} />
                         {errs.quantity_after && <div style={{ fontSize: 10.5, color: 'var(--danger)', marginTop: 2, lineHeight: 1.3 }}>{errs.quantity_after}</div>}
                       </td>
                       <td className="li-td" style={{ textAlign: 'right', fontWeight: 700, color: change > 0 ? '#059669' : change < 0 ? 'var(--danger)' : 'var(--gray-400)', fontSize: 13 }}>
-                        {change > 0 ? `+${change}` : change}
+                        {change > 0 ? `+${q(change, l.needs_serial)}` : q(change, l.needs_serial)}
                       </td>
                       <td className="li-td">
                         <select value={l.reason} onChange={e => updateLine(idx, 'reason', e.target.value)}
@@ -741,7 +744,7 @@ export default function EditAdjustment({
                         <div key={p.id} className="fp-item" style={{ display: 'grid', gridTemplateColumns: '100px 1fr 80px', alignItems: 'center', gap: 8 }} onClick={() => addLine(p)}>
                           <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--gray-400)' }}>{p.sku ?? '—'}</span>
                           <span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{p.name}</span>
-                          <span style={{ fontSize: 13, fontWeight: 600, color: qty <= 0 ? 'var(--danger)' : 'var(--slate)', textAlign: 'right' }}>{qty}</span>
+                          <span style={{ fontSize: 13, fontWeight: 600, color: qty <= 0 ? 'var(--danger)' : 'var(--slate)', textAlign: 'right' }}>{q(qty, !!p.serial_tracking)}</span>
                         </div>
                       )
                     })}

@@ -6,9 +6,12 @@
 
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
+import { useQty } from '@/components/app/qty-provider'
 import NumInput from './num-input'
 import { toast } from '@/components/app/toast'
 import OrderHistory from '@/components/app/order-history'
+import { AttachmentsBadge, AttachmentsModal } from '@/components/app/attachments'
+import { useCan } from '@/components/app/permissions-provider'
 
 type Loc = { id: string; name: string; address?: string | null; city?: string | null; country?: string | null; phone?: string | null; email?: string | null }
 type Product = { id: string; name: string; sku: string | null; sell_uom: string | null; track_stock: boolean | null; type: string | null }
@@ -114,12 +117,13 @@ function LocationCard({ title, locations, value, onPick, onClear, editable, canC
 }
 
 // Actions dropdown in the header of a saved transfer (view mode)
-function TransferActions({ transferId, number, canEdit, canCancel, onEdit, onCancel }: {
-  transferId: string; number: string; canEdit: boolean; canCancel: boolean; onEdit: () => void; onCancel: () => void
+function TransferActions({ transferId, number, canEdit, canCancel, onEdit, onCancel, onUnpick }: {
+  transferId: string; number: string; canEdit: boolean; canCancel: boolean; onEdit: () => void; onCancel: () => void; onUnpick?: () => void
 }) {
   const router = useRouter()
   const [open, setOpen] = useState(false)
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [attOpen, setAttOpen] = useState(false)
   const box = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -145,12 +149,15 @@ function TransferActions({ transferId, number, canEdit, canCancel, onEdit, onCan
       </button>
       {open && (
         <div className="inv-dropdown" role="menu" style={{ display: 'block', position: 'absolute', right: 0, top: 'calc(100% + 6px)', width: 230, padding: 6, zIndex: 60 }}>
+          {onUnpick && item('Unpick Order', onUnpick, ic('M3 12a9 9 0 1 0 3-6.7M3 4v5h5'))}
           {canEdit && item('Edit Order', onEdit, ic('M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z'))}
           {item('Clone Order', () => router.push(`/transfers/new?clone=${transferId}`), ic('M9 9h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V11a2 2 0 0 1 2-2zM5 15H4a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v1'))}
+          {item('Attachments', () => setAttOpen(true), ic('M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48'))}
           {item('Order History', () => setHistoryOpen(true), ic('M12 8v4l3 3M3.05 11a9 9 0 1 1 .5 4M3 4v5h5'))}
           {canCancel && <><div style={{ height: 1, background: 'var(--gray-100)', margin: '5px 0' }} />{item('Cancel Order', onCancel, ic('M18 6 6 18M6 6l12 12'), true)}</>}
         </div>
       )}
+      {attOpen && <AttachmentsModal type="transfers" id={transferId} label={number} onClose={() => setAttOpen(false)} />}
       {historyOpen && <OrderHistory type="transfer" id={transferId} label={number} onClose={() => setHistoryOpen(false)} />}
     </div>
   )
@@ -169,6 +176,7 @@ export default function TransferForm({ transfer, lines: dbLines, locations, prod
   cloneOf?: { from_location_id: string | null; to_location_id: string | null; notes: string | null } | null
 }) {
   const router = useRouter()
+  const { q, places } = useQty()
   const isNew = !transfer
   const scrollRef = useRef<HTMLDivElement>(null)
 
@@ -196,6 +204,8 @@ export default function TransferForm({ transfer, lines: dbLines, locations, prod
   const [confirmLeave, setConfirmLeave] = useState(false)
   const [confirmCancel, setConfirmCancel] = useState(false)
   const [confirmComplete, setConfirmComplete] = useState(false)
+  const [confirmUnpick, setConfirmUnpick] = useState(false)
+  const canPickTr = useCan('pick_transfers')
 
   // Re-sync after the server refreshes the page (save, pick, complete…)
   useEffect(() => {
@@ -316,6 +326,10 @@ export default function TransferForm({ transfer, lines: dbLines, locations, prod
     setConfirmCancel(false)
     if (ok) setMode('view')
   }
+  async function unpickTransfer() {
+    await act(`/api/org/transfers/${transfer!.id}/unpick`, { method: 'POST' }, 'Could not unpick this transfer.', 'Transfer unpicked — stock released')
+    setConfirmUnpick(false)
+  }
   async function completeTransfer() {
     await act(`/api/org/transfers/${transfer!.id}/complete`, { method: 'POST' }, 'Could not complete this transfer.', 'Transfer completed')
     setConfirmComplete(false)
@@ -365,6 +379,7 @@ export default function TransferForm({ transfer, lines: dbLines, locations, prod
           {isNew
             ? <><span style={{ fontSize: 12, color: 'var(--gray-400)' }}>Draft</span><div style={{ width: 8, height: 8, borderRadius: '50%', background: '#F59E0B' }} /></>
             : <span className={`badge ${statusClass}`} style={statusStyle}>{status}</span>}
+          {!isNew && <AttachmentsBadge type="transfers" id={transfer!.id} label={transfer!.tr_number ?? 'Transfer'} />}
           {!isNew && mode === 'view' && (
             <TransferActions
               transferId={transfer!.id}
@@ -373,6 +388,7 @@ export default function TransferForm({ transfer, lines: dbLines, locations, prod
               canCancel={statusEditable}
               onEdit={() => { setError(null); setMode('edit') }}
               onCancel={() => setConfirmCancel(true)}
+              onUnpick={canPickTr && (status === 'Picking' || status === 'Picked') && anyPicked ? () => setConfirmUnpick(true) : undefined}
             />
           )}
         </div>
@@ -447,15 +463,15 @@ export default function TransferForm({ transfer, lines: dbLines, locations, prod
                       <td className="li-td"><span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--gray-400)' }}>{l.product_sku}</span></td>
                       <td className="li-td">
                         <span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{l.product_name}</span>
-                        {editable && fromId && <div style={{ fontSize: 11, color: 'var(--gray-400)' }}>On hand at {fromLoc?.name}: {onHand[l.product_id] ?? 0}</div>}
+                        {editable && fromId && <div style={{ fontSize: 11, color: 'var(--gray-400)' }}>On hand at {fromLoc?.name}: {q(onHand[l.product_id] ?? 0, l.product_id)}</div>}
                       </td>
                       <td className="li-td" style={{ textAlign: 'center', fontSize: 12, color: 'var(--gray-400)' }}>{l.unit}</td>
                       <td className="li-td" style={{ textAlign: 'right' }}>
                         {lockQty
-                          ? <span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{l.quantity}</span>
-                          : <NumInput className="li-input right" value={l.quantity} onChange={n => updateLine(l.key, { quantity: Math.max(n, l.quantity_picked) })} min={Math.max(l.quantity_picked, 0)} style={{ width: 80, textAlign: 'right' }} />}
+                          ? <span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{q(l.quantity, l.product_id)}</span>
+                          : <NumInput className="li-input right" value={l.quantity} decimals={places(l.product_id)} onChange={n => updateLine(l.key, { quantity: Math.max(n, l.quantity_picked) })} min={Math.max(l.quantity_picked, 0)} style={{ width: 80, textAlign: 'right' }} />}
                       </td>
-                      {showPickedCol && <td className="li-td" style={{ textAlign: 'right', fontSize: 13, color: l.quantity_picked >= l.quantity ? '#065F46' : 'var(--gray-400)', fontWeight: 600 }}>{l.quantity_picked}</td>}
+                      {showPickedCol && <td className="li-td" style={{ textAlign: 'right', fontSize: 13, color: l.quantity_picked >= l.quantity ? '#065F46' : 'var(--gray-400)', fontWeight: 600 }}>{q(l.quantity_picked, l.product_id)}</td>}
                       {showFromBin && (
                         <td className="li-td">
                           {lockFrom ? <span style={{ fontSize: 13, color: 'var(--gray-500, var(--gray-400))' }}>{binLabel(l.from_bin_id, fromBins)}</span> : binSelect(l.from_bin_id, fromBins, v => updateLine(l.key, { from_bin_id: v }), false)}
@@ -598,6 +614,14 @@ export default function TransferForm({ transfer, lines: dbLines, locations, prod
           message={`Are you sure you want to cancel ${transfer?.tr_number ?? 'this transfer'}? It will move to Cancelled${anyPicked ? ' and anything already picked is released back to stock.' : '.'}`}
           confirmLabel="Yes, cancel transfer" danger busy={busy}
           onConfirm={cancelTransfer} onCancel={() => setConfirmCancel(false)}
+        />
+      )}
+      {confirmUnpick && (
+        <ConfirmModal
+          title="Unpick transfer?"
+          message={`Are you sure you want to unpick ${transfer?.tr_number ?? 'this transfer'}? It goes back to Open and the picked stock is released.`}
+          confirmLabel="Yes, unpick" cancelLabel="No, keep it" busy={busy}
+          onConfirm={unpickTransfer} onCancel={() => setConfirmUnpick(false)}
         />
       )}
       {confirmComplete && (

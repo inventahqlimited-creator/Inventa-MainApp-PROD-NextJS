@@ -1,8 +1,10 @@
 'use client'
 
+import { useTermNames } from '@/components/app/payment-terms-provider'
 import { useState, useMemo, useRef, useEffect, useCallback, Fragment } from 'react'
 import { createPortal } from 'react-dom'
 import { useRouter } from 'next/navigation'
+import { useQty } from '@/components/app/qty-provider'
 import { toast } from '@/components/app/toast'
 import { allocateLandedCost, type LandedMethod } from '@/lib/purchases/landed-cost'
 
@@ -88,6 +90,8 @@ type ReceiveLine = {
   expiry_date: string
   // serial entries (one per unit when serial_tracking)
   serials: SerialEntry[]
+  // what the person typed/pasted into the serial box — one serial per line
+  serial_text: string
 }
 
 type Supplier = {
@@ -126,7 +130,6 @@ function statusBadge(status: string) {
   return <span className="badge badge-draft">{status}</span>
 }
 
-function makeKey() { return Math.random().toString(36).slice(2) + Date.now().toString(36) }
 
 // ── Expiry Date Input (same pattern as adjustments) ──────────────────────
 
@@ -297,6 +300,8 @@ export default function ViewPurchaseOrder({
   nextBackorderNumber?: string // what the next backorder of this PO will be called, e.g. PO-0001A
 }) {
   const router = useRouter()
+  const termNames = useTermNames()
+  const { q, step, round } = useQty()
   const [po, setPo] = useState(initialPo)
   const [lines, setLines] = useState(initialLines)
   const [costLines] = useState<CostLine[]>(initialCostLines)
@@ -380,12 +385,11 @@ export default function ViewPurchaseOrder({
           needs_serial: needsSerial,
           needs_batch: !!l.batch_tracking,
           needs_expiry: !!l.expiry_tracking,
-          qty_to_receive: remaining,
+          qty_to_receive: needsSerial ? 0 : remaining,
           batch_num: l.batch_num ?? '',
           expiry_date: l.expiry_date ?? '',
-          serials: needsSerial
-            ? Array.from({ length: remaining }, () => ({ _key: makeKey(), serial_number: '' }))
-            : [],
+          serials: [],
+          serial_text: '',
         }
       })
     setReceiveLines(rl)
@@ -422,55 +426,23 @@ export default function ViewPurchaseOrder({
     }
   }
 
-  // Update a serial entry in a receive line
-  function updateSerial(lineIdx: number, serialIdx: number, value: string) {
-    // Support paste of multiple serials (newline separated)
-    const parts = value.split(/[\n\r]+/).map(s => s.trim()).filter(Boolean)
-    setReceiveLines(prev => prev.map((l, i) => {
-      if (i !== lineIdx) return l
-      const serials = [...l.serials]
-      if (parts.length > 1) {
-        // Paste: fill from this position, adding rows as needed
-        for (let j = 0; j < parts.length; j++) {
-          const targetIdx = serialIdx + j
-          if (targetIdx < serials.length) {
-            serials[targetIdx] = { ...serials[targetIdx], serial_number: parts[j] }
-          } else {
-            serials.push({ _key: makeKey(), serial_number: parts[j] })
-          }
-        }
-      } else {
-        serials[serialIdx] = { ...serials[serialIdx], serial_number: value }
-      }
-      return { ...l, serials, qty_to_receive: serials.length }
+  // The serial box: one serial per line (Enter = next serial). Pasting a list works too.
+  function updateSerialText(lineIdx: number, text: string) {
+    const parts = text.split(/[\r\n\t,;]+/).map(x => x.trim()).filter(Boolean)
+    setReceiveLines(prev => prev.map((l, i) => i !== lineIdx ? l : {
+      ...l,
+      serial_text: text,
+      serials: parts.map((serial_number, j) => ({ _key: `${j}`, serial_number })),
+      qty_to_receive: parts.length,
     }))
-    // Clear serial errors
     setLineErrors(prev => {
       const next = { ...prev }
       if (next[lineIdx]) {
-        delete next[lineIdx][`serial_${serialIdx}`]
         delete next[lineIdx].serials
         if (!Object.keys(next[lineIdx]).length) delete next[lineIdx]
       }
       return next
     })
-  }
-
-  function addSerialRow(lineIdx: number) {
-    setReceiveLines(prev => prev.map((l, i) => {
-      if (i !== lineIdx) return l
-      const serials = [...l.serials, { _key: makeKey(), serial_number: '' }]
-      return { ...l, serials, qty_to_receive: serials.length }
-    }))
-  }
-
-  function removeSerialRow(lineIdx: number, serialIdx: number) {
-    setReceiveLines(prev => prev.map((l, i) => {
-      if (i !== lineIdx) return l
-      if (l.serials.length <= 1) return l // keep at least 1
-      const serials = l.serials.filter((_, j) => j !== serialIdx)
-      return { ...l, serials, qty_to_receive: serials.length }
-    }))
   }
 
   // ── Validation ───────────────────────────────────────────────────────────
@@ -481,24 +453,15 @@ export default function ViewPurchaseOrder({
       const remaining = l.quantity_ordered - l.quantity_received
 
       if (l.needs_serial) {
-        // All serial fields must be filled
         const serials = l.serials
         if (serials.length === 0) {
           e.serials = 'Enter at least one serial number'
         } else {
-          const seenInLine = new Set<string>()
-          serials.forEach((s, si) => {
-            if (!s.serial_number.trim()) {
-              e[`serial_${si}`] = 'Required'
-            } else if (seenInLine.has(s.serial_number.trim())) {
-              e[`serial_${si}`] = 'Duplicate'
-            } else {
-              seenInLine.add(s.serial_number.trim())
-            }
-          })
-          if (!allowOverReceive && serials.length > remaining) {
-            e.serials = `Cannot receive more than ${remaining} units (remaining on order)`
-          }
+          const seen = new Set<string>()
+          const dups = new Set<string>()
+          for (const x of serials) { const k = x.serial_number.trim().toLowerCase(); if (seen.has(k)) dups.add(x.serial_number.trim()); seen.add(k) }
+          if (dups.size > 0) e.serials = `Each serial number can only be used once — repeated: ${[...dups].slice(0, 3).join(', ')}${dups.size > 3 ? '…' : ''}`
+          else if (!allowOverReceive && serials.length > remaining) e.serials = `Cannot receive more than ${remaining} units (remaining on order)`
         }
         if (l.needs_batch && !l.batch_num.trim()) e.batch_num = 'Batch number required'
         if (l.needs_expiry && !l.expiry_date) e.expiry_date = 'Expiry date required'
@@ -776,7 +739,7 @@ export default function ViewPurchaseOrder({
             {receiveLines.length > 0 && (() => {
               const anyBatchCol = receiveLines.some(l => l.needs_batch)
               const anyExpiryCol = receiveLines.some(l => l.needs_expiry)
-              const colCount = 5 + (anyBatchCol ? 1 : 0) + (anyExpiryCol ? 1 : 0)
+              const anySerialCol = receiveLines.some(l => l.needs_serial)
               return (
                 <div className="npo-card" style={{ marginBottom: 16, overflow: 'visible' }}>
                   <div className="npo-card-title">
@@ -784,7 +747,7 @@ export default function ViewPurchaseOrder({
                     Items to Receive
                   </div>
                   <div style={{ overflowX: 'auto', margin: '0 -20px' }}>
-                    <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 760 }}>
+                    <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 860 }}>
                       <thead>
                         <tr style={{ background: 'var(--gray-50)' }}>
                           <th className="li-th">Product</th>
@@ -792,6 +755,7 @@ export default function ViewPurchaseOrder({
                           <th className="li-th" style={{ width: 90, textAlign: 'right' }}>Received</th>
                           <th className="li-th" style={{ width: 90, textAlign: 'right' }}>Remaining</th>
                           <th className="li-th" style={{ width: 120, textAlign: 'right' }}>Receive Now</th>
+                          {anySerialCol && <th className="li-th" style={{ width: 230 }}>Serial Numbers</th>}
                           {anyBatchCol && <th className="li-th" style={{ width: 170 }}>Batch / Lot #</th>}
                           {anyExpiryCol && <th className="li-th" style={{ width: 170 }}>Expiry Date</th>}
                         </tr>
@@ -805,7 +769,7 @@ export default function ViewPurchaseOrder({
                             : Number(rl.qty_to_receive)
                           return (
                             <Fragment key={rl.id}>
-                              <tr style={{ borderBottom: rl.needs_serial ? 'none' : '1px solid var(--gray-100)' }}>
+                              <tr style={{ borderBottom: '1px solid var(--gray-100)' }}>
                                 <td className="li-td">
                                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                                     <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--gray-400)', background: 'var(--gray-100)', padding: '2px 6px', borderRadius: 5 }}>{rl.product_sku ?? '—'}</span>
@@ -813,9 +777,9 @@ export default function ViewPurchaseOrder({
                                     {rl.needs_serial && <span style={{ fontSize: 10, fontWeight: 700, color: 'var(--teal)', background: 'var(--teal-surface)', padding: '2px 7px', borderRadius: 20 }}>SERIAL</span>}
                                   </div>
                                 </td>
-                                <td className="li-td" style={{ textAlign: 'right', fontSize: 13 }}>{rl.quantity_ordered}</td>
-                                <td className="li-td" style={{ textAlign: 'right', fontSize: 13, color: rl.quantity_received > 0 ? '#059669' : 'var(--gray-400)', fontWeight: 600 }}>{rl.quantity_received}</td>
-                                <td className="li-td" style={{ textAlign: 'right', fontSize: 13, fontWeight: 600, color: remaining > 0 ? 'var(--danger)' : '#059669' }}>{remaining}</td>
+                                <td className="li-td" style={{ textAlign: 'right', fontSize: 13 }}>{q(rl.quantity_ordered, rl.product_id)}</td>
+                                <td className="li-td" style={{ textAlign: 'right', fontSize: 13, color: rl.quantity_received > 0 ? '#059669' : 'var(--gray-400)', fontWeight: 600 }}>{q(rl.quantity_received, rl.product_id)}</td>
+                                <td className="li-td" style={{ textAlign: 'right', fontSize: 13, fontWeight: 600, color: remaining > 0 ? 'var(--danger)' : '#059669' }}>{q(remaining, rl.product_id)}</td>
                                 <td className="li-td" style={{ textAlign: 'right' }}>
                                   {rl.needs_serial ? (
                                     <span style={{ fontSize: 13, fontWeight: 700, color: receivingCount > 0 ? 'var(--teal)' : 'var(--gray-400)' }}>{receivingCount}</span>
@@ -825,9 +789,10 @@ export default function ViewPurchaseOrder({
                                         className={`li-input right${errs.qty_to_receive ? ' li-input-error' : ''}`}
                                         type="number"
                                         min="0"
+                                        step={step(rl.product_id)}
                                         max={allowOverReceive ? undefined : remaining}
                                         value={rl.qty_to_receive}
-                                        onChange={e => updateReceiveLine(idx, 'qty_to_receive', parseFloat(e.target.value) || 0)}
+                                        onChange={e => updateReceiveLine(idx, 'qty_to_receive', round(parseFloat(e.target.value) || 0, rl.product_id))}
                                         onFocus={e => e.target.select()}
                                         style={{ width: 90, textAlign: 'right' }}
                                       />
@@ -835,6 +800,27 @@ export default function ViewPurchaseOrder({
                                     </>
                                   )}
                                 </td>
+                                {anySerialCol && (
+                                  <td className="li-td">
+                                    {rl.needs_serial ? (
+                                      <>
+                                        <textarea
+                                          className={`modal-input${errs.serials ? ' li-input-error' : ''}`}
+                                          value={rl.serial_text}
+                                          onChange={e => updateSerialText(idx, e.target.value)}
+                                          placeholder="Type a serial, press Enter for the next"
+                                          rows={Math.min(Math.max(1, rl.serial_text.split(/\r?\n/).length), 12)}
+                                          autoComplete="off"
+                                          spellCheck={false}
+                                          style={{ width: '100%', minWidth: 190, background: 'var(--gray-50)', fontFamily: 'monospace', fontSize: 12.5, lineHeight: 1.5, resize: 'none', height: 'auto', overflowY: 'auto' }}
+                                        />
+                                        <div style={{ fontSize: 11, marginTop: 3, color: errs.serials ? 'var(--danger)' : 'var(--gray-400)' }}>
+                                          {errs.serials ?? `${rl.serials.length} of ${remaining} entered`}
+                                        </div>
+                                      </>
+                                    ) : <span style={{ color: 'var(--gray-300)' }}>—</span>}
+                                  </td>
+                                )}
                                 {anyBatchCol && (
                                   <td className="li-td">
                                     {rl.needs_batch ? (
@@ -862,46 +848,6 @@ export default function ViewPurchaseOrder({
                                   </td>
                                 )}
                               </tr>
-                              {rl.needs_serial && (
-                                <tr style={{ borderBottom: '1px solid var(--gray-100)' }}>
-                                  <td colSpan={colCount} style={{ padding: '0 20px 14px 44px' }}>
-                                    <div style={{ fontSize: 12, color: 'var(--gray-400)', fontWeight: 600, marginBottom: 6 }}>
-                                      Serial numbers — paste several on separate lines, or enter one per row
-                                    </div>
-                                    {errs.serials && <div style={{ fontSize: 11.5, color: 'var(--danger)', marginBottom: 6 }}>{errs.serials}</div>}
-                                    {rl.serials.map((s, si) => (
-                                      <div key={s._key} style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6, maxWidth: 520 }}>
-                                        <span style={{ fontSize: 12, color: 'var(--gray-400)', minWidth: 24, textAlign: 'right', fontVariantNumeric: 'tabular-nums' }}>{si + 1}.</span>
-                                        <input
-                                          className={`modal-input${errs[`serial_${si}`] ? ' li-input-error' : ''}`}
-                                          style={{ flex: 1, background: 'var(--gray-50)' }}
-                                          placeholder={`Serial number ${si + 1}…`}
-                                          value={s.serial_number}
-                                          onChange={e => updateSerial(idx, si, e.target.value)}
-                                          autoComplete="off"
-                                        />
-                                        {errs[`serial_${si}`] && <span style={{ fontSize: 11, color: 'var(--danger)', whiteSpace: 'nowrap' }}>{errs[`serial_${si}`]}</span>}
-                                        {rl.serials.length > 1 && (
-                                          <button
-                                            onClick={() => removeSerialRow(idx, si)}
-                                            style={{ width: 26, height: 26, borderRadius: 7, border: 'none', background: 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--gray-400)', flexShrink: 0 }}
-                                            onMouseOver={e => (e.currentTarget.style.color = 'var(--danger)')}
-                                            onMouseOut={e => (e.currentTarget.style.color = 'var(--gray-400)')}
-                                          >
-                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
-                                          </button>
-                                        )}
-                                      </div>
-                                    ))}
-                                    <button
-                                      onClick={() => addSerialRow(idx)}
-                                      style={{ marginTop: 4, display: 'flex', alignItems: 'center', gap: 6, background: 'none', border: '1.5px dashed var(--gray-200)', borderRadius: 8, padding: '6px 12px', cursor: 'pointer', fontSize: 12, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)', fontWeight: 600 }}
-                                    >
-                                      + Add serial row
-                                    </button>
-                                  </td>
-                                </tr>
-                              )}
                             </Fragment>
                           )
                         })}
@@ -1076,7 +1022,7 @@ export default function ViewPurchaseOrder({
                         {termsOpen && (
                           <div className="inv-dropdown filter-pick-dropdown" style={{ display: 'block', minWidth: 160 }}>
                             <div className="col-dropdown-title">Payment Terms</div>
-                            {['Net 7','Net 14','Net 30','Net 60','COD','Prepaid'].map(t => (
+                            {termNames.map(t => (
                               <div key={t} className={`fp-item${editTerms === t ? ' active' : ''}`} onClick={() => { setEditTerms(t); setTermsOpen(false) }}>{t}</div>
                             ))}
                           </div>
@@ -1142,9 +1088,9 @@ export default function ViewPurchaseOrder({
                             {fullyReceived && <div style={{ fontSize: 11, color: '#059669', fontWeight: 600, marginTop: 2 }}>✓ Fully received</div>}
                           </td>
                           <td className="li-td" style={{ textAlign: 'center', color: 'var(--gray-400)' }}>{l.unit ?? '—'}</td>
-                          <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: 'var(--slate)' }}>{l.quantity_ordered}</td>
-                          <td className="li-td" style={{ textAlign: 'right', color: '#059669', fontWeight: 600 }}>{received}</td>
-                          <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: remaining > 0 ? 'var(--danger)' : '#059669' }}>{remaining}</td>
+                          <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: 'var(--slate)' }}>{q(l.quantity_ordered, l.product_id)}</td>
+                          <td className="li-td" style={{ textAlign: 'right', color: '#059669', fontWeight: 600 }}>{q(received, l.product_id)}</td>
+                          <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: remaining > 0 ? 'var(--danger)' : '#059669' }}>{q(remaining, l.product_id)}</td>
                           <td className="li-td" style={{ textAlign: 'right', color: 'var(--gray-400)' }}>{`$${l.unit_cost.toFixed(2)}`}</td>
                           <td className="li-td" style={{ textAlign: 'right', color: 'var(--gray-400)' }}>{l.discount ? `${l.discount}%` : '—'}</td>
                           <td className="li-td" style={{ textAlign: 'right', color: 'var(--gray-400)' }}>{l.tax_name ?? (l.tax_rate ? `${l.tax_rate}%` : '—')}</td>

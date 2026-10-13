@@ -5,6 +5,7 @@ import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { PostToXeroButton, XeroColumnHeader, XeroPostNotice, XeroStatusBadge, usePostToXero, type XeroTableInfo } from '@/components/app/xero-sync-ui'
 import { toast } from '@/components/app/toast'
+import { useQty } from '@/components/app/qty-provider'
 
 type Product = {
   id: string
@@ -747,6 +748,7 @@ export default function ProductsTable({
   }
   const taxLabel = (id: string | null | undefined) => TAX_OPTIONS.find(t => t.value === (id ?? ''))?.label ?? 'No Tax'
   const dp = decimalPlaces
+  const { q } = useQty()
   const priceStep = dp > 0 ? `0.${'0'.repeat(dp - 1)}1` : '1'
   // UOM list: prefer from settings, fall back to hardcoded
   const UOM_LIST = uoms.length > 0 ? uoms.map(u => u.name) : UOM_OPTIONS
@@ -1368,10 +1370,10 @@ export default function ProductsTable({
                     {v.has('barcode') && <td className="td-mono">{p.barcode ?? '—'}</td>}
                     {canViewPricing && v.has('sell_price') && <td style={{ textAlign: 'right' }} className="td-muted">{fmt(p.sell_price, dp)}</td>}
                     {canViewPricing && v.has('cost_price') && <td style={{ textAlign: 'right' }} className="td-muted">{fmt(p.cost_price, dp)}</td>}
-                    {v.has('on_hand') && <td style={{ textAlign: 'right' }}>{p.track_stock ? <span style={{ fontWeight: 600, color: stock.onHand <= 0 ? 'var(--danger)' : 'var(--slate)' }}>{stock.onHand}</span> : <span className="td-muted">—</span>}</td>}
-                    {v.has('on_order') && <td style={{ textAlign: 'right' }} className="td-muted">{p.track_stock ? stock.onOrder : '—'}</td>}
-                    {v.has('committed') && <td style={{ textAlign: 'right' }} className="td-muted">{p.track_stock ? stock.committed : '—'}</td>}
-                    {v.has('available') && <td style={{ textAlign: 'right' }}>{p.track_stock ? <span style={{ fontWeight: 600, color: stock.available <= 0 ? 'var(--danger)' : '#059669' }}>{stock.available}</span> : <span className="td-muted">—</span>}</td>}
+                    {v.has('on_hand') && <td style={{ textAlign: 'right' }}>{p.track_stock ? <span style={{ fontWeight: 600, color: stock.onHand <= 0 ? 'var(--danger)' : 'var(--slate)' }}>{q(stock.onHand, !!p.serial_tracking)}</span> : <span className="td-muted">—</span>}</td>}
+                    {v.has('on_order') && <td style={{ textAlign: 'right' }} className="td-muted">{p.track_stock ? q(stock.onOrder, !!p.serial_tracking) : '—'}</td>}
+                    {v.has('committed') && <td style={{ textAlign: 'right' }} className="td-muted">{p.track_stock ? q(stock.committed, !!p.serial_tracking) : '—'}</td>}
+                    {v.has('available') && <td style={{ textAlign: 'right' }}>{p.track_stock ? <span style={{ fontWeight: 600, color: stock.available <= 0 ? 'var(--danger)' : '#059669' }}>{q(stock.available, !!p.serial_tracking)}</span> : <span className="td-muted">—</span>}</td>}
                     {xero?.show && <td><XeroStatusBadge info={xeroRecords[p.id]} /></td>}
                     {(canEdit || (xero?.show && xero.canPost)) && (
                     <td>
@@ -1483,7 +1485,7 @@ export default function ProductsTable({
                               // When product was created as Stock, can't switch to NonStock/Service; also can't switch other types back to Stock
                               const disabled = isStockLocked
                                 ? t !== 'Stock' // locked on Stock — other buttons disabled
-                                : t === 'Stock' && activeProduct?.type !== 'Stock' // non-Stock product — Stock button disabled
+                                : modal === 'edit' && t === 'Stock' && activeProduct?.type !== 'Stock' // existing non-Stock product — Stock button disabled (new products can pick any type)
                               return (
                                 <button
                                   key={t}
@@ -1491,7 +1493,7 @@ export default function ProductsTable({
                                   className={`seg-btn${form.type === t ? ' active' : ''}${disabled ? ' disabled' : ''}`}
                                   onClick={() => !disabled && setF('type', t)}
                                   style={disabled ? { opacity: 0.4, cursor: 'not-allowed' } : undefined}
-                                  title={isStockLocked && t !== 'Stock' ? 'Stock products cannot be changed to a different type' : t === 'Stock' && activeProduct?.type !== 'Stock' ? 'Cannot change to Stock type once created' : undefined}
+                                  title={isStockLocked && t !== 'Stock' ? 'Stock products cannot be changed to a different type' : modal === 'edit' && t === 'Stock' && activeProduct?.type !== 'Stock' ? 'Cannot change to Stock type once created' : undefined}
                                 >
                                   {t === 'NonStock' ? 'Non Stock' : t}
                                 </button>
@@ -1744,6 +1746,12 @@ export default function ProductsTable({
                 const groups = stockGroups.filter(g => g.quantity > 0)
                 const hasGroups = groups.length > 0
                 const showBin = groups.some(g => g.bin_id)
+                // Stock on hand that has no serial / batch / expiry recorded against it (received before tracking was captured)
+                const looseRows = hasTracking ? locations.map(loc => {
+                  const onHandHere = stockLevels.find(sl => sl.product_id === activeProduct?.id && sl.location_id === loc.id)?.quantity ?? 0
+                  const grouped = groups.filter(g => g.location_id === loc.id).reduce((t, g) => t + g.quantity, 0)
+                  return { loc, qty: onHandHere - grouped }
+                }).filter(r => r.qty > 0.000001) : []
 
                 return (
                 <div>
@@ -1774,10 +1782,10 @@ export default function ProductsTable({
                               return (
                                 <tr key={loc.id} style={{ borderBottom: '1px solid var(--gray-100)' }}>
                                   <td className="li-td" style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{loc.name}</td>
-                                  <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: onHand <= 0 ? 'var(--danger)' : 'var(--slate)' }}>{onHand}</td>
-                                  <td className="li-td" style={{ textAlign: 'right', color: 'var(--gray-400)' }}>{onOrder}</td>
-                                  <td className="li-td" style={{ textAlign: 'right', color: 'var(--gray-400)' }}>{committed}</td>
-                                  <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: available <= 0 ? 'var(--danger)' : '#059669' }}>{available}</td>
+                                  <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: onHand <= 0 ? 'var(--danger)' : 'var(--slate)' }}>{q(onHand, !!activeProduct?.serial_tracking)}</td>
+                                  <td className="li-td" style={{ textAlign: 'right', color: 'var(--gray-400)' }}>{q(onOrder, !!activeProduct?.serial_tracking)}</td>
+                                  <td className="li-td" style={{ textAlign: 'right', color: 'var(--gray-400)' }}>{q(committed, !!activeProduct?.serial_tracking)}</td>
+                                  <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: available <= 0 ? 'var(--danger)' : '#059669' }}>{q(available, !!activeProduct?.serial_tracking)}</td>
                                 </tr>
                               )
                             })}
@@ -1786,7 +1794,7 @@ export default function ProductsTable({
                       </div>
 
                       {/* ── Stock group breakdown ── */}
-                      {(hasTracking || showBin) && (stockGroupsLoading || hasGroups) && (
+                      {(hasTracking || showBin) && (stockGroupsLoading || hasGroups || looseRows.length > 0) && (
                         <div>
                           <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: '0.07em', textTransform: 'uppercase' as const, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)', marginBottom: 8 }}>Stock Groups</div>
                           {stockGroupsLoading ? (
@@ -1805,6 +1813,16 @@ export default function ProductsTable({
                                   </tr>
                                 </thead>
                                 <tbody>
+                                  {looseRows.map(r => (
+                                    <tr key={`loose-${r.loc.id}`} style={{ borderBottom: '1px solid var(--gray-100)', background: 'var(--gray-50)' }}>
+                                      <td className="li-td" style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{r.loc.name}</td>
+                                      <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: 'var(--slate)' }}>{q(r.qty, !!activeProduct?.serial_tracking)}</td>
+                                      {showBin    && <td className="li-td" style={{ color: 'var(--gray-300)', fontSize: 12 }}>—</td>}
+                                      {showBatch  && <td className="li-td" style={{ color: 'var(--gray-400)', fontSize: 12 }} colSpan={1 + (showSerial ? 1 : 0) + (showExpiry ? 1 : 0)}>Not recorded — received before {[showSerial && 'serial', showBatch && 'batch', showExpiry && 'expiry'].filter(Boolean).join('/')} tracking was captured</td>}
+                                      {!showBatch && showSerial && <td className="li-td" style={{ color: 'var(--gray-400)', fontSize: 12 }} colSpan={1 + (showExpiry ? 1 : 0)}>Serial numbers not recorded</td>}
+                                      {!showBatch && !showSerial && showExpiry && <td className="li-td" style={{ color: 'var(--gray-400)', fontSize: 12 }}>Not recorded</td>}
+                                    </tr>
+                                  ))}
                                   {groups.map(g => {
                                     const loc = locations.find(l => l.id === g.location_id)
                                     const expiryDisplay = g.expiry_date
@@ -1813,7 +1831,7 @@ export default function ProductsTable({
                                     return (
                                       <tr key={g.id} style={{ borderBottom: '1px solid var(--gray-100)' }}>
                                         <td className="li-td" style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{loc?.name ?? '—'}</td>
-                                        <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: 'var(--slate)' }}>{g.quantity}</td>
+                                        <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: 'var(--slate)' }}>{q(g.quantity, !!activeProduct?.serial_tracking)}</td>
                                         {showBin    && <td className="li-td" style={{ color: g.bin_name      ? 'var(--slate)' : 'var(--gray-300)', fontSize: 12 }}>{g.bin_name      ?? '—'}</td>}
                                         {showBatch  && <td className="li-td" style={{ color: g.batch_number  ? 'var(--slate)' : 'var(--gray-300)', fontSize: 12 }}>{g.batch_number  ?? '—'}</td>}
                                         {showSerial && <td className="li-td" style={{ color: g.serial_number ? 'var(--slate)' : 'var(--gray-300)', fontSize: 12 }}>{g.serial_number ?? '—'}</td>}

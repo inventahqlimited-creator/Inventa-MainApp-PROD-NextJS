@@ -6,6 +6,7 @@
 // Links live in xero_sync_records. Nothing in Xero is ever changed or deleted once it exists.
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { xeroGet, xeroPost } from './api'
+import { ensureTerm, termForContact, type XPaymentTerms } from './terms'
 import { resolveTaxType, type XeroSettings } from './mapping'
 import { logXero } from './audit'
 
@@ -285,7 +286,7 @@ export async function buildOverview(db: SupabaseClient, orgId: string, entity: E
 
 type XContactFull = {
   ContactID: string; Name?: string; EmailAddress?: string; TaxNumber?: string; Website?: string
-  IsSupplier?: boolean; IsCustomer?: boolean
+  IsSupplier?: boolean; IsCustomer?: boolean; PaymentTerms?: XPaymentTerms | null
   Phones?: { PhoneType?: string; PhoneNumber?: string; PhoneAreaCode?: string; PhoneCountryCode?: string }[]
   Addresses?: { AddressType?: string; AddressLine1?: string; City?: string; PostalCode?: string; Country?: string }[]
 }
@@ -324,9 +325,12 @@ export async function importFromXero(
       if (dup) { out.linked++; toSave.push({ entity_id: dup, xero_id: c.ContactID, status: 'synced', error: null }); continue }
       const phone = c.Phones?.find(p => p.PhoneNumber)
       const addr = c.Addresses?.find(a => a.AddressType === 'STREET' && (a.AddressLine1 || a.City)) ?? c.Addresses?.find(a => a.AddressLine1 || a.City)
+      const term = termForContact(c)
+      if (term) await ensureTerm(db, orgId, term)
       const { data, error } = await db.from('contacts').insert({
         org_id: orgId,
         name,
+        ...(term ? { terms: term.name } : {}),
         type: c.IsSupplier && !c.IsCustomer ? 'supplier' : 'customer',
         email: clean(c.EmailAddress),
         phone: phone ? [phone.PhoneCountryCode, phone.PhoneAreaCode, phone.PhoneNumber].filter(Boolean).join(' ') : null,

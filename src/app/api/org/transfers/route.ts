@@ -1,5 +1,6 @@
 // src/app/api/org/transfers/route.ts
 import { NextResponse } from 'next/server'
+import { checkLineQuantities } from '@/lib/qty-server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { pickTR, lineRow, nextTrNumber, validateTransfer } from './shared'
 import { requirePerm } from '@/lib/auth/access'
@@ -23,6 +24,7 @@ export async function POST(request: Request) {
 
   const body = await request.json()
   const lines: Record<string, unknown>[] = Array.isArray(body.lines) ? body.lines : []
+  { const e = await checkLineQuantities(adminClient, orgId, lines, 'quantity'); if (e) return NextResponse.json({ error: e }, { status: 400 }) }
   if (lines.length === 0) return NextResponse.json({ error: 'Add at least one product.' }, { status: 400 })
   if (lines.some(l => !(Number(l.quantity) > 0))) return NextResponse.json({ error: 'Every line needs a quantity above zero.' }, { status: 400 })
 

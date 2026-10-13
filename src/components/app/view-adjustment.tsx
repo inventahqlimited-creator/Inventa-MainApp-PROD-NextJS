@@ -3,6 +3,7 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { toast } from '@/components/app/toast'
+import { useQty } from '@/components/app/qty-provider'
 import { XeroStatusBadge, usePostToXero, type XeroRowInfo } from '@/components/app/xero-sync-ui'
 
 type XeroAdj = { show: boolean; canPost: boolean; tracked: boolean; mapped: boolean; info: XeroRowInfo | null }
@@ -93,6 +94,7 @@ export default function ViewAdjustment({
   showBins?: boolean
 }) {
   const router = useRouter()
+  const { q } = useQty()
   const [adj, setAdj] = useState(initialAdj)
   const [saving, setSaving] = useState(false)
   // Bug 6 fix: modal state instead of browser confirm()
@@ -269,7 +271,7 @@ export default function ViewAdjustment({
                 <tr><td colSpan={7 + (showBins ? 1 : 0) + (trackingFlags.showBatch ? 1 : 0) + (trackingFlags.showSerial ? 1 : 0) + (trackingFlags.showExpiry ? 1 : 0)} style={{ textAlign: 'center', padding: '24px 0', color: 'var(--gray-400)', fontSize: 13 }}>No products.</td></tr>
               )}
               {lines.map(l => {
-                const change = l.quantity_after - l.quantity_before
+                const change = Number((l.quantity_after - l.quantity_before).toFixed(4))
                 return (
                   <tr key={l.id} style={{ borderBottom: '1px solid var(--gray-100)' }}>
                     <td className="li-td"><span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--gray-400)' }}>{l.product_sku ?? '—'}</span></td>
@@ -277,10 +279,10 @@ export default function ViewAdjustment({
                       <span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{l.product_name ?? '—'}</span>
                     </td>
                     <td className="li-td" style={{ textAlign: 'center', color: 'var(--gray-400)' }}>{l.unit ?? '—'}</td>
-                    <td className="li-td" style={{ textAlign: 'right', color: 'var(--gray-400)' }}>{l.quantity_before}</td>
-                    <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: 'var(--slate)' }}>{l.quantity_after}</td>
+                    <td className="li-td" style={{ textAlign: 'right', color: 'var(--gray-400)' }}>{q(l.quantity_before, !!l.serial_number)}</td>
+                    <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: 'var(--slate)' }}>{q(l.quantity_after, !!l.serial_number)}</td>
                     <td className="li-td" style={{ textAlign: 'right', fontWeight: 700, color: change > 0 ? '#059669' : change < 0 ? 'var(--danger)' : 'var(--gray-400)' }}>
-                      {change > 0 ? `+${change}` : change}
+                      {change > 0 ? `+${q(change, !!l.serial_number)}` : q(change, !!l.serial_number)}
                     </td>
                     <td className="li-td" style={{ color: 'var(--gray-400)', fontSize: 12.5 }}>{l.reason ?? '—'}</td>
                     {showBins                  && <td className="li-td" style={{ color: 'var(--gray-400)', fontSize: 12 }}>{l.bin_name ?? '—'}</td>}

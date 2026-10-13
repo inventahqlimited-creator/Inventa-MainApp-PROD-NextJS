@@ -5,6 +5,7 @@ import type { Content, ContentTable, TableCell } from 'pdfmake/interfaces'
 import { code128Widths } from '@/lib/pick-list/barcode'
 import type { PackingListConfig } from '@/lib/packing-list/config'
 import type { PackAddress, PackBusiness, PackOrder, PackRow, PackingListPayload } from '@/lib/packing-list/types'
+import { setDocQty } from '@/lib/qty'
 import { buildPdf, fmtDate, loadLogo, logoContent, lbl, pageFooter, qtyText, safeName } from './engine'
 
 const INK = '#000000'
@@ -192,6 +193,7 @@ export async function renderPackingListPdf(payload: PackingListPayload, orderInd
   const biz = payload.business
   const { printed, today } = stamp(payload.timezone)
   const logo = cfg.header.logo ? logoContent(await loadLogo(biz.logo_url), 160, 46) : null
+  setDocQty(payload.qty)
 
   const content: Content[] = [mast(o, biz, cfg, logo)]
 

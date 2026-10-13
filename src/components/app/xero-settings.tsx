@@ -5,6 +5,7 @@ import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import XeroMapping, { clearXeroMappingCache } from '@/components/app/xero-mapping'
 import XeroPreferences from '@/components/app/xero-preferences'
+import XeroTermsImport from '@/components/app/xero-terms-import'
 
 export type XeroConnection = {
   status: 'pending' | 'connected' | 'needs_reconnect'
@@ -192,6 +193,7 @@ export default function XeroSettings({ isAdmin, connection, flash, onBack }: {
 
       {status === 'connected' && <XeroMapping />}
       {status === 'connected' && <XeroPreferences />}
+      {status === 'connected' && <XeroTermsImport isAdmin={isAdmin} />}
 
       {status !== 'connected' && (
         <div style={{ fontSize: 12.5, color: 'var(--gray-400)', padding: '0 4px' }}>

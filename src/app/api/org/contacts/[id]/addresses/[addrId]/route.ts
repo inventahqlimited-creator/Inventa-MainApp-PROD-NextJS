@@ -1,3 +1,4 @@
+import { saveError } from '@/lib/api/db-error'
 import { NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { pick, ADDRESS_FIELDS } from '@/lib/api/sanitize'
@@ -23,7 +24,7 @@ export async function PATCH(req: Request, { params }: Params) {
   const clean = pick(await req.json().catch(() => null), ADDRESS_FIELDS)
   if (!clean) return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
   const { error } = await ctx.adminClient.from('contact_addresses').update(clean).eq('id', addrId).eq('org_id', ctx.org_id)
-  if (error) { console.error('address update failed', error.message); return NextResponse.json({ error: 'Could not save the address' }, { status: 500 }) }
+  if (error) { console.error('address update failed', error.message); const e = saveError(error, 'address'); return NextResponse.json({ error: e.message }, { status: e.status }) }
   return NextResponse.json({ success: true })
 }
 

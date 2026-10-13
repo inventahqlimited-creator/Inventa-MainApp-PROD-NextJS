@@ -3,6 +3,7 @@
 // One invoice per order; several orders print as one document. What is shown is controlled by InvoiceConfig
 // (Settings → Sales → Sales Documents → Invoice).
 
+import { dueDateFor, type PaymentTerm } from '@/lib/payment-terms'
 import type { InvoiceConfig } from './config'
 import type { InvoiceAddress, InvoiceBusiness, InvoiceOrder, InvoicePayload } from './types'
 
@@ -13,24 +14,16 @@ function fmtDate(d: string | null): string {
   const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d ?? '')
   return m ? `${Number(m[3])} ${MONTHS[Number(m[2]) - 1]} ${m[1]}` : ''
 }
-const qtyText = (n: number) => String(Math.round(n * 1000) / 1000)
+import { docQty as qtyText, docNum as numText, setDocQty } from '@/lib/qty'
 
 function today(tz: string, now = new Date()): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone: tz, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now)
 }
 
-/** "Net 14" → 14 days after the invoice date; COD / Prepaid → the invoice date itself; anything else → no date. */
+let DOC_TERMS: PaymentTerm[] = []
+/** Due date from the organisation's payment terms (Net 14, 20th of next month …); null when the term is unknown. */
 function dueDate(terms: string | null, invoiceDate: string): string | null {
-  if (!terms) return null
-  const net = /^net\s*(\d+)/i.exec(terms.trim())
-  if (net) {
-    const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(invoiceDate)
-    if (!m) return null
-    const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]) + Number(net[1])))
-    return d.toISOString().slice(0, 10)
-  }
-  if (/^(cod|prepaid)/i.test(terms.trim())) return invoiceDate
-  return null
+  return dueDateFor(terms, invoiceDate, DOC_TERMS)
 }
 
 const dash = '—'
@@ -65,6 +58,12 @@ function info(o: InvoiceOrder, cfg: InvoiceConfig, invoiceDate: string): string 
     d.terms ? ['Terms', o.terms ?? dash] : null,
     d.orderNumber ? ['Order #', o.so_number] : null,
     d.customerPo && o.customer_po ? [po ? 'Supplier ref' : 'Customer PO', o.customer_po] : null,
+    ...(po || o.is_quote ? [] : [
+      d.carrier && o.carrier ? ['Carrier', o.carrier] : null,
+      d.shippingMethod && o.shipping_method ? ['Shipping method', o.shipping_method] : null,
+      d.serviceType && o.service_type ? ['Service', o.service_type] : null,
+      d.trackingNumber && o.tracking_number ? ['Tracking number', o.tracking_number] : null,
+    ]),
   ].filter((x): x is string[] => !!x)
   const blocks = [
     cfg.addresses.billTo ? { w: '1fr', html: addrBlock(po ? 'Supplier' : 'Bill to', o.bill_to) } : null,
@@ -75,6 +74,13 @@ function info(o: InvoiceOrder, cfg: InvoiceConfig, invoiceDate: string): string 
   return `<div class="info" style="grid-template-columns:${blocks.map(b => b.w).join(' ')}">${blocks.map(b => b.html).join('')}</div>`
 }
 
+type TrackCol = { key: 'serial' | 'batch' | 'expiry'; label: string; w: number }
+const TRACK: TrackCol[] = [
+  { key: 'serial', label: 'Serial #', w: 104 },
+  { key: 'batch', label: 'Batch', w: 74 },
+  { key: 'expiry', label: 'Expiry', w: 74 },
+]
+
 type Col = { key: 'unitPrice' | 'discount' | 'tax'; label: string; w: number }
 const COLS: Col[] = [
   { key: 'unitPrice', label: 'Unit price', w: 88 },
@@ -84,15 +90,21 @@ const COLS: Col[] = [
 
 function table(o: InvoiceOrder, cfg: InvoiceConfig, money: (n: number) => string): string {
   const cols = COLS.filter(c => cfg.columns[c.key]).map(c => (o.kind === 'purchase' && c.key === 'unitPrice' ? { ...c, label: 'Unit cost' } : c))
-  const head = `<thead><tr><th>Description</th><th class="r" style="width:50px">Qty</th>${cols.map(c => `<th class="r" style="width:${c.w}px">${c.label}</th>`).join('')}<th class="r" style="width:100px">Amount</th></tr></thead>`
+  // serial / batch / expiry columns: only on invoices, and only when switched on in Settings
+  const track = o.kind === 'purchase' ? [] : TRACK.filter(t => cfg.columns[t.key])
+  const trackCells = (l: InvoiceOrder['lines'][number]) => track.map(t => {
+    const v = t.key === 'serial' ? l.serials : t.key === 'batch' ? l.batches : (l.expiries ?? []).map(fmtDate)
+    return `<td class="t">${(v ?? []).length ? (v ?? []).map(esc).join('<br>') : dash}</td>`
+  }).join('')
+  const head = `<thead><tr><th>Description</th>${track.map(t => `<th style="width:${t.w}px">${t.label}</th>`).join('')}<th class="r" style="width:50px">Qty</th>${cols.map(c => `<th class="r" style="width:${c.w}px">${c.label}</th>`).join('')}<th class="r" style="width:100px">Amount</th></tr></thead>`
   const desc = (name: string, sub: string) => `<td><div class="pn">${esc(name)}</div>${sub ? `<div class="sku">${esc(sub)}</div>` : ''}</td>`
   const rows = o.lines.map(l => {
-    const cells = cols.map(c => `<td class="r">${c.key === 'unitPrice' ? money(l.unitPrice) : c.key === 'discount' ? (l.discount ? `${qtyText(l.discount)}%` : dash) : `${qtyText(l.taxRate)}%`}</td>`).join('')
-    return `<tr>${desc(l.name, cfg.columns.sku ? l.sku : '')}<td class="r">${qtyText(l.qty)}</td>${cells}<td class="r b">${money(l.amount)}</td></tr>`
+    const cells = cols.map(c => `<td class="r">${c.key === 'unitPrice' ? money(l.unitPrice) : c.key === 'discount' ? (l.discount ? `${numText(l.discount)}%` : dash) : `${numText(l.taxRate)}%`}</td>`).join('')
+    return `<tr>${desc(l.name, cfg.columns.sku ? l.sku : '')}${trackCells(l)}<td class="r">${qtyText(l.qty)}</td>${cells}<td class="r b">${money(l.amount)}</td></tr>`
   }).join('')
   const costs = o.costs.length
-    ? `<tr class="band"><td colspan="${3 + cols.length}">Additional costs</td></tr>` + o.costs.map(c =>
-      `<tr>${desc(c.name, c.sub)}<td class="r"></td>${cols.map(col => `<td class="r">${col.key === 'tax' ? `${qtyText(c.taxRate)}%` : ''}</td>`).join('')}<td class="r b">${money(c.amount)}</td></tr>`).join('')
+    ? `<tr class="band"><td colspan="${3 + cols.length + track.length}">Additional costs</td></tr>` + o.costs.map(c =>
+      `<tr>${desc(c.name, c.sub)}${track.map(() => '<td></td>').join('')}<td class="r"></td>${cols.map(col => `<td class="r">${col.key === 'tax' ? `${numText(c.taxRate)}%` : ''}</td>`).join('')}<td class="r b">${money(c.amount)}</td></tr>`).join('')
     : ''
   return `<table>${head}<tbody>${rows}${costs}</tbody></table>`
 }
@@ -161,6 +173,7 @@ tr{break-inside:avoid;page-break-inside:avoid}
 .pn{font:600 12.5px var(--display)}
 .sku{font:500 10.5px var(--mono);color:var(--mut);margin-top:2px}
 td.r{font-variant-numeric:tabular-nums;white-space:nowrap}
+td.t{font:500 10.5px var(--mono);line-height:1.5}
 td.b{font-weight:700}
 tr.band td{background:var(--tint);font:600 9px var(--body);letter-spacing:.12em;text-transform:uppercase;color:var(--mut);padding:8px;border-top:1px solid var(--ink)}
 .below{display:grid;grid-template-columns:1fr 285px;gap:34px;align-items:start}
@@ -194,6 +207,8 @@ export type InvoiceRenderOptions = {
 }
 
 export function renderInvoiceHtml(payload: InvoicePayload, opts: InvoiceRenderOptions = {}): string {
+  setDocQty(payload.qty)
+  DOC_TERMS = payload.paymentTerms ?? []
   const sheets = payload.orders.map(o => sheet(o, payload.business, payload.config, payload.decimals, payload.timezone, opts.now)).join('')
   const title = payload.orders.length === 1 ? `${payload.orders[0].kind === 'purchase' ? 'Purchase Order' : payload.orders[0].is_quote ? 'Quote' : 'Invoice'} ${payload.orders[0].invoice_number}` : `${payload.orders[0].kind === 'purchase' ? 'Purchase orders' : 'Invoices'} (${payload.orders.length} orders)`
   const previewCss = `body{background:#E5E9EA;padding:20px 0}.sheet{width:794px;min-height:1123px;margin:0 auto 20px;padding:48px 48px 34px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.12),0 12px 32px rgba(0,0,0,.12);break-after:auto}.tail{margin-top:auto}.fb{display:flex;font:500 10px var(--mono);color:var(--mut);letter-spacing:.04em;border-top:1px solid var(--line);padding-top:9px}.fb .pg::before{content:"Page 1 of 1"}`
@@ -218,12 +233,13 @@ export const SAMPLE_INVOICE_BUSINESS: InvoiceBusiness = {
 
 export const SAMPLE_INVOICES: InvoiceOrder[] = [{
   id: 'a', so_number: 'SO-0005', invoice_number: 'INV-0005', invoice_date: '2026-10-02', terms: 'Net 14', customer_po: 'PO-88213',
+  carrier: 'NZ Post', shipping_method: 'Courier', service_type: 'Overnight', tracking_number: 'NZ4829175530',
   notes: 'Head torch balance of 2 will be invoiced when it ships.', currency: 'NZD',
   bill_to: { name: 'Summit Gear Co.', lines: ['PO Box 4410', 'Christchurch 8140', 'New Zealand'], email: 'accounts@summitgear.example' },
   ship_to: { name: 'Summit Gear Co.', lines: ['118 Colombo Street', 'Christchurch 8023', 'New Zealand'], email: null },
   lines: [
-    { name: 'Merino Crew Sock, Charcoal (M)', sku: 'SOC-MER-CH-M', qty: 24, unitPrice: 18.5, discount: 0, taxRate: 15, amount: 444 },
-    { name: 'Trail Pack 28L, Olive', sku: 'PCK-TRL-28-OL', qty: 3, unitPrice: 189, discount: 0, taxRate: 15, amount: 567 },
+    { name: 'Merino Crew Sock, Charcoal (M)', sku: 'SOC-MER-CH-M', qty: 24, unitPrice: 18.5, discount: 0, taxRate: 15, amount: 444, batches: ['B2407'], expiries: ['2028-07-31'] },
+    { name: 'Trail Pack 28L, Olive', sku: 'PCK-TRL-28-OL', qty: 3, unitPrice: 189, discount: 0, taxRate: 15, amount: 567, serials: ['TP28-1001', 'TP28-1002', 'TP28-1003'] },
     { name: 'Insulated Bottle 750ml', sku: 'BTL-INS-750', qty: 12, unitPrice: 34.9, discount: 10, taxRate: 15, amount: 376.92 },
     { name: 'Head Torch 300 Lumen', sku: 'TRC-HD-300', qty: 4, unitPrice: 59, discount: 0, taxRate: 15, amount: 236 },
     { name: 'Seam Sealer 250ml', sku: 'SLR-SEAM-250', qty: 10, unitPrice: 12.5, discount: 0, taxRate: 15, amount: 125 },

@@ -2,6 +2,7 @@
 
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useQty } from '@/components/app/qty-provider'
 import EmailComposer from '@/components/app/email/email-composer'
 import { useCan } from '@/components/app/permissions-provider'
 
@@ -56,6 +57,7 @@ export default function ViewTransfer({
   orgId: string
 }) {
   const router = useRouter()
+  const { q } = useQty()
   const [transfer, setTransfer] = useState(initialTransfer)
   const [mode, setMode] = useState<'view' | 'edit'>('view')
   const canEmail = useCan('send_emails')
@@ -263,8 +265,8 @@ export default function ViewTransfer({
                     <td className="li-td"><span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--gray-400)' }}>{l.product_sku ?? '—'}</span></td>
                     <td className="li-td"><span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{l.product_name ?? '—'}</span></td>
                     <td className="li-td" style={{ textAlign: 'center', color: 'var(--gray-400)' }}>{l.unit ?? '—'}</td>
-                    <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: 'var(--slate)' }}>{l.quantity}</td>
-                    <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: remaining > 0 ? 'var(--danger)' : '#059669' }}>{received}</td>
+                    <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: 'var(--slate)' }}>{q(l.quantity, l.product_id)}</td>
+                    <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: remaining > 0 ? 'var(--danger)' : '#059669' }}>{q(received, l.product_id)}</td>
                   </tr>
                 )
               })}

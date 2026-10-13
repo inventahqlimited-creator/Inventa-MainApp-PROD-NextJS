@@ -92,6 +92,7 @@ function loadCols(): Set<ColKey> {
 export default function TransfersTable({ transfers, locations }: { transfers: Transfer[]; locations: Location[]; orgId?: string }) {
   const router = useRouter()
   const canEmail = useCan('send_emails')
+  const canPickTr = useCan('pick_transfers')
   const [emailId, setEmailId] = useState<string | null>(null)
   const [search, setSearch] = useState('')
   const [tab, setTab] = useState<Tab>('all')
@@ -108,6 +109,7 @@ export default function TransfersTable({ transfers, locations }: { transfers: Tr
   const [dialog, setDialog] = useState<
     | { kind: 'cancel'; tr: Transfer }
     | { kind: 'complete'; tr: Transfer }
+    | { kind: 'unpick'; tr: Transfer }
     | { kind: 'bulk-complete'; ids: string[]; skipped: number }
     | null
   >(null)
@@ -197,6 +199,16 @@ export default function TransfersTable({ transfers, locations }: { transfers: Tr
       const data = await res.json().catch(() => ({}))
       if (!res.ok) flash(false, `${t.tr_number}: ${data.error ?? 'Could not complete this transfer'}`)
       else { flash(true, `${t.tr_number} completed.`); router.refresh() }
+    } catch { flash(false, 'Network error — please try again.') }
+    finally { setBusy(false); setDialog(null) }
+  }
+  async function unpickOne(t: Transfer) {
+    setBusy(true)
+    try {
+      const res = await fetch(`/api/org/transfers/${t.id}/unpick`, { method: 'POST' })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) flash(false, `${t.tr_number}: ${data.error ?? 'Could not unpick this transfer'}`)
+      else { flash(true, `${t.tr_number} unpicked — stock released.`); router.refresh() }
     } catch { flash(false, 'Network error — please try again.') }
     finally { setBusy(false); setDialog(null) }
   }
@@ -426,6 +438,7 @@ export default function TransfersTable({ transfers, locations }: { transfers: Tr
             {k === 'open' && item('Pick Order', () => router.push(`/transfers/${t.id}/pick`))}
             {k === 'picking' && item('Continue Picking', () => router.push(`/transfers/${t.id}/pick`))}
             {k === 'picked' && item('Complete Transfer', () => { setMenu(null); setDialog({ kind: 'complete', tr: t }) })}
+            {canPickTr && (k === 'picking' || k === 'picked') && item('Unpick Order', () => { setMenu(null); setDialog({ kind: 'unpick', tr: t }) })}
             {k === 'draft' && item('Edit', () => router.push(`/transfers/${t.id}`))}
             {k !== 'closed' && k !== 'cancelled' && <>{sep}{item('Cancel Transfer', () => { setMenu(null); setDialog({ kind: 'cancel', tr: t }) }, { danger: true })}</>}
             {(k === 'closed' || k === 'cancelled') && item('View', () => router.push(`/transfers/${t.id}`))}
@@ -444,6 +457,16 @@ export default function TransfersTable({ transfers, locations }: { transfers: Tr
               <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
                 <button className="btn btn-outline" style={{ height: 38 }} onClick={() => setDialog(null)} disabled={busy}>Keep transfer</button>
                 <button className="btn btn-primary" style={{ height: 38, padding: '0 20px', background: 'var(--danger)', borderColor: 'var(--danger)' }} onClick={() => cancelOne(dialog.tr)} disabled={busy}>{busy ? 'Please wait…' : 'Yes, cancel'}</button>
+              </div>
+            </>)}
+            {dialog.kind === 'unpick' && (<>
+              <div style={{ fontFamily: 'var(--font-display)', fontSize: 17, fontWeight: 700, color: 'var(--slate)', marginBottom: 8 }}>Unpick {dialog.tr.tr_number}?</div>
+              <div style={{ fontSize: 13.5, color: 'var(--gray-400)', lineHeight: 1.5, marginBottom: 20 }}>
+                The transfer goes back to Open and the picked stock is released. Are you sure?
+              </div>
+              <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+                <button className="btn btn-outline" style={{ height: 38 }} onClick={() => setDialog(null)} disabled={busy}>No, keep it</button>
+                <button className="btn btn-primary" style={{ height: 38, padding: '0 20px' }} onClick={() => unpickOne(dialog.tr)} disabled={busy}>{busy ? 'Please wait…' : 'Yes, unpick'}</button>
               </div>
             </>)}
             {dialog.kind === 'complete' && (<>

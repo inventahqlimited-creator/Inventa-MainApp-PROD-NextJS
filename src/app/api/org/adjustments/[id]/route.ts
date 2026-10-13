@@ -1,3 +1,4 @@
+import { saveError } from '@/lib/api/db-error'
 import { NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { cleanAdjustment, checkOwnership } from '@/lib/adjustments/validate'
@@ -294,7 +295,7 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     .eq('id', id)
     .eq('org_id', orgId)
 
-  if (headerError) { console.error('adjustment header update failed', headerError.message); return NextResponse.json({ error: 'Could not save the adjustment' }, { status: 400 }) }
+  if (headerError) { console.error('adjustment header update failed', headerError.message); const e = saveError(headerError, 'adjustment'); return NextResponse.json({ error: e.message }, { status: e.status }) }
 
   // Replace lines: delete existing, re-insert
   if (lines !== undefined) {

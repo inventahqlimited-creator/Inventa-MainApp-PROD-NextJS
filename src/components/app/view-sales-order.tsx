@@ -1,7 +1,9 @@
 'use client'
 
+import { useTermNames } from '@/components/app/payment-terms-provider'
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useQty } from '@/components/app/qty-provider'
 
 type SO = {
   id: string
@@ -76,6 +78,8 @@ export default function ViewSalesOrder({
   orgId: string
 }) {
   const router = useRouter()
+  const termNames = useTermNames()
+  const { q } = useQty()
   const [so, setSo] = useState(initialSo)
   const [mode, setMode] = useState<'view' | 'edit'>('view')
   const [saving, setSaving] = useState(false)
@@ -280,7 +284,7 @@ export default function ViewSalesOrder({
                   {termsOpen && (
                     <div className="inv-dropdown filter-pick-dropdown" style={{ display: 'block', minWidth: 160 }}>
                       <div className="col-dropdown-title">Payment Terms</div>
-                      {['Net 7','Net 14','Net 30','Net 60','COD','Prepaid'].map(t => (
+                      {termNames.map(t => (
                         <div key={t} className={`fp-item${editTerms === t ? ' active' : ''}`} onClick={() => { setEditTerms(t); setTermsOpen(false) }}>{t}</div>
                       ))}
                     </div>
@@ -326,7 +330,7 @@ export default function ViewSalesOrder({
                       <td className="li-td"><span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--gray-400)' }}>{l.product_sku ?? '—'}</span></td>
                       <td className="li-td"><span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{l.product_name ?? '—'}</span></td>
                       <td className="li-td" style={{ textAlign: 'center', color: 'var(--gray-400)' }}>{l.unit ?? '—'}</td>
-                      <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: 'var(--slate)' }}>{l.quantity}</td>
+                      <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: 'var(--slate)' }}>{q(l.quantity, l.product_id)}</td>
                       <td className="li-td" style={{ textAlign: 'right', color: 'var(--gray-400)' }}>{l.quantity_picked ?? 0}</td>
                       <td className="li-td" style={{ textAlign: 'right', color: '#059669', fontWeight: 600 }}>{l.quantity_shipped ?? 0}</td>
                       <td className="li-td" style={{ textAlign: 'right', color: 'var(--gray-400)' }}>{`$${l.unit_price.toFixed(2)}`}</td>

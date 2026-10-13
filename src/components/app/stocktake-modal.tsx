@@ -3,6 +3,7 @@
 
 import { useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { useQty } from '@/components/app/qty-provider'
 
 type Product = {
   id: string
@@ -33,6 +34,7 @@ export default function StocktakeModal({
   onImported?: () => void
 }) {
   const router = useRouter()
+  const { places, round } = useQty()
   const [file, setFile] = useState<File | null>(null)
   const [dragging, setDragging] = useState(false)
   const [errors, setErrors] = useState<string[]>([])
@@ -158,11 +160,17 @@ export default function StocktakeModal({
       }
 
       // Validate quantity
-      const qty = parseFloat(qtyVal)
+      let qty = parseFloat(qtyVal)
       if (isNaN(qty) || qty < 0) {
         rowErrors.push(`Row ${rowNum} (${product.name}): Invalid quantity "${qtyVal}"`)
         continue
       }
+      // Whole numbers unless decimal quantities are switched on (serial-tracked products are always whole)
+      if (places(product.id) === 0 && !Number.isInteger(qty)) {
+        rowErrors.push(`Row ${rowNum} (${product.name}): Quantity "${qtyVal}" must be a whole number${product.serial_tracking ? ' (serial-tracked products are always whole)' : ' — decimal quantities are switched off in Settings'}`)
+        continue
+      }
+      qty = round(qty, product.id)
 
       // Require location
       if (!locationVal) {

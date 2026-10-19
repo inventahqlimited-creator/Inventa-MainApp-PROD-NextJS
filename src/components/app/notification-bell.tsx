@@ -1,8 +1,11 @@
 'use client'
 // The bell in the top bar: live alerts (low stock, overdue sales / purchase orders) from /api/org/notifications.
+// Also lists "What's new" release notes (src/lib/release-notes.ts): click one to open it in a popup.
 // "Read" is remembered per person in this browser only.
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { recentReleases, type ReleaseNote } from '@/lib/release-notes'
+import ReleaseNotesModal, { fmtReleaseDate } from '@/components/app/release-notes-modal'
 
 type Alert = { id: string; kind: string; level: 'warning' | 'critical'; title: string; body: string; href: string }
 const KEY = 'inv_notif_read'
@@ -15,6 +18,8 @@ export default function NotificationBell() {
   const [alerts, setAlerts] = useState<Alert[]>([])
   const [read, setRead] = useState<Set<string>>(new Set())
   const [open, setOpen] = useState(false)
+  const [releases] = useState<ReleaseNote[]>(() => recentReleases())
+  const [showRelease, setShowRelease] = useState<ReleaseNote | null>(null)
   const ref = useRef<HTMLDivElement>(null)
 
   const refresh = useCallback(async () => {
@@ -25,12 +30,12 @@ export default function NotificationBell() {
       const list: Alert[] = d.alerts ?? []
       setAlerts(list)
       // forget read marks for alerts that no longer exist
-      const keep = new Set(list.map(a => a.id)); const r = loadRead()
+      const keep = new Set([...list.map(a => a.id), ...releases.map(x => `rel:${x.id}`)]); const r = loadRead()
       const pruned = new Set([...r].filter(id => keep.has(id)))
       setRead(pruned)
       try { localStorage.setItem(KEY, JSON.stringify([...pruned])) } catch { /* private mode */ }
     } catch { /* offline */ }
-  }, [])
+  }, [releases])
 
   useEffect(() => {
     setRead(loadRead())
@@ -47,7 +52,8 @@ export default function NotificationBell() {
   }, [open])
 
   function persist(next: Set<string>) { setRead(next); try { localStorage.setItem(KEY, JSON.stringify([...next])) } catch { /* private mode */ } }
-  const unread = alerts.filter(a => !read.has(a.id)).length
+  const unreadReleases = releases.filter(x => !read.has(`rel:${x.id}`)).length
+  const unread = alerts.filter(a => !read.has(a.id)).length + unreadReleases
   const critical = alerts.some(a => a.level === 'critical' && !read.has(a.id))
 
   return (
@@ -67,10 +73,28 @@ export default function NotificationBell() {
         <div style={{ position: 'fixed', top: 62, right: 16, width: 380, maxWidth: 'calc(100vw - 32px)', background: 'var(--white)', border: '1px solid rgba(0,0,0,0.08)', borderRadius: 16, boxShadow: '0 12px 40px rgba(0,0,0,0.15)', zIndex: 800, overflow: 'hidden' }}>
           <div style={{ padding: '14px 16px 10px', borderBottom: '1px solid var(--gray-100)', display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <div style={{ fontSize: 14, fontWeight: 700, color: 'var(--slate)', fontFamily: 'var(--font-display)' }}>Notifications</div>
-            <button onClick={() => persist(new Set(alerts.map(a => a.id)))} style={{ fontSize: 12, color: 'var(--teal)', fontWeight: 600, border: 'none', background: 'transparent', cursor: 'pointer' }}>Mark all read</button>
+            <button onClick={() => persist(new Set([...alerts.map(a => a.id), ...releases.map(x => `rel:${x.id}`)]))} style={{ fontSize: 12, color: 'var(--teal)', fontWeight: 600, border: 'none', background: 'transparent', cursor: 'pointer' }}>Mark all read</button>
           </div>
           <div style={{ maxHeight: 400, overflowY: 'auto' }}>
-            {alerts.length === 0 && <div style={{ padding: 32, textAlign: 'center', fontSize: 13, color: 'var(--gray-400)' }}>No notifications</div>}
+            {releases.map(rel => {
+              const isRead = read.has(`rel:${rel.id}`)
+              return (
+                <div key={rel.id} onClick={() => { persist(new Set([...read, `rel:${rel.id}`])); setOpen(false); setShowRelease(rel) }}
+                  style={{ display: 'flex', gap: 12, padding: '12px 16px', cursor: 'pointer', background: isRead ? 'transparent' : 'rgba(239,246,255,0.5)', borderBottom: '1px solid var(--gray-100)' }}>
+                  <div style={{ width: 30, height: 30, borderRadius: 8, background: '#DBEAFE', color: '#1D4ED8', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 3l1.9 5.1L19 10l-5.1 1.9L12 17l-1.9-5.1L5 10l5.1-1.9z"/><path d="M19 16l.7 1.8 1.8.7-1.8.7L19 21l-.7-1.8-1.8-.7 1.8-.7z"/></svg>
+                  </div>
+                  <div style={{ flex: 1, minWidth: 0 }}>
+                    <div style={{ fontSize: 13, fontWeight: isRead ? 500 : 700, color: 'var(--slate)', fontFamily: 'var(--font-display)' }}>
+                      What’s new — {rel.title}<span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, background: '#DBEAFE', color: '#1D4ED8', padding: '2px 6px', borderRadius: 20 }}>New</span>
+                    </div>
+                    <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 2, lineHeight: 1.4 }}>{fmtReleaseDate(rel.date)} · {rel.summary}</div>
+                  </div>
+                  {!isRead && <div style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--teal)', flexShrink: 0, marginTop: 4 }} />}
+                </div>
+              )
+            })}
+            {alerts.length === 0 && releases.length === 0 && <div style={{ padding: 32, textAlign: 'center', fontSize: 13, color: 'var(--gray-400)' }}>No notifications</div>}
             {alerts.map(a => {
               const isRead = read.has(a.id)
               const crit = a.level === 'critical'
@@ -96,6 +120,7 @@ export default function NotificationBell() {
           </div>
         </div>
       )}
+      {showRelease && <ReleaseNotesModal release={showRelease} onClose={() => setShowRelease(null)} />}
     </div>
   )
 }

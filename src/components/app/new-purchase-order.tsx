@@ -5,6 +5,7 @@ import { useState, useMemo, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useQty } from '@/components/app/qty-provider'
 import NumInput from '@/components/app/num-input'
+import { arrangeKitLines, kitApplyQty, kitLinesFor, kitRemove, type KitScreenData } from '@/lib/kits/order-lines'
 import TaxSelect from '@/components/app/tax-select'
 import { toast } from '@/components/app/toast'
 
@@ -64,6 +65,9 @@ type PriceLevel = {
 }
 
 type LineItem = {
+  kit_group?: string | null // kit line and its item lines share this
+  is_kit_parent?: boolean // the kit line (a heading: priced by its items)
+  kit_qty_per?: number | null // item lines: how many go into one kit
   product_id: string
   product_name: string
   product_sku: string
@@ -133,7 +137,9 @@ export default function NewPurchaseOrder({
   decimalPlaces = 2,
   stockLevels = [],
   prefill = null,
+  kits,
 }: {
+  kits?: KitScreenData // Kits & Bundles add-on
   // Create Purchase Order from a sales order (product + quantity only), or Clone Order (everything on the order)
   prefill?: {
     location_id: string | null
@@ -205,7 +211,9 @@ export default function NewPurchaseOrder({
   const [terms, setTerms] = useState(prefill?.terms ?? fallbackTerms)
   const [termsOpen, setTermsOpen] = useState(false)
   const [notes, setNotes] = useState(prefill?.notes ?? '')
-  const [lines, setLines] = useState<LineItem[]>(() =>
+  const kitUi = { catalog: kits?.enabled ? kits.catalog : {}, expand: kits?.settings.expand_purchase !== false, kind: 'purchase' as const }
+  const productById = (id: string) => products.find(x => x.id === id)
+  const [lines, setLines] = useState<LineItem[]>(() => arrangeKitLines(
     (prefill?.lines ?? []).flatMap(pl => {
       const p = products.find(x => x.id === pl.product_id)
       if (!p) return []
@@ -224,7 +232,7 @@ export default function NewPurchaseOrder({
           : buyTaxFor(p)),
         line_notes: pl.line_notes ?? '',
       }]
-    }))
+    }), kitUi, (k: LineItem) => { const cp = products.find(x => x.id === k.product_id); return cp ? { ...k, unit_cost: Number(cp.cost_price) || k.unit_cost, ...buyTaxFor(cp) } : k }) as LineItem[])
   const [costLines, setCostLines] = useState<CostLine[]>(() =>
     (prefill?.cost_lines ?? []).map(c => withTaxName({
       product_id: c.product_id ?? '', product_name: c.product_name ?? '', product_sku: c.product_sku ?? '',
@@ -302,6 +310,13 @@ export default function NewPurchaseOrder({
   }
 
   function addLine(p: Product) {
+    if (kitUi.catalog[p.id]) {
+      const parent = { product_id: p.id, product_name: p.name, product_sku: p.sku ?? '', unit: p.buy_uom ?? 'Each', quantity_ordered: 1, unit_cost: 0, discount: 0, tax_rate: 0, tax_rate_id: null, tax_name: null, line_notes: '' }
+      setLines(prev => [...prev, ...(kitLinesFor(p.id, parent, kitUi, (k: LineItem) => ({ ...k, unit_cost: resolvePrice(productById(k.product_id) ?? p), ...(productById(k.product_id) ? buyTaxFor(productById(k.product_id) as Product) : {}), unit: productById(k.product_id)?.buy_uom ?? k.unit })) as LineItem[])])
+      setItemSearch('')
+      setItemDropOpen(false)
+      return
+    }
     setLines(prev => [...prev, {
       product_id: p.id,
       product_name: p.name,
@@ -318,7 +333,10 @@ export default function NewPurchaseOrder({
   }
 
   function updateLine(idx: number, field: keyof LineItem, value: string | number) {
-    setLines(prev => prev.map((l, i) => i === idx ? { ...l, [field]: value } : l))
+    setLines(prev => {
+      const out = prev.map((l, i) => i === idx ? { ...l, [field]: value } : l)
+      return field === 'quantity_ordered' ? (kitApplyQty(out, idx, Number(value) || 0, 'purchase') as LineItem[]) : out
+    })
   }
 
   function setLineTax(idx: number, id: string) {
@@ -326,7 +344,7 @@ export default function NewPurchaseOrder({
   }
 
   function removeLine(idx: number) {
-    setLines(prev => prev.filter((_, i) => i !== idx))
+    setLines(prev => kitRemove(prev, idx) as LineItem[])
   }
 
   function addCostLine(p: Product) {
@@ -652,13 +670,17 @@ export default function NewPurchaseOrder({
                 {lines.map((l, idx) => (
                   <tr key={idx} style={{ borderBottom: '1px solid var(--gray-100)' }}>
                     <td className="li-td"><span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--gray-400)' }}>{l.product_sku}</span></td>
-                    <td className="li-td"><span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{l.product_name}</span></td>
+                    <td className="li-td">
+                      <span style={{ fontWeight: l.kit_group && !l.is_kit_parent ? 500 : 600, color: 'var(--slate)', fontSize: 13, paddingLeft: l.kit_group && !l.is_kit_parent ? 16 : 0 }}>{l.kit_group && !l.is_kit_parent ? '↳ ' : ''}{l.product_name}</span>
+                      {l.is_kit_parent && <span className="badge" style={{ background: '#EDE9FE', color: '#5B21B6', marginLeft: 8 }}>Kit</span>}
+                    </td>
                     <td className="li-td" style={{ textAlign: 'center' }}>
                       <input className="li-input" value={l.unit} onChange={e => updateLine(idx, 'unit', e.target.value)} style={{ width: 60, textAlign: 'center' }} />
                     </td>
                     <td className="li-td" style={{ textAlign: 'right' }}>
                       <NumInput className="li-input right" value={l.quantity_ordered} decimals={places(l.product_id)} onChange={n => updateLine(idx, 'quantity_ordered', n)} min={0} style={{ width: 70, textAlign: 'right' }} />
                     </td>
+                    {l.is_kit_parent ? <td className="li-td" colSpan={4} style={{ textAlign: 'right', color: 'var(--gray-300)', fontSize: 12 }}>priced by the items below</td> : (<>
                     <td className="li-td" style={{ textAlign: 'right' }}>
                       <NumInput className="li-input right" value={l.unit_cost} onChange={n => updateLine(idx, 'unit_cost', n)} decimals={decimalPlaces} min={0} style={{ width: 90, textAlign: 'right' }} />
                     </td>
@@ -670,13 +692,13 @@ export default function NewPurchaseOrder({
                     </td>
                     <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: 'var(--slate)', fontFamily: 'var(--font-display)' }}>
                       {fmtMoney(lineTotal(l))}
-                    </td>
+                    </td></>)}
                     <td className="li-td">
-                      <button onClick={() => removeLine(idx)} style={{ width: 26, height: 26, borderRadius: 7, border: 'none', background: 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--gray-400)' }}
+                      {l.kit_group && !l.is_kit_parent ? null : <button onClick={() => removeLine(idx)} style={{ width: 26, height: 26, borderRadius: 7, border: 'none', background: 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--gray-400)' }}
                         onMouseOver={e => (e.currentTarget.style.color = 'var(--danger)')}
                         onMouseOut={e => (e.currentTarget.style.color = 'var(--gray-400)')}>
                         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
-                      </button>
+                      </button>}
                     </td>
                   </tr>
                 ))}
@@ -714,7 +736,7 @@ export default function NewPurchaseOrder({
                       {filteredProducts.map(p => (
                         <div key={p.id} className="fp-item" style={{ display: 'grid', gridTemplateColumns: PICK_COLS, alignItems: 'center', gap: 8 }} onClick={() => addLine(p)}>
                           <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--gray-400)' }}>{p.sku ?? '—'}</span>
-                          <span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{p.name}</span>
+                          <span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{p.name}{kitUi.catalog[p.id] && <span className="badge" style={{ background: '#EDE9FE', color: '#5B21B6', marginLeft: 8 }}>Kit</span>}</span>
                           <span style={{ fontSize: 12, color: 'var(--gray-400)', textAlign: 'center' }}>{p.buy_uom ?? 'Each'}</span>
                           {(() => {
                             const st = stockByProduct[p.id] ?? { onHand: 0, committed: 0, available: 0 }

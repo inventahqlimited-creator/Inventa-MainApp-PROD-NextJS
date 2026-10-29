@@ -1,3 +1,4 @@
+import { loadKitColumns, loadKitScreenData } from '@/lib/kits/order-lines-server'
 import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import EditPurchaseOrder from '@/components/app/edit-purchase-order'
@@ -56,11 +57,16 @@ export default async function EditPurchaseOrderPage({ params, searchParams }: { 
     adminClient.from('stock_levels').select('product_id, location_id, quantity, committed').eq('org_id', m.org_id),
   ])
 
-  // Shape the order
+  // Shape the order. A kit line holds no quantity of its own in the database; the screen shows the number of kits.
+  const kitCols = await loadKitColumns(adminClient, m.org_id, id, 'purchase')
+  const kits = await loadKitScreenData(adminClient, m.org_id)
   const o = order as any
   const shaped = {
     ...o,
-    lines: (o.purchase_order_lines ?? []).sort((a: any, b: any) => a.sort_order - b.sort_order),
+    lines: (o.purchase_order_lines ?? []).map((l: any) => {
+      const k = kitCols.get(l.id)
+      return k ? { ...l, kit_group: k.kit_group, is_kit_parent: k.is_kit_parent, kit_qty_per: k.kit_qty_per, ...(k.is_kit_parent ? { quantity_ordered: k.kit_qty ?? 0 } : {}) } : l
+    }).sort((a: any, b: any) => a.sort_order - b.sort_order),
     cost_lines: (o.purchase_order_cost_lines ?? []).sort((a: any, b: any) => a.sort_order - b.sort_order),
   }
 
@@ -81,6 +87,7 @@ export default async function EditPurchaseOrderPage({ params, searchParams }: { 
       taxRates={(taxRates ?? []) as any}
       xeroBill={{ show: xero.show, canPost: xero.canPost, ready: billReady, info: xero.records[id] ?? null }}
       startInEdit={edit === '1'}
+      kits={kits}
     />
   )
 }

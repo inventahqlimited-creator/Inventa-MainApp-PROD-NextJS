@@ -2,6 +2,7 @@
 import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import TransferForm from '@/components/app/transfer-form'
+import { loadKitColumns, loadKitScreenData } from '@/lib/kits/order-lines-server'
 
 export default async function NewTransferPage({ searchParams }: { searchParams: Promise<{ clone?: string }> }) {
   const { clone } = await searchParams
@@ -35,8 +36,19 @@ export default async function NewTransferPage({ searchParams }: { searchParams: 
       adminClient.from('transfer_orders').select('from_location_id, to_location_id, notes').eq('id', clone).eq('org_id', m.org_id).maybeSingle(),
       adminClient.from('transfer_order_lines').select('*').eq('tr_id', clone).eq('org_id', m.org_id).order('sort_order'),
     ])
-    if (src) { cloneOf = src as typeof cloneOf; cloneLines = srcLines ?? [] }
+    if (src) {
+      cloneOf = src as typeof cloneOf
+      const kc = await loadKitColumns(adminClient, m.org_id, clone, 'transfer')
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      cloneLines = ((srcLines ?? []) as any[]).map(l => { const k = kc.get(l.id); return k ? { ...l, kit_group: k.kit_group, is_kit_parent: k.is_kit_parent, kit_qty_per: k.kit_qty_per, quantity: k.is_kit_parent ? (k.kit_qty ?? 0) : l.quantity } : l })
+    }
   }
+
+  // Kits & Bundles: kits can be transferred too (they are not stock items themselves, so they are added to the list here)
+  const kits = await loadKitScreenData(adminClient, m.org_id)
+  const kitIds = kits.enabled ? Object.keys(kits.catalog) : []
+  const kitProducts = kitIds.length ? ((await adminClient.from('products').select('id, name, sku, sell_uom, track_stock, type').eq('org_id', m.org_id).eq('is_active', true).in('id', kitIds)).data ?? []) : []
+  const allProducts = [...(products ?? []), ...kitProducts].sort((a, b) => String(a.name).localeCompare(String(b.name)))
 
   return (
     <TransferForm
@@ -48,7 +60,8 @@ export default async function NewTransferPage({ searchParams }: { searchParams: 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       locations={(locations ?? []) as any}
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      products={(products ?? []) as any}
+      products={allProducts as any}
+      kits={kits}
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       stockLevels={(stockLevels ?? []) as any}
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

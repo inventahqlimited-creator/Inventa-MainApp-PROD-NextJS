@@ -64,4 +64,27 @@ describe('kit order lines', () => {
     const orphan = resolveKitLines({ incoming: [{ product_id: A, product_name: 'Can', quantity: 1, kit_group: G }], catalog, newGroup })
     expect(orphan.ok).toBe(false)
   })
+
+  it('purchases: the kit line is a heading with no quantity or cost; items are priced from their costs', () => {
+    const r = resolveKitLines({ kind: 'purchase', incoming: [{ product_id: KIT, product_name: 'Six pack', quantity_ordered: 4, unit_cost: 99 }], catalog, newGroup })
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.lines[0]).toMatchObject({ is_kit_parent: true, quantity_ordered: 0, kit_qty: 4, unit_cost: 0 })
+    expect(r.lines[1]).toMatchObject({ product_id: A, quantity_ordered: 8, unit_cost: 1.5 })
+    expect(r.lines[2]).toMatchObject({ product_id: B, quantity_ordered: 4, unit_cost: 0.5 })
+  })
+  it('purchases: keeps the cost typed on an item', () => {
+    const r = resolveKitLines({ kind: 'purchase', incoming: [
+      { product_id: KIT, product_name: 'Six pack', quantity_ordered: 1, kit_group: G },
+      { product_id: A, product_name: 'Can', quantity_ordered: 2, unit_cost: 1.8, kit_group: G },
+    ], catalog, newGroup })
+    expect(r.ok && r.lines[1]).toMatchObject({ unit_cost: 1.8, quantity_ordered: 2 })
+  })
+  it('transfers: kit line holds no quantity; items carry it', () => {
+    const r = resolveKitLines({ kind: 'transfer', incoming: [{ product_id: KIT, product_name: 'Six pack', quantity: 3 }], catalog, newGroup })
+    expect(r.ok).toBe(true)
+    if (!r.ok) return
+    expect(r.lines[0]).toMatchObject({ quantity: 0, kit_qty: 3 })
+    expect(r.lines[1]).toMatchObject({ product_id: A, quantity: 6 })
+  })
 })

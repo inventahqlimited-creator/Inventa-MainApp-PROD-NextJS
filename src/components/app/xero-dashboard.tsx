@@ -341,7 +341,7 @@ function PostSection({ kind, isAdmin, reloadKey, postStatus }: { kind: Kind; isA
         <>
           {data.needsAccounts && (
             <div style={{ padding: '10px 14px', borderRadius: 10, marginBottom: 14, fontSize: 12.5, background: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A', lineHeight: 1.5 }}>
-              Choose the inventory asset and stock adjustment accounts in Settings → Xero → Accounts and tax. Adjustments wait until then.
+              Choose the stock adjustment account (and the inventory asset account if Xero doesn’t track your inventory) in Settings → Xero → Accounts and tax. Adjustments wait until then.
             </div>
           )}
           <div className="xero-stats">
@@ -462,7 +462,7 @@ export default function XeroDashboard({ isAdmin }: { isAdmin: boolean }) {
           <div style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 700, color: 'var(--slate)' }}>Sync everything</div>
           <div style={{ fontSize: 12.5, color: 'var(--gray-400)', marginTop: 2 }}>
             {info?.prefs.inventory_tracked
-              ? 'Sends new contacts, then products, then received purchase orders (bills) and closed sales orders (invoices) to Xero. Stock adjustments are posted in Xero manually.'
+              ? 'Sends new contacts, then products, then received purchase orders (bills), stock adjustments (bills and credit notes) and closed sales orders (invoices) to Xero.'
               : 'Sends new contacts, then products, then closed sales orders (invoices), received purchase orders (bills) and stock adjustments (journals) to Xero.'}
           </div>
           {info && (

@@ -1,12 +1,15 @@
 // src/lib/xero/adjustment.ts
 // Stock adjustments → manual journals in Xero (Draft or Posted, as chosen in Settings).
-//   • Only when inventory is NOT tracked in Xero (the default). If Xero tracks it, adjustments are posted in Xero by hand.
+//   • Xero does NOT track inventory (the default): one manual journal per adjustment (below).
+//   • Xero DOES track inventory: a Bill for the items that went up and a supplier Credit Note for the items that went down, each with one balancing
+//     line on the stock adjustment account so it totals 0.00 (nothing owing). Xero then moves the quantity and value of its tracked items itself.
+//     Only tracked stock items already in Xero are sent; others are skipped with a note. Cost = the cost saved on the line (else the product's average cost).
 //   • Only a Completed adjustment, completed after the cut-off (prefs.adjust_from), not ticked "Don't send to Xero", and only once.
 //   • Value = quantity change × the cost saved on the line. Lines with no cost use the product's average, last or cost price, which is then saved.
 //   • Journal lines: the inventory asset account takes each product's value (gain = debit, loss = credit); one line on the stock adjustment account balances them.
 //   • After posting, InventaHQ never touches the Xero copy again. A later change in InventaHQ is not sent.
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { xeroPost } from './api'
+import { xeroGet, xeroPost } from './api'
 import type { XeroSettings } from './mapping'
 import type { XeroPrefs } from './prefs'
 import { clean, n, saveRecord, sleep, type BulkSummary } from './invoice'
@@ -27,6 +30,43 @@ const cents = (x: number) => Math.round((x + Number.EPSILON) * 100)
 const MAP_MESSAGE = 'Choose the inventory asset and stock adjustment accounts in Settings → Integrations → Xero → Accounts and tax first.'
 
 export const accountsMapped = (s: XeroSettings) => Boolean(s.inventory_account_code && s.adjustment_account_code)
+/** What is needed before adjustments can be posted: tracked mode only needs the stock adjustment account (Xero knows each item's inventory account). */
+export const adjustmentReady = (s: XeroSettings, prefs: XeroPrefs) => (prefs.inventory_tracked ? Boolean(s.adjustment_account_code) : accountsMapped(s))
+const MAP_TRACKED = 'Choose the stock adjustment account in Settings → Integrations → Xero → Accounts and tax first.'
+const mapMessage = (prefs: XeroPrefs) => (prefs.inventory_tracked ? MAP_TRACKED : MAP_MESSAGE)
+
+// ── Tracked inventory: Bill (stock up) / Credit Note (stock down) ──
+export type TrackedLine = { name: string; sku: string; unit: string; delta: number; cost: number }
+export type TrackedDoc = { lines: { name: string; sku: string; unit: string; qty: number; cost: number; cents: number }[]; totalCents: number }
+
+/** Splits adjustment lines into the Bill (increases) and the Credit Note (decreases). Each document's balancing amount is minus the sum of its item lines. */
+export function buildTrackedDocs(lines: TrackedLine[]): { bill: TrackedDoc | null; credit: TrackedDoc | null } {
+  const make = (up: boolean): TrackedDoc | null => {
+    const ls = lines.filter(l => (up ? l.delta > 0 : l.delta < 0)).map(l => {
+      const qty = Math.abs(l.delta)
+      return { name: l.name, sku: l.sku, unit: l.unit, qty, cost: l.cost, cents: cents(qty * l.cost) }
+    })
+    return ls.length ? { lines: ls, totalCents: ls.reduce((s, l) => s + l.cents, 0) } : null
+  }
+  return { bill: make(true), credit: make(false) }
+}
+
+export const xeroBillUrl = (xeroId: string) => `https://go.xero.com/AccountsPayable/View.aspx?InvoiceID=${xeroId}`
+export const xeroCreditNoteUrl = (xeroId: string) => `https://go.xero.com/AccountsPayable/ViewCreditNote.aspx?creditNoteID=${xeroId}`
+
+/** The stand-in supplier the adjustment documents are raised against: one per location, created in Xero the first time. */
+async function adjustmentContact(db: Db, orgId: string, location: string): Promise<{ ok: true; id: string } | { ok: false; status: number; error: string }> {
+  const name = `${(location || 'Stock').replace(/["\\]/g, '').trim() || 'Stock'} – stock adjustments`.slice(0, 255)
+  const found = await xeroGet<{ Contacts?: { ContactID: string; Name: string }[] }>(db, orgId, `/Contacts?where=${encodeURIComponent(`Name=="${name}"`)}&summaryOnly=true`)
+  if (!found.ok) return found
+  const hit = (found.data.Contacts ?? []).find(c => c.Name === name)
+  if (hit) return { ok: true, id: hit.ContactID }
+  const made = await xeroPost<{ Contacts?: { ContactID?: string; HasValidationErrors?: boolean; ValidationErrors?: { Message?: string }[] }[] }>(db, orgId, '/Contacts', { Contacts: [{ Name: name, IsSupplier: true }] })
+  if (!made.ok) return made
+  const c = made.data.Contacts?.[0]
+  if (!c?.ContactID) return { ok: false, status: 422, error: c?.ValidationErrors?.map(e => e.Message).filter(Boolean).join(' ') || 'Xero did not accept the stock adjustment supplier.' }
+  return { ok: true, id: c.ContactID }
+}
 
 /** The moment from which completed adjustments are posted. Stamped now the first time it is needed (new connections never back-post). */
 export async function adjustCutoff(db: Db, orgId: string, prefs: XeroPrefs): Promise<string> {
@@ -43,8 +83,7 @@ export async function adjustCutoff(db: Db, orgId: string, prefs: XeroPrefs): Pro
 const productCost = (p: Row) => [p.avg_cost, p.last_cost, p.cost_price].map(n).find(x => x > 0) ?? 0
 
 export async function postAdjustment(db: Db, orgId: string, adjId: string, settings: XeroSettings, prefs: XeroPrefs): Promise<JournalResult> {
-  if (prefs.inventory_tracked) return { ok: false, status: 409, error: 'Xero tracks your inventory, so this stock adjustment has to be posted in Xero manually.' }
-  if (!accountsMapped(settings)) return { ok: false, status: 409, error: MAP_MESSAGE }
+  if (!adjustmentReady(settings, prefs)) return { ok: false, status: 409, error: mapMessage(prefs) }
 
   const { data: adj } = await db.from('adjustment_orders')
     .select('id, adj_number, status, adjustment_date, completed_at, reason, notes, location_name, skip_xero')
@@ -90,6 +129,7 @@ export async function postAdjustment(db: Db, orgId: string, adjId: string, setti
   }
 
   const number = clean(a.adj_number)
+  if (prefs.inventory_tracked) return postTracked(db, orgId, a, lines, number, settings, prefs, fail)
   const unitWord = (l: Row) => clean(l.unit)
   const journalLines: { LineAmount: number; AccountCode: string; Description: string; TaxType: string }[] = []
   let totalCents = 0
@@ -128,6 +168,84 @@ export async function postAdjustment(db: Db, orgId: string, adjId: string, setti
   return { ok: true, xeroId: out.ManualJournalID, number, url: xeroJournalUrl(out.ManualJournalID), warning: null, status: prefs.journal_status }
 }
 
+/** Tracked inventory: post the Bill and / or Credit Note. A retry after a half-finished post only sends the part that is missing. */
+async function postTracked(db: Db, orgId: string, a: Row, lines: Row[], number: string, settings: XeroSettings, prefs: XeroPrefs, fail: (status: number, error: string) => Promise<JournalResult>): Promise<JournalResult> {
+  const adjId = String(a.id)
+  // only tracked stock items that are already in Xero can move Xero's stock
+  const ids = [...new Set(lines.map(l => clean(l.product_id)).filter(Boolean))]
+  const stock = new Set<string>(), inXero = new Set<string>()
+  if (ids.length) {
+    const [{ data: prods }, { data: recs }] = await Promise.all([
+      db.from('products').select('id, type, track_stock').eq('org_id', orgId).in('id', ids),
+      db.from('xero_sync_records').select('entity_id').eq('org_id', orgId).eq('entity', 'product').eq('status', 'synced').in('entity_id', ids),
+    ])
+    for (const p of (prods ?? []) as Row[]) if (p.type === 'Stock' && p.track_stock !== false) stock.add(String(p.id))
+    for (const r of (recs ?? []) as Row[]) inXero.add(String(r.entity_id))
+  }
+  const sendable = lines.filter(l => stock.has(clean(l.product_id)) && inXero.has(clean(l.product_id)) && clean(l.product_sku))
+  const skipped = [...new Set(lines.filter(l => !sendable.includes(l)).map(l => clean(l.product_name) || 'An item'))]
+  const skipNote = skipped.length ? `Not sent to Xero (not a tracked stock item in Xero): ${skipped.slice(0, 5).join(', ')}${skipped.length > 5 ? ` and ${skipped.length - 5} more` : ''}.` : null
+  const where = clean(a.location_name)
+  const date = day(a.adjustment_date) || day(a.completed_at) || new Date().toISOString().slice(0, 10)
+  const status: 'DRAFT' | 'AUTHORISED' = prefs.journal_status === 'POSTED' ? 'AUTHORISED' : 'DRAFT'
+
+  if (sendable.length === 0) {
+    const note = `Nothing was sent to Xero: none of the items on this adjustment are tracked stock items in Xero.`
+    await saveRecord(db, orgId, adjId, { xero_id: null, status: 'synced', error: note, meta: { number, total: 0, location: where, date, status: prefs.journal_status, none: true } }, 'adjustment')
+    return { ok: true, xeroId: '', number, url: '', warning: null, status: prefs.journal_status }
+  }
+
+  const docs = buildTrackedDocs(sendable.map(l => ({ name: clean(l.product_name) || 'Item', sku: clean(l.product_sku), unit: clean(l.unit), delta: n(l.quantity_after) - n(l.quantity_before), cost: n(l.unit_cost) })))
+  const { data: prev } = await db.from('xero_sync_records').select('meta').eq('org_id', orgId).eq('entity', 'adjustment').eq('entity_id', adjId).maybeSingle()
+  const done = ((prev as { meta?: { bill_id?: string; credit_id?: string } } | null)?.meta ?? {}) as { bill_id?: string; credit_id?: string }
+  let billId = done.bill_id ?? null, creditId = done.credit_id ?? null
+
+  const contact = await adjustmentContact(db, orgId, where)
+  if (!contact.ok) return contact.status === 429 || contact.status === 401 ? { ok: false, status: contact.status, error: contact.error } : fail(502, `Could not set up the Xero supplier for stock adjustments. ${contact.error}`)
+
+  const narration = `Stock adjustment ${number}${clean(a.reason) ? ` · ${clean(a.reason)}` : ''}${where ? ` · ${where}` : ''}`.trim().slice(0, 250)
+  const lineItems = (d: TrackedDoc) => [
+    ...d.lines.map(l => ({
+      Description: `${number ? `${number} · ` : ''}${l.name}`.slice(0, 400), Quantity: l.qty, UnitAmount: l.cost, ItemCode: l.sku, TaxType: 'NONE',
+    })),
+    // the balancing line: same value the other way, so the document totals 0.00
+    { Description: `${number ? `${number} · ` : ''}Stock adjustment${clean(a.reason) ? ` (${clean(a.reason)})` : ''}`.slice(0, 400), Quantity: 1, UnitAmount: -d.totalCents / 100, AccountCode: settings.adjustment_account_code as string, TaxType: 'NONE' },
+  ]
+  const progress = (extra: Record<string, unknown> = {}) => ({ number, location: where, date, status: prefs.journal_status, bill_id: billId, credit_id: creditId, ...extra })
+  const failKeep = async (code: number, error: string): Promise<JournalResult> => {
+    await saveRecord(db, orgId, adjId, { xero_id: null, status: 'failed', error, meta: progress() }, 'adjustment')
+    return { ok: false, status: code, error, recorded: true }
+  }
+  type Reply = { InvoiceID?: string; CreditNoteID?: string; Total?: number; HasErrors?: boolean; ValidationErrors?: { Message?: string }[] }
+  let warning: string | null = skipNote
+
+  if (docs.bill && !billId) {
+    const res = await xeroPost<{ Invoices?: Reply[] }>(db, orgId, '/Invoices?summarizeErrors=false&unitdp=4', {
+      Invoices: [{ Type: 'ACCPAY', Contact: { ContactID: contact.id }, Date: date, DueDate: date, ...(number ? { InvoiceNumber: number } : {}), Reference: narration, Status: status, LineAmountTypes: 'NoTax', LineItems: lineItems(docs.bill) }],
+    })
+    if (!res.ok) return res.status === 429 || res.status === 401 ? { ok: false, status: res.status, error: res.error } : failKeep(res.status === 400 ? 422 : 502, res.error)
+    const out = res.data.Invoices?.[0]
+    if (!out?.InvoiceID || out.HasErrors) return failKeep(422, out?.ValidationErrors?.map(e => e.Message).filter(Boolean).join(' ') || 'Xero did not accept this bill.')
+    billId = out.InvoiceID
+    if (Math.abs(n(out.Total)) > 0.011) warning = `${warning ? `${warning} ` : ''}The bill in Xero totals ${n(out.Total).toFixed(2)} instead of 0.00. Check it in Xero.`
+  }
+  if (docs.credit && !creditId) {
+    const res = await xeroPost<{ CreditNotes?: Reply[] }>(db, orgId, '/CreditNotes?summarizeErrors=false&unitdp=4', {
+      CreditNotes: [{ Type: 'ACCPAYCREDIT', Contact: { ContactID: contact.id }, Date: date, ...(number ? { CreditNoteNumber: number } : {}), Reference: narration, Status: status, LineAmountTypes: 'NoTax', LineItems: lineItems(docs.credit) }],
+    })
+    if (!res.ok) return res.status === 429 || res.status === 401 ? { ok: false, status: res.status, error: res.error } : failKeep(res.status === 400 ? 422 : 502, res.error)
+    const out = res.data.CreditNotes?.[0]
+    if (!out?.CreditNoteID || out.HasErrors) return failKeep(422, out?.ValidationErrors?.map(e => e.Message).filter(Boolean).join(' ') || 'Xero did not accept this credit note.')
+    creditId = out.CreditNoteID
+    if (Math.abs(n(out.Total)) > 0.011) warning = `${warning ? `${warning} ` : ''}The credit note in Xero totals ${n(out.Total).toFixed(2)} instead of 0.00. Check it in Xero.`
+  }
+
+  const url = billId ? xeroBillUrl(billId) : creditId ? xeroCreditNoteUrl(creditId) : ''
+  const value = ((docs.bill?.totalCents ?? 0) - (docs.credit?.totalCents ?? 0)) / 100
+  await saveRecord(db, orgId, adjId, { xero_id: billId ?? creditId, status: 'synced', error: warning, meta: progress({ total: value, url }) }, 'adjustment')
+  return { ok: true, xeroId: (billId ?? creditId) as string, number, url, warning: null, status: prefs.journal_status }
+}
+
 // ── Several at once ─────────────────────────────────────────────────────────
 
 /** Completed, after the cut-off, not ticked "Don't send", with at least one quantity change. */
@@ -142,8 +260,7 @@ async function loadEligible(db: Db, orgId: string, cutoff: string): Promise<{ id
 
 export async function postEligibleAdjustments(db: Db, orgId: string, settings: XeroSettings, prefs: XeroPrefs, retryFailed = true, deadline = Infinity): Promise<BulkSummary & { note?: string }> {
   const out: BulkSummary & { note?: string } = { posted: 0, failed: 0, remaining: 0, failures: [] }
-  if (prefs.inventory_tracked) return out
-  if (!accountsMapped(settings)) return { ...out, note: MAP_MESSAGE }
+  if (!adjustmentReady(settings, prefs)) return { ...out, note: mapMessage(prefs) }
 
   const cutoff = await adjustCutoff(db, orgId, prefs)
   const [eligible, { data: recs }] = await Promise.all([
@@ -194,19 +311,13 @@ export async function adjustmentOverview(db: Db, orgId: string, settings: XeroSe
     .filter(o => (o.adjustment_order_lines ?? []).some(l => n(l.quantity_after) - n(l.quantity_before) !== 0))
   const nameOf = new Map(done.map(o => [o.id, o.adj_number ?? 'Adjustment']))
 
-  const base = { tracked: prefs.inventory_tracked, needsAccounts: !prefs.inventory_tracked && !accountsMapped(settings) }
-  if (prefs.inventory_tracked) {
-    return {
-      ...base, eligible: 0, posted: 0, notPosted: 0, failed: 0, skipped: 0, failures: [], waiting: [], recent: [], lastPostedAt: null,
-      manual: done.slice(0, 8).map(o => ({ id: o.id, name: nameOf.get(o.id) as string })), manualCount: done.length,
-    }
-  }
+  const base = { tracked: false, needsAccounts: !adjustmentReady(settings, prefs) }
 
   const skipped = done.filter(o => o.skip_xero)
   const eligible = done.filter(o => !o.skip_xero)
   const ids = new Set(eligible.map(o => o.id))
   const { data: recs } = await db.from('xero_sync_records').select('entity_id, xero_id, status, error, synced_at, meta').eq('org_id', orgId).eq('entity', 'adjustment').order('synced_at', { ascending: false })
-  type Rec = { entity_id: string; xero_id: string | null; status: string; error: string | null; synced_at: string; meta: { number?: string; total?: number; location?: string } | null }
+  type Rec = { entity_id: string; xero_id: string | null; status: string; error: string | null; synced_at: string; meta: { number?: string; total?: number; location?: string; url?: string } | null }
   const records = (recs ?? []) as Rec[]
   const posted = records.filter(r => r.status === 'synced')
   const postedIds = new Set(posted.map(r => r.entity_id))
@@ -225,7 +336,7 @@ export async function adjustmentOverview(db: Db, orgId: string, settings: XeroSe
     manual: [], manualCount: 0,
     recent: posted.slice(0, 5).map(r => ({
       id: r.entity_id, number: r.meta?.number || nameOf.get(r.entity_id) || '', location: r.meta?.location ?? '', total: Number(r.meta?.total ?? 0),
-      postedAt: r.synced_at, url: r.xero_id ? xeroJournalUrl(r.xero_id) : '', warning: r.error,
+      postedAt: r.synced_at, url: r.meta?.url || (r.xero_id ? xeroJournalUrl(r.xero_id) : ''), warning: r.error,
     })),
     lastPostedAt: posted[0]?.synced_at ?? null,
   }

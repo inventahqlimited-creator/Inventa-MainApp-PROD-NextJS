@@ -1,10 +1,10 @@
 // src/app/api/integrations/xero/adjustment/route.ts
 // POST { id } — post one completed stock adjustment to Xero as a manual journal.
 // POST { all: true } — post up to 20 eligible, not-yet-posted adjustments; the reply says how many are left. Admin only.
-// When Xero tracks inventory (Settings), nothing is sent: adjustments are posted in Xero by hand.
+// Xero not tracking inventory: a manual journal. Xero tracking inventory: a Bill / Credit Note with a balancing line.
 import { NextResponse } from 'next/server'
 import { guardXero } from '@/lib/xero/guard'
-import { accountsMapped, postAdjustment, postEligibleAdjustments } from '@/lib/xero/adjustment'
+import { adjustmentReady, postAdjustment, postEligibleAdjustments } from '@/lib/xero/adjustment'
 
 export const dynamic = 'force-dynamic'
 export const maxDuration = 60
@@ -15,8 +15,7 @@ export async function POST(req: Request) {
   const body = await req.json().catch(() => ({}))
 
   if (body?.all === true) {
-    if (g.prefs.inventory_tracked) return NextResponse.json({ error: 'Xero tracks your inventory, so stock adjustments are posted in Xero manually.' }, { status: 409 })
-    if (!accountsMapped(g.settings)) return NextResponse.json({ error: 'Choose the inventory asset and stock adjustment accounts in Xero settings before posting stock adjustments.' }, { status: 409 })
+    if (!adjustmentReady(g.settings, g.prefs)) return NextResponse.json({ error: g.prefs.inventory_tracked ? 'Choose the stock adjustment account in Xero settings before posting stock adjustments.' : 'Choose the inventory asset and stock adjustment accounts in Xero settings before posting stock adjustments.' }, { status: 409 })
     return NextResponse.json(await postEligibleAdjustments(g.a.db, g.a.orgId, g.settings, g.prefs))
   }
 

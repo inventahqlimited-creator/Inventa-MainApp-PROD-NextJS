@@ -2,6 +2,7 @@
 import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import SalesOrderForm from '@/components/app/sales-order-form'
+import { loadKitColumns, loadKitScreenData } from '@/lib/kits/order-lines-server'
 import { relatedPurchaseOrders } from '@/lib/related'
 import { loadXeroTableInfo } from '@/lib/xero/table-info'
 
@@ -82,9 +83,12 @@ export default async function SalesOrderPage({ params }: { params: Promise<{ id:
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const o = order as any
   const bySort = (a: { sort_order: number | null }, b: { sort_order: number | null }) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
+  const kitCols = await loadKitColumns(adminClient, m.org_id, id)
+  const kits = await loadKitScreenData(adminClient, m.org_id)
   const shaped = {
     ...o,
-    lines: [...(o.sales_order_lines ?? [])].sort(bySort),
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    lines: [...(o.sales_order_lines ?? [])].map((l: any) => ({ ...l, ...(kitCols.get(l.id) ?? {}) })).sort(bySort),
     cost_lines: [...(o.sales_order_cost_lines ?? [])].sort(bySort),
   }
 
@@ -94,6 +98,7 @@ export default async function SalesOrderPage({ params }: { params: Promise<{ id:
       key={`${o.id}-${o.status}-${o.total_amount}`}
       orgId={m.org_id}
       order={shaped}
+      kits={kits}
       relatedPoId={relatedPoId}
       xeroInvoice={{ show: xeroInfo.show, canPost: xeroInfo.canPost, info: xeroInfo.records[id] ?? null }}
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

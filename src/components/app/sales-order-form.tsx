@@ -19,6 +19,7 @@ import OrderHistory from '@/components/app/order-history'
 import { AttachmentsBadge, AttachmentsModal } from '@/components/app/attachments'
 import EmailComposer from '@/components/app/email/email-composer'
 import { useCan } from '@/components/app/permissions-provider'
+import { buildChildren, childQty, type KitScreenData } from '@/lib/kits/order-lines'
 
 type Customer = {
   id: string
@@ -87,6 +88,9 @@ type LineItem = {
   quantity_packed?: number | null
   _manual?: boolean // price typed by hand — price level changes leave it alone
   _locked?: boolean // fully picked when the order was opened — can't be edited or removed
+  kit_group?: string | null // kit line and its item lines share this
+  is_kit_parent?: boolean // the kit line itself (priced); its item lines are $0 and carry the stock
+  kit_qty_per?: number | null // item lines: how many go into one kit
 }
 
 type ChargeLine = {
@@ -144,6 +148,7 @@ type Props = {
   stockLevels?: StockLevel[]
   fulfilmentMode?: string // 'full' | 'pick-only' | 'none' (Settings → Sales)
   quotesEnabled?: boolean // Settings → Sales → Quotes: adds a Save Quote button
+  kits?: KitScreenData // Kits & Bundles add-on: on/off, settings and each kit's items
 }
 
 // Item picker columns: SKU | Product | Unit | Available | Committed | Price
@@ -370,6 +375,7 @@ function SalesOrderFormInner({
   stockLevels = [],
   fulfilmentMode = 'full',
   quotesEnabled = false,
+  kits,
   mode,
   setMode,
   onDiscard,
@@ -420,6 +426,26 @@ function SalesOrderFormInner({
   const fallbackTerms = defaultTerms ?? 'Net 14'
 
   const seed = order ?? prefill ?? null
+
+  // ── Kits & Bundles ──
+  const catalog = kits?.enabled ? kits.catalog : {}
+  const expandKits = kits?.settings.expand_sales !== false
+  const isKitProduct = (id: string) => !!catalog[id]
+  const isKitItem = (l: LineItem) => !!l.kit_group && !l.is_kit_parent
+  // Gives kit lines their items (new kit lines have none yet) and hides items when Settings says to show the kit only
+  function arrangeKitLines(list: LineItem[]): LineItem[] {
+    const out: LineItem[] = []
+    for (const l of list) {
+      if (isKitItem(l)) { if (expandKits) out.push(l); continue }
+      if (!isKitProduct(l.product_id)) { out.push(l); continue }
+      const group = l.kit_group ?? crypto.randomUUID()
+      out.push({ ...l, kit_group: group, is_kit_parent: true })
+      if (expandKits && !list.some(x => x.kit_group === group && !x.is_kit_parent)) {
+        out.push(...(buildChildren(l.product_id, group, Number(l.quantity) || 0, catalog) as unknown as LineItem[]).map(k => ({ ...k, _manual: true })))
+      }
+    }
+    return out
+  }
   const initialCustomer = seed?.customer_id ? customers.find(c => c.id === seed.customer_id) ?? null : null
   const initialLocation = seed?.location_id
     ? locations.find(l => l.id === seed.location_id) ?? null
@@ -437,7 +463,7 @@ function SalesOrderFormInner({
   const [priceLevelId, setPriceLevelId] = useState<string | null>(seed ? seed.price_level_id : null)
   const [openDd, setOpenDd] = useState<null | 'location' | 'terms' | 'level' | 'currency'>(null)
   const [notes, setNotes] = useState(seed?.notes ?? '')
-  const [lines, setLines] = useState<LineItem[]>(() =>
+  const [lines, setLines] = useState<LineItem[]>(() => arrangeKitLines(
     (seed?.lines ?? []).map(l => withTaxName({
       ...l,
       ...(order ? {} : { id: undefined, quantity_picked: null, quantity_packed: null }),
@@ -452,7 +478,7 @@ function SalesOrderFormInner({
         return !(pr && Math.abs(priceFor(pr, seed?.price_level_id ?? null, Number(l.quantity) || 0) - (Number(l.unit_price) || 0)) < 0.005)
       })(),
       _locked: Number(l.quantity_picked) > 0 && Number(l.quantity_picked) >= Number(l.quantity),
-    })))
+    }))))
   const [charges, setCharges] = useState<ChargeLine[]>(() =>
     (seed?.cost_lines ?? []).map(l => withTaxName({ ...l, ...(order ? {} : { id: undefined }), amount: Number(l.amount) || 0, tax_rate: Number(l.tax_rate) || 0, description: l.description ?? '' })))
   const [itemSearch, setItemSearch] = useState('')
@@ -571,7 +597,7 @@ function SalesOrderFormInner({
   function repriceAll(levelId: string | null) {
     setLines(prev => prev.map(l => {
       const p = productById.get(l.product_id)
-      return p && !l._manual ? { ...l, unit_price: priceFor(p, levelId, l.quantity) } : l
+      return p && !l._manual && !isKitItem(l) ? { ...l, unit_price: priceFor(p, levelId, l.quantity) } : l
     }))
   }
 
@@ -604,6 +630,18 @@ function SalesOrderFormInner({
   }
 
   function addLine(p: Product) {
+    if (isKitProduct(p.id)) {
+      const group = crypto.randomUUID()
+      const parent: LineItem = {
+        product_id: p.id, product_name: p.name, product_sku: p.sku ?? '', unit: p.sell_uom ?? 'Each', quantity: 1,
+        unit_price: priceFor(p, priceLevelId, 1), discount: 0, ...sellTaxFor(p), line_notes: '', kit_group: group, is_kit_parent: true,
+      }
+      const kids = expandKits ? (buildChildren(p.id, group, 1, catalog) as unknown as LineItem[]).map(k => ({ ...k, _manual: true })) : []
+      setLines(prev => [...prev, parent, ...kids])
+      setItemSearch('')
+      setItemDropOpen(false)
+      return
+    }
     setLines(prev => [...prev, {
       product_id: p.id,
       product_name: p.name,
@@ -620,16 +658,31 @@ function SalesOrderFormInner({
   }
 
   function updateLine(idx: number, field: keyof LineItem, value: string | number) {
-    setLines(prev => prev.map((l, i) => {
-      if (i !== idx) return l
-      const next = { ...l, [field]: value } as LineItem
-      if (field === 'unit_price') next._manual = true
-      if (field === 'quantity' && !l._manual) {
-        const p = productById.get(l.product_id)
-        if (p) next.unit_price = priceFor(p, priceLevelId, Number(value) || 0)
+    setLines(prev => {
+      let out = prev.map((l, i) => {
+        if (i !== idx) return l
+        const next = { ...l, [field]: value } as LineItem
+        if (field === 'unit_price') next._manual = true
+        if (field === 'quantity' && !l._manual && !isKitItem(l)) {
+          const p = productById.get(l.product_id)
+          if (p) next.unit_price = priceFor(p, priceLevelId, Number(value) || 0)
+        }
+        return next
+      })
+      const edited = out[idx]
+      if (field === 'quantity' && edited?.kit_group) {
+        const qty = Number(value) || 0
+        if (edited.is_kit_parent) {
+          // a new kit quantity recalculates its items (quantity per kit × kits)
+          out = out.map(l => (l.kit_group === edited.kit_group && !l.is_kit_parent && !l._locked && Number(l.kit_qty_per) > 0 ? { ...l, quantity: childQty(Number(l.kit_qty_per), qty) } : l))
+        } else {
+          // changing one item's quantity for this order keeps the ratio if the kit quantity changes later
+          const parent = out.find(l => l.kit_group === edited.kit_group && l.is_kit_parent)
+          if (parent && Number(parent.quantity) > 0) out = out.map((l, i) => (i === idx ? { ...l, kit_qty_per: Math.round((qty / Number(parent.quantity)) * 10000) / 10000 } : l))
+        }
       }
-      return next
-    }))
+      return out
+    })
   }
 
   function setLineTax(idx: number, id: string) {
@@ -637,7 +690,11 @@ function SalesOrderFormInner({
   }
 
   function removeLine(idx: number) {
-    setLines(prev => prev.filter((_, i) => i !== idx))
+    setLines(prev => {
+      const gone = prev[idx]
+      // removing a kit removes its items too
+      return gone?.is_kit_parent && gone.kit_group ? prev.filter(l => l.kit_group !== gone.kit_group) : prev.filter((_, i) => i !== idx)
+    })
   }
 
   function addCharge(p: Product) {
@@ -1072,12 +1129,16 @@ function SalesOrderFormInner({
                 {lines.map((l, idx) => {
                   const rowEd = editable && !l._locked
                   const hasPicks = Number(l.quantity_picked ?? 0) > 0
+                  const item = isKitItem(l) // an item inside a kit: no price, quantity only
                   return (
-                  <tr key={l.id ?? idx} style={{ borderBottom: '1px solid var(--gray-100)' }}>
+                  <tr key={l.id ?? idx} style={{ borderBottom: '1px solid var(--gray-100)', background: item ? 'var(--gray-50)' : undefined }}>
                     <td className="li-td"><span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--gray-400)' }}>{l.product_sku}</span></td>
-                    <td className="li-td"><span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{l.product_name}</span></td>
+                    <td className="li-td">
+                      <span style={{ fontWeight: item ? 500 : 600, color: 'var(--slate)', fontSize: 13, paddingLeft: item ? 16 : 0 }}>{item ? '↳ ' : ''}{l.product_name}</span>
+                      {l.is_kit_parent && <span className="badge" style={{ background: '#EDE9FE', color: '#5B21B6', marginLeft: 8 }}>Kit</span>}
+                    </td>
                     <td className="li-td" style={{ textAlign: 'center' }}>
-                      {rowEd
+                      {rowEd && !item
                         ? <input className="li-input" value={l.unit} onChange={e => updateLine(idx, 'unit', e.target.value)} style={{ width: 60, textAlign: 'center' }} />
                         : <span style={{ fontSize: 13 }}>{l.unit}</span>}
                     </td>
@@ -1100,6 +1161,7 @@ function SalesOrderFormInner({
                         })()}
                       </td>
                     )}
+                    {item ? <td className="li-td" colSpan={4} style={{ textAlign: 'right', color: 'var(--gray-300)', fontSize: 12 }}>included in the kit price</td> : (<>
                     <td className="li-td" style={{ textAlign: 'right' }}>
                       {rowEd
                         ? <NumInput className="li-input right" value={l.unit_price} onChange={n => updateLine(idx, 'unit_price', n)} decimals={decimalPlaces} min={0} style={{ width: 90, textAlign: 'right' }} />
@@ -1117,10 +1179,10 @@ function SalesOrderFormInner({
                     </td>
                     <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: 'var(--slate)', fontFamily: 'var(--font-display)' }}>
                       {fmtMoney(lineTotal(l))}
-                    </td>
+                    </td></>)}
                     {editable && (
                       <td className="li-td">
-                        {hasPicks
+                        {item ? null : hasPicks
                           ? <span title="Picked items can't be removed — un-pick them first" style={{ color: 'var(--gray-300)', fontSize: 11 }}>🔒</span>
                           : <button onClick={() => removeLine(idx)} style={{ width: 26, height: 26, borderRadius: 7, border: 'none', background: 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--gray-400)' }}
                               onMouseOver={e => (e.currentTarget.style.color = 'var(--danger)')}
@@ -1169,7 +1231,7 @@ function SalesOrderFormInner({
                           return (
                             <div key={p.id} className="fp-item" style={{ display: 'grid', gridTemplateColumns: PICK_COLS, alignItems: 'center', gap: 8 }} onClick={() => addLine(p)}>
                               <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--gray-400)' }}>{p.sku ?? '—'}</span>
-                              <span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{p.name}</span>
+                              <span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{p.name}{isKitProduct(p.id) && <span className="badge" style={{ background: '#EDE9FE', color: '#5B21B6', marginLeft: 8 }}>Kit</span>}</span>
                               <span style={{ fontSize: 12, color: 'var(--gray-400)', textAlign: 'center' }}>{p.sell_uom ?? 'Each'}</span>
                               <span style={{ fontSize: 13, fontWeight: 600, textAlign: 'right', color: !tracked ? 'var(--gray-400)' : st.available <= 0 ? 'var(--danger)' : '#059669' }}>{tracked ? q(st.available, p.id) : '—'}</span>
                               <span style={{ fontSize: 13, textAlign: 'right', color: 'var(--gray-400)' }}>{tracked ? st.committed : '—'}</span>

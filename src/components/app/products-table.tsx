@@ -1114,7 +1114,7 @@ export default function ProductsTable({
     return map
   }, [stockLevels, locationFilter])
 
-  // Virtual stock: whole kits the available stock of their items could make, for the location chosen in the filter (same as On Hand)
+  // Virtual stock: whole kits the stock on hand of their items could make, for the location chosen in the filter (same as On Hand)
   const virtualOn = !!virtualBoms
   const virtualMap = useMemo(() => {
     const out: Record<string, number | null> = {}
@@ -1123,7 +1123,7 @@ export default function ProductsTable({
     const avail = (id: string) => {
       const c = byId.get(id)
       if (!c || c.track_stock === false || c.type !== 'Stock') return null
-      return stockMap[id]?.available ?? 0
+      return stockMap[id]?.onHand ?? 0
     }
     for (const kitId in virtualBoms) out[kitId] = virtualStock(virtualBoms[kitId], avail)
     return out
@@ -1431,7 +1431,7 @@ export default function ProductsTable({
                 {v.has('on_order') && <th style={{ textAlign: 'right' }}>On Order</th>}
                 {v.has('committed') && <th style={{ textAlign: 'right' }}>Committed</th>}
                 {v.has('available') && <th style={{ textAlign: 'right' }}>Available</th>}
-                {virtualOn && v.has('virtual') && <th style={{ textAlign: 'right' }} title="Kits that could be made from the available stock of their items">Virtual Stock</th>}
+                {virtualOn && v.has('virtual') && <th style={{ textAlign: 'right' }} title="Kits that could be made from the stock on hand of their items">Virtual Stock</th>}
                 {xero?.show && <XeroColumnHeader />}
                 <th style={{ width: 40 }} />
               </tr>

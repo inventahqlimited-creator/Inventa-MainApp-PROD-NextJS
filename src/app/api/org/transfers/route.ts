@@ -1,6 +1,7 @@
 // src/app/api/org/transfers/route.ts
 import { NextResponse } from 'next/server'
 import { checkLineQuantities } from '@/lib/qty-server'
+import { prepareKitLines } from '@/lib/kits/order-lines-server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { pickTR, lineRow, nextTrNumber, validateTransfer } from './shared'
 import { requirePerm } from '@/lib/auth/access'
@@ -23,10 +24,11 @@ export async function POST(request: Request) {
   const orgId = (m as { org_id: string }).org_id
 
   const body = await request.json()
-  const lines: Record<string, unknown>[] = Array.isArray(body.lines) ? body.lines : []
+  let lines: Record<string, unknown>[] = Array.isArray(body.lines) ? body.lines : []
+  { const k = await prepareKitLines(adminClient, orgId, 'transfer', lines.map(l => ({ ...l })), undefined); if (!k.ok) return NextResponse.json({ error: k.error }, { status: k.status }); lines = k.lines }
   { const e = await checkLineQuantities(adminClient, orgId, lines, 'quantity'); if (e) return NextResponse.json({ error: e }, { status: 400 }) }
   if (lines.length === 0) return NextResponse.json({ error: 'Add at least one product.' }, { status: 400 })
-  if (lines.some(l => !(Number(l.quantity) > 0))) return NextResponse.json({ error: 'Every line needs a quantity above zero.' }, { status: 400 })
+  if (lines.some(l => l.is_kit_parent !== true && !(Number(l.quantity) > 0))) return NextResponse.json({ error: 'Every line needs a quantity above zero.' }, { status: 400 })
 
   const trData = pickTR(body)
   if (!trData.from_location_id || !trData.to_location_id) return NextResponse.json({ error: 'Choose both a From and a To location.' }, { status: 400 })

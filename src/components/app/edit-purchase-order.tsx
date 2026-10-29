@@ -5,6 +5,7 @@ import { useState, useMemo, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useQty } from '@/components/app/qty-provider'
 import NumInput from '@/components/app/num-input'
+import { arrangeKitLines, kitApplyQty, kitLinesFor, kitRemove, type KitScreenData } from '@/lib/kits/order-lines'
 import TaxSelect from '@/components/app/tax-select'
 import { printPurchaseOrder } from '@/lib/purchase-order/print'
 import { XeroPostNotice, XeroStatusBadge, usePostToXero, type XeroRowInfo } from '@/components/app/xero-sync-ui'
@@ -71,6 +72,9 @@ type PriceLevel = {
 }
 
 type LineItem = {
+  kit_group?: string | null // kit line and its item lines share this
+  is_kit_parent?: boolean // the kit line (a heading: priced by its items)
+  kit_qty_per?: number | null // item lines: how many go into one kit
   id?: string
   quantity_received?: number | null
   product_id: string
@@ -177,6 +181,7 @@ type Props = {
   relatedSoId?: string | null // sales order this was created from / created from it (shows Open Related Order)
   xeroBill?: { show: boolean; canPost: boolean; ready: boolean; info: XeroRowInfo | null } // Xero state of this order's bill (closed + something received = ready)
   startInEdit?: boolean // opened with ?edit=1 (Edit Order in the Purchases list)
+  kits?: KitScreenData // Kits & Bundles add-on: on/off, settings and each kit's items
 }
 
 // Same classes as the purchase order list, so the status tag looks identical everywhere
@@ -309,6 +314,7 @@ function PurchaseOrderForm({
   decimalPlaces = 2,
   stockLevels = [],
   xeroBill,
+  kits,
   mode,
   setMode,
   onDiscard,
@@ -376,7 +382,9 @@ function PurchaseOrderForm({
   const [terms, setTerms] = useState(order.terms ?? fallbackTerms)
   const [termsOpen, setTermsOpen] = useState(false)
   const [notes, setNotes] = useState(order.notes ?? '')
-  const [lines, setLines] = useState<LineItem[]>(() => (order.lines ?? []).map(l => withTaxName({ ...l, quantity_ordered: Number(l.quantity_ordered) || 0, unit_cost: Number(l.unit_cost) || 0, discount: Number(l.discount) || 0, tax_rate: Number(l.tax_rate) || 0 })))
+  const kitUi = { catalog: kits?.enabled ? kits.catalog : {}, expand: kits?.settings.expand_purchase !== false, kind: 'purchase' as const }
+  const productById = (id: string) => products.find(x => x.id === id)
+  const [lines, setLines] = useState<LineItem[]>(() => arrangeKitLines((order.lines ?? []).map(l => withTaxName({ ...l, quantity_ordered: Number(l.quantity_ordered) || 0, unit_cost: Number(l.unit_cost) || 0, discount: Number(l.discount) || 0, tax_rate: Number(l.tax_rate) || 0 })), kitUi, (k: LineItem) => { const cp = products.find(x => x.id === k.product_id); return cp ? { ...k, unit_cost: Number(cp.cost_price) || k.unit_cost, ...buyTaxFor(cp) } : k }) as LineItem[])
   const [costLines, setCostLines] = useState<CostLine[]>(() => (order.cost_lines ?? []).map(l => withTaxName({ ...l, amount: Number(l.amount) || 0, tax_rate: Number(l.tax_rate) || 0 })))
   const [itemSearch, setItemSearch] = useState('')
   const [itemDropOpen, setItemDropOpen] = useState(false)
@@ -477,6 +485,13 @@ function PurchaseOrderForm({
   }
 
   function addLine(p: Product) {
+    if (kitUi.catalog[p.id]) {
+      const parent = { product_id: p.id, product_name: p.name, product_sku: p.sku ?? '', unit: p.buy_uom ?? 'Each', quantity_ordered: 1, unit_cost: 0, discount: 0, tax_rate: 0, tax_rate_id: null, tax_name: null, line_notes: '' }
+      setLines(prev => [...prev, ...(kitLinesFor(p.id, parent, kitUi, (k: LineItem) => ({ ...k, unit_cost: resolvePrice(productById(k.product_id) ?? p), ...(productById(k.product_id) ? buyTaxFor(productById(k.product_id) as Product) : {}), unit: productById(k.product_id)?.buy_uom ?? k.unit })) as LineItem[])])
+      setItemSearch('')
+      setItemDropOpen(false)
+      return
+    }
     setLines(prev => [...prev, {
       product_id: p.id,
       product_name: p.name,
@@ -493,7 +508,10 @@ function PurchaseOrderForm({
   }
 
   function updateLine(idx: number, field: keyof LineItem, value: string | number) {
-    setLines(prev => prev.map((l, i) => i === idx ? { ...l, [field]: value } : l))
+    setLines(prev => {
+      const out = prev.map((l, i) => i === idx ? { ...l, [field]: value } : l)
+      return field === 'quantity_ordered' ? (kitApplyQty(out, idx, Number(value) || 0, 'purchase') as LineItem[]) : out
+    })
   }
 
   function setLineTax(idx: number, id: string) {
@@ -501,7 +519,7 @@ function PurchaseOrderForm({
   }
 
   function removeLine(idx: number) {
-    setLines(prev => prev.filter((_, i) => i !== idx))
+    setLines(prev => kitRemove(prev, idx) as LineItem[])
   }
 
   function addCostLine(p: Product) {
@@ -924,7 +942,10 @@ function PurchaseOrderForm({
                 {lines.map((l, idx) => (
                   <tr key={idx} style={{ borderBottom: '1px solid var(--gray-100)' }}>
                     <td className="li-td"><span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--gray-400)' }}>{l.product_sku}</span></td>
-                    <td className="li-td"><span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{l.product_name}</span></td>
+                    <td className="li-td">
+                      <span style={{ fontWeight: l.kit_group && !l.is_kit_parent ? 500 : 600, color: 'var(--slate)', fontSize: 13, paddingLeft: l.kit_group && !l.is_kit_parent ? 16 : 0 }}>{l.kit_group && !l.is_kit_parent ? '↳ ' : ''}{l.product_name}</span>
+                      {l.is_kit_parent && <span className="badge" style={{ background: '#EDE9FE', color: '#5B21B6', marginLeft: 8 }}>Kit</span>}
+                    </td>
                     <td className="li-td" style={{ textAlign: 'center' }}>
                       {editable
                         ? <input className="li-input" value={l.unit} onChange={e => updateLine(idx, 'unit', e.target.value)} style={{ width: 60, textAlign: 'center' }} />
@@ -942,6 +963,7 @@ function PurchaseOrderForm({
                         <span style={{ fontSize: 13, fontWeight: 600, color: Number(l.quantity_received) > 0 ? (Number(l.quantity_received) >= l.quantity_ordered ? '#059669' : '#B45309') : 'var(--gray-400)' }}>{q(Number(l.quantity_received) || 0, l.product_id)}</span>
                       </td>
                     )}
+                    {l.is_kit_parent ? <td className="li-td" colSpan={4} style={{ textAlign: 'right', color: 'var(--gray-300)', fontSize: 12 }}>priced by the items below</td> : (<>
                     <td className="li-td" style={{ textAlign: 'right' }}>
                       {editable
                         ? <NumInput className="li-input right" value={l.unit_cost} onChange={n => updateLine(idx, 'unit_cost', n)} decimals={decimalPlaces} min={0} style={{ width: 90, textAlign: 'right' }} />
@@ -962,17 +984,17 @@ function PurchaseOrderForm({
                     </td>
                     <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: 'var(--slate)', fontFamily: 'var(--font-display)' }}>
                       {fmtMoney(lineTotal(l))}
-                    </td>
+                    </td></>)}
                     {editable && (
                       <td className="li-td">
-                        <button
+                        {l.kit_group && !l.is_kit_parent ? null : <button
                           onClick={() => removeLine(idx)}
                           style={{ width: 26, height: 26, borderRadius: 7, border: 'none', background: 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'var(--gray-400)' }}
                           onMouseOver={e => (e.currentTarget.style.color = 'var(--danger)')}
                           onMouseOut={e => (e.currentTarget.style.color = 'var(--gray-400)')}
                         >
                           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
-                        </button>
+                        </button>}
                       </td>
                     )}
                   </tr>
@@ -1012,7 +1034,7 @@ function PurchaseOrderForm({
                         {filteredProducts.map(p => (
                           <div key={p.id} className="fp-item" style={{ display: 'grid', gridTemplateColumns: PICK_COLS, alignItems: 'center', gap: 8 }} onClick={() => addLine(p)}>
                           <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--gray-400)' }}>{p.sku ?? '—'}</span>
-                          <span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{p.name}</span>
+                          <span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{p.name}{kitUi.catalog[p.id] && <span className="badge" style={{ background: '#EDE9FE', color: '#5B21B6', marginLeft: 8 }}>Kit</span>}</span>
                           <span style={{ fontSize: 12, color: 'var(--gray-400)', textAlign: 'center' }}>{p.buy_uom ?? 'Each'}</span>
                           {(() => {
                             const st = stockByProduct[p.id] ?? { onHand: 0, committed: 0, available: 0 }

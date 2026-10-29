@@ -28,6 +28,12 @@ export function lineRow(l: Record<string, unknown>, i: number) {
     from_bin_id: str(l.from_bin_id),
     to_bin_id: str(l.to_bin_id),
     sort_order: i,
+    // kit lines (only present on orders with kits, so other orders never touch these columns)
+    ...(l.kit_group ? {
+      kit_group: str(l.kit_group), is_kit_parent: l.is_kit_parent === true,
+      kit_qty_per: l.kit_qty_per == null ? null : num(l.kit_qty_per),
+      kit_qty: l.kit_qty == null ? null : num(l.kit_qty),
+    } : {}),
   }
 }
 
@@ -70,8 +76,10 @@ export async function validateTransfer(
   orgId: string,
   fromLocationId: string | null,
   toLocationId: string | null,
-  lines: Record<string, unknown>[],
+  allLines: Record<string, unknown>[],
 ): Promise<string | null> {
+  // a kit line is only a heading (its items are what moves), so it isn't checked here
+  const lines = allLines.filter(l => l.is_kit_parent !== true)
   const ids = [...new Set(lines.map(l => l.product_id as string).filter(Boolean))]
   if (ids.length) {
     const { data: prods } = await db.from('products').select('id, name, type, track_stock').eq('org_id', orgId).in('id', ids)

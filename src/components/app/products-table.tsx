@@ -1464,8 +1464,8 @@ export default function ProductsTable({
                     {v.has('on_hand') && <td style={{ textAlign: 'right' }}>{p.track_stock ? <span style={{ fontWeight: 600, color: stock.onHand <= 0 ? 'var(--danger)' : 'var(--slate)' }}>{q(stock.onHand, !!p.serial_tracking)}</span> : <span className="td-muted">—</span>}</td>}
                     {v.has('on_order') && <td style={{ textAlign: 'right' }} className="td-muted">{p.track_stock ? q(stock.onOrder, !!p.serial_tracking) : '—'}</td>}
                     {v.has('committed') && <td style={{ textAlign: 'right' }} className="td-muted">{p.track_stock ? q(stock.committed, !!p.serial_tracking) : '—'}</td>}
-                    {virtualOn && v.has('virtual') && <td style={{ textAlign: 'right' }}>{p.is_kit && virtualMap[p.id] != null ? <span style={{ fontWeight: 600, color: (virtualMap[p.id] ?? 0) <= 0 ? 'var(--danger)' : '#059669' }}>{q(virtualMap[p.id] as number, false)}</span> : <span className="td-muted">—</span>}</td>}
                     {v.has('available') && <td style={{ textAlign: 'right' }}>{p.track_stock ? <span style={{ fontWeight: 600, color: stock.available <= 0 ? 'var(--danger)' : '#059669' }}>{q(stock.available, !!p.serial_tracking)}</span> : <span className="td-muted">—</span>}</td>}
+                    {virtualOn && v.has('virtual') && <td style={{ textAlign: 'right' }}>{p.is_kit && virtualMap[p.id] != null ? <span style={{ fontWeight: 600, color: (virtualMap[p.id] ?? 0) <= 0 ? 'var(--danger)' : '#059669' }}>{q(virtualMap[p.id] as number, false)}</span> : <span className="td-muted">—</span>}</td>}
                     {xero?.show && <td><XeroStatusBadge info={xeroRecords[p.id]} /></td>}
                     {(canEdit || (xero?.show && xero.canPost)) && (
                     <td>

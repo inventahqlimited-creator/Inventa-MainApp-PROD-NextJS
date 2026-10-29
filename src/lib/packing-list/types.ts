@@ -17,6 +17,8 @@ export type PackRow = {
   batch: string | null
   expiry: string | null // YYYY-MM-DD
   serials: string[]
+  /** A kit heading: its items are packed, not the kit itself */
+  heading?: boolean
   /** Second and later rows of a line: the product name is not repeated */
   continued?: boolean
 }

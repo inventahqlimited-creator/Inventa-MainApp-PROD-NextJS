@@ -103,7 +103,7 @@ function tbody(rows: PackRow[], cfg: PackingListConfig): string {
 
 function stats(o: PackOrder, cfg: PackingListConfig): string {
   const lines = new Set(o.rows.map(r => r.line_id)).size
-  const units = o.rows.reduce((s, r) => s + r.shipped, 0)
+  const units = o.rows.filter(r => !r.heading).reduce((s, r) => s + r.shipped, 0)
   const backordered = o.rows.reduce((s, r) => s + (r.backorder ?? 0), 0)
   const cells = [
     cfg.stats.lines ? { label: 'Lines', value: String(lines) } : null,

@@ -34,8 +34,8 @@ function stamp(tz: string, now = new Date()) {
 // ── pieces ──
 const dash = '<em class="na">—</em>'
 const mono = (v: string | null | undefined) => (v ? `<span class="mono">${esc(v)}</span>` : dash)
-const lineCount = (rows: PickRow[]) => new Set(rows.map(r => r.line_id)).size
-const unitCount = (rows: PickRow[]) => rows.filter(r => !r.noStock).reduce((s, r) => s + r.qty, 0)
+const lineCount = (rows: PickRow[]) => new Set(rows.filter(r => !r.heading).map(r => r.line_id)).size
+const unitCount = (rows: PickRow[]) => rows.filter(r => !r.noStock && !r.heading).reduce((s, r) => s + r.qty, 0)
 
 type ColKey = 'notes' | 'bin' | 'batch' | 'serial' | 'expiry'
 const COL_DEFS: { key: ColKey; label: string; w: number }[] = [

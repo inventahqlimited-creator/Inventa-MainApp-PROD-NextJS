@@ -1,3 +1,5 @@
+import { AddonsProvider } from '@/components/app/addons-provider'
+import { normalizeAddons } from '@/lib/addons'
 import { createAdminClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { cookies, headers } from 'next/headers'
@@ -78,6 +80,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
 
   const displayName = [m.first_name, m.last_name].filter(Boolean).join(' ') || user.email || 'User'
   const initials = displayName.split(' ').map((n: string) => n[0]).join('').toUpperCase().slice(0, 2)
+  // add-ons: tolerates the column not existing yet (before the SQL is run) — then everything is off
+  const { data: addonRow } = await adminClient.from('organisations').select('addons').eq('id', m.org_id).single()
+  const addons = normalizeAddons((addonRow as { addons?: unknown } | null)?.addons)
   const { data: serialRows } = await adminClient.from('products').select('id').eq('org_id', m.org_id).eq('serial_tracking', true)
   const serialIds = ((serialRows ?? []) as { id: string }[]).map(r => r.id)
   const { data: termRows } = await adminClient.from('payment_terms').select('name, type, days').eq('org_id', m.org_id).order('sort_order').order('created_at')
@@ -108,7 +113,9 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           <PermissionsProvider perms={access.perms} isAdmin={access.isAdmin}>
             <QtyProvider format={qtyFmtFromOrg(org as { decimal_qty?: unknown; decimal_qty_places?: unknown } | null)} serialIds={serialIds}>
               <PaymentTermsProvider terms={paymentTerms}>
-                {children}
+                <AddonsProvider addons={addons}>
+                  {children}
+                </AddonsProvider>
               </PaymentTermsProvider>
             </QtyProvider>
           </PermissionsProvider>

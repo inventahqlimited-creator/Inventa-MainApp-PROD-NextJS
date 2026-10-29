@@ -3,11 +3,12 @@
 import { useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { COUNTRIES, PLANS, addMonths } from '@/lib/hub/constants'
+import { ADDONS, type AddonKey, type Addons } from '@/lib/addons'
 
 export type OrgData = {
   id: string; name: string; email: string | null; phone: string | null; address: string | null
   country: string | null; base_currency: string; timezone: string; status: string
-  xero_enabled: boolean; subscription_plan: string; user_limit: number; subscription_amount: number
+  xero_enabled: boolean; addons: Addons; subscription_plan: string; user_limit: number; subscription_amount: number
   subscription_start: string | null; subscription_end: string | null
 }
 
@@ -94,6 +95,8 @@ export function SubscriptionCard({ org, used }: { org: OrgData; used: number }) 
   const [xero, setXero] = useState(org.xero_enabled)
   const [busy, setBusy] = useState(false)
   const [xBusy, setXBusy] = useState(false)
+  const [addons, setAddons] = useState<Addons>(org.addons)
+  const [aBusy, setABusy] = useState<AddonKey | null>(null)
   const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
 
   function change(k: string, v: string) {
@@ -126,6 +129,15 @@ export function SubscriptionCard({ org, used }: { org: OrgData; used: number }) 
     setXBusy(false)
     if (e) { setMsg({ ok: false, text: e }); return }
     setXero(want); router.refresh()
+  }
+
+  async function toggleAddon(key: AddonKey) {
+    setABusy(key); setMsg(null)
+    const want = !addons[key]
+    const e = await patchOrg(org.id, { addons: { [key]: want } })
+    setABusy(null)
+    if (e) { setMsg({ ok: false, text: e }); return }
+    setAddons(p => ({ ...p, [key]: want })); router.refresh()
   }
 
   return (
@@ -177,6 +189,21 @@ export function SubscriptionCard({ org, used }: { org: OrgData; used: number }) 
           <span style={{ width: '20px', height: '20px', borderRadius: '50%', background: 'white' }} />
         </button>
       </div>
+
+      {ADDONS.map(a => (
+        <div key={a.key} style={{ display: 'flex', gap: '14px', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', marginTop: '18px', paddingTop: '18px', borderTop: '1px solid var(--gray-100)' }}>
+          <div style={{ minWidth: 0 }}>
+            <div style={{ fontSize: '14px', fontWeight: 600, color: 'var(--slate)' }}>{a.label} <span style={{ fontSize: '11px', fontWeight: 600, color: 'var(--gray-400)' }}>add-on</span></div>
+            <div style={{ fontSize: '12px', color: 'var(--gray-400)', marginTop: '2px' }}>{addons[a.key] ? 'On — ' : 'Off — '}{a.description}</div>
+          </div>
+          <button onClick={() => toggleAddon(a.key)} disabled={aBusy === a.key} role="switch" aria-checked={addons[a.key]} aria-label={a.label} style={{
+            width: '48px', height: '26px', borderRadius: '999px', border: 'none', padding: '3px', cursor: aBusy === a.key ? 'wait' : 'pointer',
+            background: addons[a.key] ? '#8B5CF6' : 'rgba(255,255,255,0.14)', transition: 'background 150ms', display: 'flex', justifyContent: addons[a.key] ? 'flex-end' : 'flex-start',
+          }}>
+            <span style={{ width: '20px', height: '20px', borderRadius: '50%', background: 'white' }} />
+          </button>
+        </div>
+      ))}
 
       <div style={{ display: 'flex', gap: '12px', alignItems: 'center', justifyContent: 'flex-end', marginTop: '20px' }}>
         {msg && <span style={{ fontSize: '13px', color: msg.ok ? '#6EE7B7' : '#FCA5A5' }}>{msg.text}</span>}

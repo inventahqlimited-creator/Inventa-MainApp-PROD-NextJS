@@ -1,3 +1,4 @@
+import { normalizeAddons } from '@/lib/addons'
 import { createAdminClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
@@ -28,7 +29,7 @@ export default async function OrgDetailPage({ params }: { params: Promise<{ id: 
     id, org_number: (raw.org_number as string) ?? null, created_at: raw.created_at as string,
     name: raw.name as string, email: (raw.email as string) ?? null, phone: (raw.phone as string) ?? null, address: (raw.address as string) ?? null,
     country: (raw.country as string) ?? null, base_currency: raw.base_currency as string, timezone: raw.timezone as string, status: raw.status as string,
-    xero_enabled: Boolean(raw.xero_enabled), subscription_plan: (raw.subscription_plan as string) ?? 'monthly',
+    xero_enabled: Boolean(raw.xero_enabled), addons: normalizeAddons(raw.addons), subscription_plan: (raw.subscription_plan as string) ?? 'monthly',
     user_limit: Number(raw.user_limit ?? 3), subscription_amount: Number(raw.subscription_amount ?? 0),
     subscription_start: (raw.subscription_start as string) ?? null, subscription_end: (raw.subscription_end as string) ?? null,
   }

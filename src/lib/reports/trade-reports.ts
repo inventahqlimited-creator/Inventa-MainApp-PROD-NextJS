@@ -14,7 +14,7 @@ type SO = {
   delivery_date: string | null; shipped_date: string | null; total_amount: number | null; currency: string | null; price_level_name: string | null
   carrier: string | null; tracking_number: string | null; notes: string | null; terms: string | null
 }
-type SOL = { so_id: string; product_id: string | null; product_name: string | null; product_sku: string | null; quantity: number; unit_price: number | null; total_price: number | null }
+type SOL = { id: string; so_id: string; product_id: string | null; product_name: string | null; product_sku: string | null; quantity: number; unit_price: number | null; total_price: number | null }
 
 async function loadSales(db: Db, orgId: string, f: Filters): Promise<{ orders: SO[]; truncated: boolean }> {
   const cust = fStr(f, 'customer'), loc = fStr(f, 'location'), from = fStr(f, 'date_from'), to = fStr(f, 'date_to')
@@ -37,7 +37,18 @@ async function loadSales(db: Db, orgId: string, f: Filters): Promise<{ orders: S
 }
 
 async function loadSalesLines(db: Db, orgId: string, ids: string[]): Promise<SOL[]> {
-  return inChunks<SOL>(ids, (c, a, b) => db.from('sales_order_lines').select('so_id, product_id, product_name, product_sku, quantity, unit_price, total_price').eq('org_id', orgId).in('so_id', c).range(a, b))
+  return inChunks<SOL>(ids, (c, a, b) => db.from('sales_order_lines').select('id, so_id, product_id, product_name, product_sku, quantity, unit_price, total_price').eq('org_id', orgId).in('so_id', c).range(a, b))
+}
+
+/** Kits & Bundles: the kit columns of sales lines (empty when there are no kits, or the kit columns aren't in the database yet) */
+type KitInfo = { group: string; parent: boolean; unitCost: number | null }
+async function loadKitInfo(db: Db, orgId: string, ids: string[]): Promise<Map<string, KitInfo>> {
+  const out = new Map<string, KitInfo>()
+  try {
+    const rows = await inChunks<{ id: string; kit_group: string | null; is_kit_parent: boolean | null; kit_unit_cost: number | null }>(ids, (c, a, b) => db.from('sales_order_lines').select('id, kit_group, is_kit_parent, kit_unit_cost').eq('org_id', orgId).not('kit_group', 'is', null).in('so_id', c).range(a, b))
+    for (const r of rows) if (r.kit_group) out.set(r.id, { group: r.kit_group, parent: r.is_kit_parent === true, unitCost: r.kit_unit_cost == null ? null : n0(r.kit_unit_cost) })
+  } catch { /* kit columns not there yet */ }
+  return out
 }
 
 const lineRevenue = (l: { quantity: number; unit_price: number | null; total_price: number | null }) => (l.total_price != null ? n0(l.total_price) : n0(l.quantity) * n0(l.unit_price))
@@ -174,8 +185,9 @@ export async function salesProfitReport(db: Db, orgId: string, f: Filters): Prom
   const group = fStr(f, 'group') || 'order', prod = fStr(f, 'product'), below = fNum(f, 'marginBelow')
   const [{ orders, truncated }, { map }] = await Promise.all([loadSales(db, orgId, f), loadProducts(db, orgId)])
   const ids = orders.map(o => o.id)
-  const [lines, mv] = await Promise.all([
+  const [lines, kitInfo, mv] = await Promise.all([
     loadSalesLines(db, orgId, ids),
+    loadKitInfo(db, orgId, ids),
     inChunks<{ reference_id: string; product_id: string; qty: number; unit_cost: number | null }>(ids, (c, a, b) => db.from('stock_movements').select('reference_id, product_id, qty, unit_cost').eq('org_id', orgId).eq('movement_type', 'sale').in('reference_id', c).range(a, b)),
   ])
   // cost recorded at the moment each order shipped
@@ -191,15 +203,33 @@ export async function salesProfitReport(db: Db, orgId: string, f: Filters): Prom
   let estimated = 0
   type Ln = { o: SO; pid: string | null; name: string; sku: string | null; qty: number; rev: number; cost: number }
   const lns: Ln[] = []
-  for (const l of lines) {
-    if (prod && l.product_id !== prod) continue
-    const o = byId.get(l.so_id)!
-    const p: ProductLite | undefined = l.product_id ? map.get(l.product_id) : undefined
+  // A kit is reported as one line: its price against the cost of its items recorded when it was sold (kit_unit_cost).
+  // Its item lines carry no price, so they are left out (their cost is inside the kit's) and orders made before the snapshot fall back to the items' cost.
+  const itemCostOfKit = new Map<string, number>()
+  const costOfLine = (l: typeof lines[number], p: ProductLite | undefined, count: boolean) => {
     const rec = l.product_id ? recorded.get(`${l.so_id}|${l.product_id}`) : undefined
     let unit: number
     if (rec && rec.q > 0) unit = rec.c / rec.q
-    else { unit = costOf(p, 'avg'); if (isStocked(p)) estimated++ }
+    else { unit = costOf(p, 'avg'); if (count && isStocked(p)) estimated++ }
+    return unit
+  }
+  for (const l of lines) {
+    const k = kitInfo.get(l.id)
+    if (k && !k.parent) itemCostOfKit.set(`${l.so_id}|${k.group}`, (itemCostOfKit.get(`${l.so_id}|${k.group}`) ?? 0) + costOfLine(l, l.product_id ? map.get(l.product_id) : undefined, false) * n0(l.quantity))
+  }
+  for (const l of lines) {
+    const kit = kitInfo.get(l.id)
+    if (kit && !kit.parent) continue
+    if (prod && l.product_id !== prod) continue
+    const o = byId.get(l.so_id)!
+    const p: ProductLite | undefined = l.product_id ? map.get(l.product_id) : undefined
     const qty = n0(l.quantity)
+    if (kit?.parent) {
+      const total = kit.unitCost != null ? kit.unitCost * qty : (itemCostOfKit.get(`${l.so_id}|${kit.group}`) ?? 0)
+      lns.push({ o, pid: l.product_id, name: p?.name ?? l.product_name ?? 'Unnamed item', sku: p?.sku ?? l.product_sku, qty, rev: lineRevenue(l), cost: total })
+      continue
+    }
+    const unit = costOfLine(l, p, true)
     lns.push({ o, pid: l.product_id, name: p?.name ?? l.product_name ?? 'Unnamed item', sku: p?.sku ?? l.product_sku, qty, rev: lineRevenue(l), cost: unit * qty })
   }
 

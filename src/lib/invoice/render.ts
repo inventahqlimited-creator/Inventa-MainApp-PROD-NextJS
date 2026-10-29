@@ -97,10 +97,10 @@ function table(o: InvoiceOrder, cfg: InvoiceConfig, money: (n: number) => string
     return `<td class="t">${(v ?? []).length ? (v ?? []).map(esc).join('<br>') : dash}</td>`
   }).join('')
   const head = `<thead><tr><th>Description</th>${track.map(t => `<th style="width:${t.w}px">${t.label}</th>`).join('')}<th class="r" style="width:50px">Qty</th>${cols.map(c => `<th class="r" style="width:${c.w}px">${c.label}</th>`).join('')}<th class="r" style="width:100px">Amount</th></tr></thead>`
-  const desc = (name: string, sub: string) => `<td><div class="pn">${esc(name)}</div>${sub ? `<div class="sku">${esc(sub)}</div>` : ''}</td>`
+  const desc = (name: string, sub: string, item = false) => `<td${item ? ' style="padding-left:30px"' : ''}><div class="pn"${item ? ' style="font-style:italic;font-weight:500"' : ''}>${esc(name)}</div>${sub ? `<div class="sku">${esc(sub)}</div>` : ''}</td>`
   const rows = o.lines.map(l => {
     const cells = cols.map(c => `<td class="r">${c.key === 'unitPrice' ? money(l.unitPrice) : c.key === 'discount' ? (l.discount ? `${numText(l.discount)}%` : dash) : `${numText(l.taxRate)}%`}</td>`).join('')
-    return `<tr>${desc(l.name, cfg.columns.sku ? l.sku : '')}${trackCells(l)}<td class="r">${qtyText(l.qty)}</td>${cells}<td class="r b">${money(l.amount)}</td></tr>`
+    return `<tr>${desc(l.name, cfg.columns.sku ? l.sku : '', l.kitItem)}${trackCells(l)}<td class="r">${qtyText(l.qty)}</td>${cells}<td class="r b">${money(l.amount)}</td></tr>`
   }).join('')
   const costs = o.costs.length
     ? `<tr class="band"><td colspan="${3 + cols.length + track.length}">Additional costs</td></tr>` + o.costs.map(c =>

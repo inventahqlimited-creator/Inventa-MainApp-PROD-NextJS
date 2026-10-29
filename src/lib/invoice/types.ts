@@ -13,6 +13,8 @@ export type InvoiceLine = {
   discount: number // percent
   taxRate: number // percent
   amount: number // after discount, before tax
+  /** An item shown under its kit: printed italic and indented */
+  kitItem?: boolean
   /** What was shipped, from the picks (or the stock movements once shipped) */
   serials?: string[]
   batches?: string[]

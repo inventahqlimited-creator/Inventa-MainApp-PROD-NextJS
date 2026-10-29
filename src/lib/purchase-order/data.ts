@@ -3,7 +3,7 @@
 // to, where it is delivered, the lines at their ordered quantity, additional costs, order discount and tax (same maths as
 // the purchase order screen). The business details come from Settings.
 
-import { keepKitLine, kitItemName } from '@/lib/kits/doc-lines'
+import { isShownKitItem, keepKitLine } from '@/lib/kits/doc-lines'
 import { loadKitDoc } from '@/lib/kits/doc-lines-server'
 import { loadTerms } from '@/lib/payment-terms-server'
 import { qtyFmtFromOrg } from '@/lib/qty'
@@ -83,7 +83,7 @@ export async function loadPurchaseOrderPayload(db: Db, orgId: string, ids: strin
       if (qty <= 0) continue
       const unitPrice = num(l.unit_cost), discount = num(l.discount)
       const built: InvoiceLine = {
-        name: kit ? kitItemName(clean(l.product_name), kf, kit.mode) : clean(l.product_name), sku: clean(l.product_sku), qty, unitPrice, discount,
+        name: clean(l.product_name), kitItem: kit ? isShownKitItem(kf, kit.mode) || undefined : undefined, sku: clean(l.product_sku), qty, unitPrice, discount,
         taxRate: num(l.tax_rate), amount: r2(qty * unitPrice * (1 - discount / 100)),
       }
       lines.push(built)

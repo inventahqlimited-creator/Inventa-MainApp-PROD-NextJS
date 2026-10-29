@@ -12,6 +12,7 @@ import { runSync } from './sync'
 import { loadInvoicePayload } from '@/lib/invoice/data'
 import { stockError, type XeroPrefs } from './prefs'
 import { auditPost } from './audit'
+import { loadKitDoc } from '@/lib/kits/doc-lines-server'
 import { dueDateFor, type PaymentTerm } from '@/lib/payment-terms'
 
 type Row = Record<string, unknown>
@@ -98,7 +99,7 @@ export async function postInvoice(db: Db, orgId: string, soId: string, settings:
 
   const { data: so } = await db.from('sales_orders').select(`
       id, so_number, status, customer_id, customer_name, ref, order_date, delivery_date, shipped_date, closed_at, created_at,
-      sales_order_lines ( product_id, product_name, product_sku, quantity, quantity_picked, quantity_packed, quantity_shipped, unit_price, discount, tax_rate, tax_rate_id, line_notes, sort_order ),
+      sales_order_lines ( id, product_id, product_name, product_sku, quantity, quantity_picked, quantity_packed, quantity_shipped, unit_price, discount, tax_rate, tax_rate_id, line_notes, sort_order ),
       sales_order_cost_lines ( product_name, description, amount, tax_rate, tax_rate_id, sort_order )
     `).eq('org_id', orgId).eq('id', soId).maybeSingle()
   const order = so as (Row & { sales_order_lines?: Row[]; sales_order_cost_lines?: Row[] }) | null
@@ -154,12 +155,42 @@ export async function postInvoice(db: Db, orgId: string, soId: string, settings:
     return pct > 0.00005 ? Math.min(pct, 100) : 0
   }
 
+  // Kits & Bundles. The kit goes to Xero as one line at its own price (like any item). Its items carry no price, so they are only sent
+  // when Xero tracks inventory AND the item is a tracked stock item already in Xero: they go at $0 so Xero reduces its stock and books the cost.
+  const kit = await loadKitDoc(db, orgId, 'invoice', 'sales', [soId])
+  const kitFlag = (l: Row) => kit?.flags.get(clean(l.id))
+  const stockItems = new Set<string>()
+  if (kit && prefs.inventory_tracked && productIds.length) {
+    const { data } = await db.from('products').select('id, type, track_stock').eq('org_id', orgId).in('id', productIds)
+    for (const p of (data ?? []) as Row[]) if (p.type === 'Stock' && p.track_stock !== false) stockItems.add(String(p.id))
+  }
+  const kitTax = new Map<string, string>() // kit group → the Xero tax type of the kit line
+  const kitName = new Map<string, string>()
+  for (const l of lines) {
+    const f = kitFlag(l)
+    if (!f?.is_kit_parent) continue
+    const t = taxTypeFor(settings, rates, l.tax_rate_id, l.tax_rate)
+    if ('type' in t) kitTax.set(f.kit_group as string, t.type)
+    kitName.set(f.kit_group as string, clean(l.product_name))
+  }
+
   const problems = new Set<string>()
   const items: Record<string, unknown>[] = []
   for (const l of lines) {
+    const kf = kitFlag(l)
     const picked = n(l.quantity_picked), packed = n(l.quantity_packed), sent = n(l.quantity_shipped)
-    const qty = sent > 0 ? sent : packed > 0 ? packed : picked
+    // a kit line is a heading with a price: it is not picked or shipped, so it counts at the quantity ordered (as on the printed invoice)
+    const qty = kf?.is_kit_parent ? n(l.quantity) : sent > 0 ? sent : packed > 0 ? packed : picked
     if (qty <= 0) continue
+    if (kf && !kf.is_kit_parent) {
+      const pid = clean(l.product_id), group = kf.kit_group as string
+      if (!prefs.inventory_tracked || !stockItems.has(pid) || !synced.has(pid) || !clean(l.product_sku) || !kitTax.has(group)) continue
+      items.push({
+        Description: `${clean(l.product_name) || 'Item'}\n(part of ${kitName.get(group) || 'a kit'})`.slice(0, 4000),
+        Quantity: qty, UnitAmount: 0, AccountCode: settings.sales_account_code, TaxType: kitTax.get(group), ItemCode: clean(l.product_sku),
+      })
+      continue
+    }
     const tax = taxTypeFor(settings, rates, l.tax_rate_id, l.tax_rate)
     if ('error' in tax) { problems.add(tax.error); continue }
     const name = clean(l.product_name) || 'Item'

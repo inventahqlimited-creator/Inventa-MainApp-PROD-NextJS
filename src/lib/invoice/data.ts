@@ -97,7 +97,7 @@ function invoiceNumber(soNumber: string, org: OrgDb, prefix: string): string {
   return `${prefix}${/^\d+$/.test(n) ? n : soNumber}`
 }
 
-/** kitDocs: false gives the lines exactly as saved (used when posting to Xero); true applies the Kits & Bundles invoice setting */
+/** kitDocs: false leaves every kit line and item line in (used when posting to Xero); true applies the Kits & Bundles invoice setting */
 export async function loadInvoicePayload(db: Db, orgId: string, ids: string[], opts: { kitDocs?: boolean } = {}): Promise<InvoicePayload> {
   const { data: orderRows } = await db
     .from('sales_orders')
@@ -115,7 +115,9 @@ export async function loadInvoicePayload(db: Db, orgId: string, ids: string[], o
     .filter((o): o is OrderDb => !!o && INVOICE_STATUSES.includes(String(o.status).toLowerCase()))
 
   const orderIds = orders.map(o => o.id)
-  const kit = opts.kitDocs === false ? null : await loadKitDoc(db, orgId, 'invoice', 'sales', orderIds)
+  const kit = await loadKitDoc(db, orgId, 'invoice', 'sales', orderIds)
+  // the kit setting only decides what is printed; the maths (a kit counts at its ordered quantity) is the same for Xero
+  const display = opts.kitDocs === false ? null : kit
   const hidden = new Set<InvoiceLine>()
   const customerIds = [...new Set(orders.map(o => o.customer_id).filter((x): x is string => !!x))]
   const none = Promise.resolve({ data: [] })
@@ -149,14 +151,14 @@ export async function loadInvoicePayload(db: Db, orgId: string, ids: string[], o
       const unitPrice = num(l.unit_price), discount = num(l.discount)
       const tracked = trackByLine.get(l.id) ?? []
       const built: InvoiceLine = {
-        name: clean(l.product_name), kitItem: kit ? isShownKitItem(kf, kit.mode) || undefined : undefined, sku: clean(l.product_sku), qty, unitPrice, discount,
+        name: clean(l.product_name), kitItem: display ? isShownKitItem(kf, display.mode) || undefined : undefined, sku: clean(l.product_sku), qty, unitPrice, discount,
         taxRate: num(l.tax_rate), amount: r2(qty * unitPrice * (1 - discount / 100)),
         serials: uniq(tracked.map(t => t.serial_number)),
         batches: uniq(tracked.map(t => t.batch_number)),
         expiries: uniq(tracked.map(t => (t.expiry_date ? String(t.expiry_date).slice(0, 10) : null))),
       }
       lines.push(built)
-      if (kit && !keepKitLine(kf, kit.mode)) hidden.add(built)
+      if (display && !keepKitLine(kf, display.mode)) hidden.add(built)
     }
     const costLines: InvoiceCost[] = (costsByOrder.get(o.id) ?? [])
       .filter(c => num(c.amount) !== 0)

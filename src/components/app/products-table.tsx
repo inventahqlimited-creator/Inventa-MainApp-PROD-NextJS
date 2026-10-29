@@ -1568,22 +1568,24 @@ export default function ProductsTable({
                       if (isView && !isKitNow) return null
                       const blocked = stockLocked || hasStock
                       return (
-                        <div style={{ margin: '4px 0 10px' }}>
-                          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13.5, fontWeight: 600, cursor: isView || blocked ? 'default' : 'pointer', opacity: blocked ? 0.6 : 1 }}>
-                            <input type="checkbox" checked={isKitNow} disabled={isView || blocked}
-                              onChange={e => {
-                                const on = e.target.checked
-                                setForm(f => ({ ...f, is_kit: on, type: on ? 'NonStock' : f.type }))
-                                if (!on) setBomLines([])
-                                else setModalTab('bom')
-                              }} />
-                            This item is a kit / bundle
-                          </label>
-                          <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 3, marginLeft: 24, lineHeight: 1.5 }}>
-                            {blocked
-                              ? (stockLocked ? 'Stock items can’t become kits. Create a Non Stock item for the kit instead.' : 'This item has stock on hand, so it can’t become a kit. Clear its stock first.')
-                              : 'Made up of other items and services. Sold at its own price; the items inside are taken from stock. Kits are Non Stock items.'}
+                        <div className="pm-toggle-row" style={{ marginBottom: 12 }}>
+                          <div>
+                            <div className="pm-toggle-lbl">Kit / Bundle</div>
+                            <div className="pm-toggle-sub">
+                              Made up of other items and services, sold at its own price. Kits are Non Stock items.
+                              {blocked && <span style={{ color: 'var(--gray-400)', fontStyle: 'italic', display: 'block', marginTop: 2 }}>
+                                {stockLocked ? 'Stock items can’t become kits — create a Non Stock item instead.' : 'This item has stock on hand, so it can’t become a kit.'}
+                              </span>}
+                            </div>
                           </div>
+                          <Toggle
+                            active={isKitNow}
+                            disabled={isView || blocked}
+                            onChange={on => {
+                              setForm(f => ({ ...f, is_kit: on, type: on ? 'NonStock' : f.type }))
+                              if (!on) setBomLines([])
+                            }}
+                          />
                         </div>
                       )
                     })()}

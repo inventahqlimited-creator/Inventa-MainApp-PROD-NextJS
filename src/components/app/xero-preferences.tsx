@@ -108,24 +108,24 @@ export default function XeroPreferences() {
                 </select>
                 <div style={hint}>
                   {draft.inventory_tracked
-                    ? 'Xero keeps count of your stock, so InventaHQ won’t send your stock adjustments. When you adjust stock here, make the same adjustment in Xero.'
+                    ? 'Xero keeps count of your stock. Each stock adjustment you complete is sent as a bill (stock up) and a supplier credit note (stock down) for your tracked items, each totalling $0.00, so Xero changes its quantity and value for you.'
                     : 'InventaHQ keeps count of your stock. Each stock adjustment you complete is sent to Xero as a journal.'}
                 </div>
               </div>
-              {!draft.inventory_tracked && (
+              {true && (
                 <div>
-                  <label style={label}>Post stock adjustment journals as</label>
+                  <label style={label}>{draft.inventory_tracked ? 'Post stock adjustment bills and credit notes as' : 'Post stock adjustment journals as'}</label>
                   <select style={selectStyle} disabled={!can} value={draft.journal_status} onChange={e => set('journal_status', e.target.value as XeroPrefs['journal_status'])}>
                     <option value="DRAFT">Draft (review in Xero first)</option>
-                    <option value="POSTED">Posted</option>
+                    <option value="POSTED">{draft.inventory_tracked ? 'Approved' : 'Posted'}</option>
                   </select>
-                  <div style={hint}>Choose the inventory and stock adjustment accounts under Accounts and tax.</div>
+                  <div style={hint}>{draft.inventory_tracked ? 'Choose the stock adjustment account under Accounts and tax. Xero only moves stock when the bill or credit note is approved.' : 'Choose the inventory and stock adjustment accounts under Accounts and tax.'}</div>
                 </div>
               )}
             </div>
             {draft.inventory_tracked && (
               <div style={{ ...hint, marginTop: 12, lineHeight: 1.5 }}>
-                To make this work, set your products up as tracked items in Xero (we match them by item code). Xero won’t let you sell a tracked item it has no stock of, so InventaHQ sends your purchase bills before your invoices.
+                To make this work, set your products up as tracked items in Xero (we match them by item code). Only tracked stock items already in Xero are sent. Xero won’t let you sell a tracked item it has no stock of, so InventaHQ sends your purchase bills and stock adjustments before your invoices.
               </div>
             )}
             {data.prefs.inventory_tracked !== draft.inventory_tracked && (

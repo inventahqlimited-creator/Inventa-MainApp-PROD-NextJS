@@ -6,6 +6,34 @@ export type ReleaseNote = { id: string; date: string; title: string; summary: st
 
 export const RELEASES: ReleaseNote[] = [
   {
+    id: '2026-10-29',
+    date: '2026-10-29',
+    title: 'Kits & Bundles, and smarter Xero stock adjustments',
+    summary: 'Sell and buy bundles of products as one line, see how many you can make, and keep Xero’s stock in step when you adjust it.',
+    sections: [
+      {
+        heading: 'New: Kits & Bundles (add-on)',
+        items: [
+          'Turn on Kits & Bundles from your Hub, then mark a Non Stock product as a kit and list its components (stock items, non-stock items and services) in the Bill of Materials tab. Give the kit its own selling price; its cost is worked out from the components.',
+          'Add a kit to a sales order, purchase order or transfer and its components are added for you, scaled by the quantity. You can change component quantities on the order. Customers are charged the kit price only, and stock moves for the components.',
+          'Settings → Kits & Bundles: choose whether components are shown on each order type, and what prints on invoices, pick lists, packing lists, purchase orders and transfers (kit only, kit and components, or components only).',
+          'Switch on “Show virtual stock” to see how many kits you can make from the components you hold. It appears in the Products list and on a kit’s Stock Details tab, for the location you’re viewing.',
+          'Import lots of kits at once from a CSV in Settings → Kits & Bundles. A template is there to download.',
+          'On invoices and pick lists, components are shown in italics and indented so they’re easy to tell from the kit.',
+          'Sales reports work out a kit’s cost from its components at the time of sale, so profit stays accurate.',
+        ],
+      },
+      {
+        heading: 'Xero',
+        items: [
+          'If Xero tracks your inventory, completed stock adjustments are now sent to Xero for you: stock added goes as a bill and stock removed as a supplier credit note, each totalling $0.00, so Xero updates its quantity and value automatically. Choose whether they arrive as drafts or approved in Settings → Xero.',
+          'Kits on invoices sent to Xero keep the kit price, and their tracked components reduce Xero’s stock.',
+          '“Sync everything” now sends contacts, products, stock adjustments, bills and then invoices when Xero tracks your inventory.',
+        ],
+      },
+    ],
+  },
+  {
     id: '2026-10-13',
     date: '2026-10-13',
     title: 'Attachments, serial numbers, payment terms and more',

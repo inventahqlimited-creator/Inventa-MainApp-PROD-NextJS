@@ -4,6 +4,8 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import ProductsTable from '@/components/app/products-table'
 import { loadXeroTableInfo } from '@/lib/xero/table-info'
+import { hasAddon } from '@/lib/addons-server'
+import { loadKitSettings } from '@/lib/kits/settings-server'
 
 export default async function ProductsPage() {
   const supabase = await createClient()
@@ -50,6 +52,14 @@ export default async function ProductsPage() {
     loadXeroTableInfo(adminClient, m.org_id, 'product', m.role === 'admin'),
   ])
 
+  // Kits & Bundles: virtual stock (how many kits the items on hand could make) when the add-on and the setting are on
+  let virtualBoms: Record<string, { component_id: string; quantity: number }[]> | undefined
+  if (await hasAddon(adminClient, m.org_id, 'kits') && (await loadKitSettings(adminClient, m.org_id)).show_virtual_stock) {
+    const { data: bom } = await adminClient.from('product_bom_lines').select('kit_id, component_id, quantity').eq('org_id', m.org_id)
+    virtualBoms = {}
+    for (const r of (bom ?? []) as { kit_id: string; component_id: string; quantity: number }[]) (virtualBoms[r.kit_id] ??= []).push({ component_id: r.component_id, quantity: Number(r.quantity) })
+  }
+
   const customListsWithOptions = (customLists ?? []).map((l: Record<string, unknown>) => ({
     ...(l as { id: string; name: string }),
     options: (customListOptions ?? [])
@@ -79,6 +89,7 @@ export default async function ProductsPage() {
       customFields={(customFields ?? []) as { id: string; name: string; field_type: string }[]}
       customLists={customListsWithOptions}
       xero={xero}
+      virtualBoms={virtualBoms}
     />
   )
 }

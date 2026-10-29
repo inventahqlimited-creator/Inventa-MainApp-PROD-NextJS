@@ -1,11 +1,14 @@
 'use client'
 
 import { useState, useMemo, useEffect, useRef } from 'react'
+import { virtualStock } from '@/lib/kits/virtual-stock'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { PostToXeroButton, XeroColumnHeader, XeroPostNotice, XeroStatusBadge, usePostToXero, type XeroTableInfo } from '@/components/app/xero-sync-ui'
 import { toast } from '@/components/app/toast'
 import { useQty } from '@/components/app/qty-provider'
+import { useAddon } from '@/components/app/addons-provider'
+import { BomEditor, type BomUiLine } from '@/components/app/bom-editor'
 
 type Product = {
   id: string
@@ -38,6 +41,7 @@ type Product = {
   buy_tax_rate_id: string | null
   sell_tax_rate_id: string | null
   custom_fields: Record<string, string> | null
+  is_kit?: boolean | null
 }
 
 type StockLevel = {
@@ -92,6 +96,7 @@ type ModalForm = {
   notes: string
   is_active: boolean
   track_stock: boolean
+  is_kit: boolean
 }
 
 const EMPTY_FORM: ModalForm = {
@@ -100,7 +105,7 @@ const EMPTY_FORM: ModalForm = {
   sell_price: '', sell_uom: 'Each', sell_uom_qty: '1',
   serial_tracking: false, batch_tracking: false, expiry_tracking: false,
   default_supplier_id: '', supplier_code: '', lead_time_days: '', min_order_qty: '',
-  notes: '', is_active: true, track_stock: true,
+  notes: '', is_active: true, track_stock: true, is_kit: false,
 }
 
 const UOM_OPTIONS = ['Each','Box','Carton','Kg','g','L','mL','m','Pair','Pack','Set','Dozen','Roll','Sheet','Unit']
@@ -118,6 +123,7 @@ const COLS = [
   { key: 'on_order', label: 'On Order' },
   { key: 'committed', label: 'Committed' },
   { key: 'available', label: 'Available' },
+  { key: 'virtual', label: 'Virtual Stock' }, // kits only: shown when Settings > Kits & Bundles > virtual stock is on
 ]
 
 const DEFAULT_VISIBLE = new Set(['type', 'status', 'unit', 'sell_price', 'on_hand', 'on_order', 'committed', 'available'])
@@ -700,8 +706,11 @@ export default function ProductsTable({
   customLists = [],
   permissions = {},
   xero,
+  virtualBoms,
 }: {
   xero?: XeroTableInfo
+  /** Kits & Bundles virtual stock: each kit's items. Only passed when the add-on and the setting are on. */
+  virtualBoms?: Record<string, { component_id: string; quantity: number }[]>
   products: Product[]
   stockLevels: StockLevel[]
   locations: Location[]
@@ -796,7 +805,10 @@ export default function ProductsTable({
   const [modal, setModal] = useState<'closed' | 'view' | 'add' | 'edit'>('closed')
   const [activeProduct, setActiveProduct] = useState<Product | null>(null)
   const [form, setForm] = useState<ModalForm>(EMPTY_FORM)
-  const [modalTab, setModalTab] = useState<'details' | 'pricing' | 'stock' | 'orders' | 'custom'>('details')
+  const [modalTab, setModalTab] = useState<'details' | 'bom' | 'pricing' | 'stock' | 'orders' | 'custom'>('details')
+  const kitsOn = useAddon('kits')
+  const [bomLines, setBomLines] = useState<BomUiLine[]>([])
+  const [bomLoading, setBomLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setErrorRaw] = useState<string | null>(null)
   const setError = (m: string | null) => { setErrorRaw(m); if (m) toast.error(m) }
@@ -885,7 +897,26 @@ export default function ProductsTable({
     return res.ok
   }
 
+  async function loadBom(p: Product) {
+    setBomLines([])
+    if (!kitsOn || !p.is_kit) return
+    setBomLoading(true)
+    try {
+      const res = await fetch(`/api/org/products/${p.id}/bom`, { cache: 'no-store' })
+      if (res.ok) {
+        const d = await res.json()
+        setBomLines((d.lines ?? []).map((l: { component_id: string; quantity: number; guide_price: number | null }) => ({
+          component_id: l.component_id, quantity: String(l.quantity), guide_price: l.guide_price == null ? '' : String(l.guide_price),
+        })))
+      } else {
+        setError('We couldn’t load the Bill of Materials. Please close and reopen this product.')
+      }
+    } catch { setError('We couldn’t load the Bill of Materials — please check your connection.') }
+    setBomLoading(false)
+  }
+
   function openView(p: Product) {
+    loadBom(p)
     loadPricing(p.id)
     setActiveProduct(p)
     setModal('view')
@@ -902,6 +933,7 @@ export default function ProductsTable({
     setForm(f => ({ ...f, buy_tax_rate_id: f.buy_tax_rate_id || defaultTaxId, sell_tax_rate_id: f.sell_tax_rate_id || defaultTaxId }))
     setModal('add')
     setModalTab('details')
+    setBomLines([])
     setError(null)
     setCustomFieldValues({})
     setPricing(PRICE_LEVEL_NAMES.map(l => ({ price_level: l, price: 0, break_qty: 1 })))
@@ -929,6 +961,7 @@ export default function ProductsTable({
       lead_time_days: p.lead_time_days != null ? String(p.lead_time_days) : '',
       min_order_qty: p.min_order_qty != null ? String(p.min_order_qty) : '',
       notes: p.notes ?? '', is_active: p.is_active ?? true, track_stock: p.track_stock ?? true,
+      is_kit: !!p.is_kit,
     })
     setActiveProduct(p)
     setModal('edit')
@@ -936,6 +969,7 @@ export default function ProductsTable({
     setError(null)
     setCustomFieldValues(p.custom_fields ?? {})
     loadPricing(p.id)
+    loadBom(p)
   }
 
   function closeModal() {
@@ -963,6 +997,14 @@ export default function ProductsTable({
   async function handleSave() {
     if (!form.name.trim()) { setError('Product name is required.'); return }
     if (!form.sku.trim()) { setError('Product # (SKU) is required.'); return }
+    const isKit = kitsOn && form.is_kit
+    if (isKit) {
+      if (form.type !== 'NonStock') { setError('A kit must be a Non Stock item. Change the product type to Non Stock first.'); return }
+      for (let i = 0; i < bomLines.length; i++) {
+        const q = Number(bomLines[i].quantity)
+        if (!Number.isFinite(q) || q <= 0) { setModalTab('bom'); setError(`Bill of Materials: enter a quantity greater than zero on line ${i + 1}.`); return }
+      }
+    }
     setSaving(true)
     setError(null)
 
@@ -992,6 +1034,7 @@ export default function ProductsTable({
       notes: form.notes || null,
       is_active: form.is_active,
       track_stock: form.track_stock,
+      ...(kitsOn ? { is_kit: form.is_kit } : {}),
       custom_fields: Object.keys(customFieldValues).length > 0 ? customFieldValues : null,
     }
 
@@ -1011,6 +1054,24 @@ export default function ProductsTable({
     if (canViewPricing) {
       const ok = await savePricing(isEdit ? activeProduct.id : data.id)
       if (!ok) { setError('The product was saved, but its price level prices could not be saved. Please try again.'); return }
+    }
+
+    // Bill of Materials (kits only)
+    if (isKit) {
+      const productId = isEdit ? activeProduct.id : data.id
+      const r = await fetch(`/api/org/products/${productId}/bom`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lines: bomLines.map(l => ({ component_id: l.component_id, quantity: Number(l.quantity), guide_price: l.guide_price === '' ? null : Number(l.guide_price) })) }),
+      })
+      if (!r.ok) {
+        const b = await r.json().catch(() => ({}))
+        const saved = { ...(isEdit ? activeProduct : {}), ...payload, id: productId, last_cost: null, avg_cost: null, custom_fields: customFieldValues } as Product
+        setProducts(prev => (prev.some(p => p.id === productId) ? prev.map(p => (p.id === productId ? { ...p, ...saved } : p)) : [...prev, saved]))
+        setActiveProduct(saved); setModal('edit'); setModalTab('bom')
+        setError(`The product was saved, but its Bill of Materials could not be: ${b.error ?? 'please try again.'}`)
+        return
+      }
     }
 
     toast.success(isEdit ? 'Product updated' : 'Product created')
@@ -1052,6 +1113,34 @@ export default function ProductsTable({
     }
     return map
   }, [stockLevels, locationFilter])
+
+  // Virtual stock: whole kits the stock on hand of their items could make, for the location chosen in the filter (same as On Hand)
+  const virtualOn = !!virtualBoms
+  const virtualMap = useMemo(() => {
+    const out: Record<string, number | null> = {}
+    if (!virtualBoms) return out
+    const byId = new Map(products.map(p => [p.id, p]))
+    const avail = (id: string) => {
+      const c = byId.get(id)
+      if (!c || c.track_stock === false || c.type !== 'Stock') return null
+      return stockMap[id]?.onHand ?? 0
+    }
+    for (const kitId in virtualBoms) out[kitId] = virtualStock(virtualBoms[kitId], avail)
+    return out
+  }, [virtualBoms, products, stockMap])
+  // the column appears for everyone the first time, then it is theirs to hide
+  useEffect(() => {
+    if (!virtualOn) return
+    try {
+      if (localStorage.getItem('products-virtual-col-seen')) return
+      localStorage.setItem('products-virtual-col-seen', '1')
+      setVisibleCols(prev => {
+        const next = new Set(prev); next.add('virtual')
+        try { localStorage.setItem('products-visible-cols', JSON.stringify([...next])) } catch {}
+        return next
+      })
+    } catch {}
+  }, [virtualOn])
 
   const filtered = useMemo(() => {
     return products.filter(p => {
@@ -1112,6 +1201,7 @@ export default function ProductsTable({
   const v = visibleCols
   const isView = modal === 'view'
   const curProduct = isView ? activeProduct : null
+  const showBom = kitsOn && (isView ? !!curProduct?.is_kit : form.is_kit)
   const supplierName = (id: string) => suppliers?.find(s => s.id === id)?.name ?? 'Select supplier…'
 
   return (
@@ -1231,7 +1321,7 @@ export default function ProductsTable({
           {colOpen && (
             <div className="inv-dropdown col-dropdown" style={{ display: 'block' }}>
               <div className="col-dropdown-title">Show / Hide Columns</div>
-              {COLS.filter(col => canViewPricing || !['sell_price', 'cost_price'].includes(col.key)).map(col => (
+              {COLS.filter(col => (canViewPricing || !['sell_price', 'cost_price'].includes(col.key)) && (virtualOn || col.key !== 'virtual')).map(col => (
                 <label key={col.key} className="col-check-item">
                   <input type="checkbox" checked={v.has(col.key)} onChange={e => {
                     setVisibleCols(prev => {
@@ -1341,6 +1431,7 @@ export default function ProductsTable({
                 {v.has('on_order') && <th style={{ textAlign: 'right' }}>On Order</th>}
                 {v.has('committed') && <th style={{ textAlign: 'right' }}>Committed</th>}
                 {v.has('available') && <th style={{ textAlign: 'right' }}>Available</th>}
+                {virtualOn && v.has('virtual') && <th style={{ textAlign: 'right' }} title="Kits that could be made from the stock on hand of their items">Virtual Stock</th>}
                 {xero?.show && <XeroColumnHeader />}
                 <th style={{ width: 40 }} />
               </tr>
@@ -1374,6 +1465,7 @@ export default function ProductsTable({
                     {v.has('on_order') && <td style={{ textAlign: 'right' }} className="td-muted">{p.track_stock ? q(stock.onOrder, !!p.serial_tracking) : '—'}</td>}
                     {v.has('committed') && <td style={{ textAlign: 'right' }} className="td-muted">{p.track_stock ? q(stock.committed, !!p.serial_tracking) : '—'}</td>}
                     {v.has('available') && <td style={{ textAlign: 'right' }}>{p.track_stock ? <span style={{ fontWeight: 600, color: stock.available <= 0 ? 'var(--danger)' : '#059669' }}>{q(stock.available, !!p.serial_tracking)}</span> : <span className="td-muted">—</span>}</td>}
+                    {virtualOn && v.has('virtual') && <td style={{ textAlign: 'right' }}>{p.is_kit && virtualMap[p.id] != null ? <span style={{ fontWeight: 600, color: (virtualMap[p.id] ?? 0) <= 0 ? 'var(--danger)' : '#059669' }}>{q(virtualMap[p.id] as number, false)}</span> : <span className="td-muted">—</span>}</td>}
                     {xero?.show && <td><XeroStatusBadge info={xeroRecords[p.id]} /></td>}
                     {(canEdit || (xero?.show && xero.canPost)) && (
                     <td>
@@ -1444,9 +1536,10 @@ export default function ProductsTable({
             </div>
 
             <div className="modal-tab-bar">
-              {(['details', 'pricing', 'custom', 'stock', 'orders'] as const)
+              {(['details', 'bom', 'pricing', 'custom', 'stock', 'orders'] as const)
                 .filter(t => {
                   if (t === 'stock' || t === 'orders') return isView
+                  if (t === 'bom') return showBom
                   if (t === 'custom') return customFields.length > 0 || customLists.length > 0
                   if (t === 'pricing') return canViewPricing
                   return true
@@ -1457,7 +1550,7 @@ export default function ProductsTable({
                   if (t === 'orders' && activeProduct && productOrders.length === 0) loadOrders(activeProduct.id)
                   if (t === 'stock' && activeProduct) loadStockGroups(activeProduct.id)
                 }}>
-                  {t === 'details' ? 'Details' : t === 'pricing' ? 'Price Levels' : t === 'stock' ? 'Stock Details' : t === 'orders' ? 'Orders' : 'Custom Fields'}
+                  {t === 'details' ? 'Details' : t === 'bom' ? 'Bill of Materials' : t === 'pricing' ? 'Price Levels' : t === 'stock' ? 'Stock Details' : t === 'orders' ? 'Orders' : 'Custom Fields'}
                 </div>
               ))}
             </div>
@@ -1483,9 +1576,9 @@ export default function ProductsTable({
                             {['Stock', 'NonStock', 'Service'].map(t => {
                               const isStockLocked = modal === 'edit' && activeProduct?.type === 'Stock'
                               // When product was created as Stock, can't switch to NonStock/Service; also can't switch other types back to Stock
-                              const disabled = isStockLocked
+                              const disabled = (kitsOn && form.is_kit && t !== 'NonStock') || (isStockLocked
                                 ? t !== 'Stock' // locked on Stock — other buttons disabled
-                                : modal === 'edit' && t === 'Stock' && activeProduct?.type !== 'Stock' // existing non-Stock product — Stock button disabled (new products can pick any type)
+                                : modal === 'edit' && t === 'Stock' && activeProduct?.type !== 'Stock') // existing non-Stock product — Stock button disabled (new products can pick any type)
                               return (
                                 <button
                                   key={t}
@@ -1503,6 +1596,34 @@ export default function ProductsTable({
                         )}
                       </Field>
                     </div>
+                    {kitsOn && (() => {
+                      const isKitNow = isView ? !!curProduct?.is_kit : form.is_kit
+                      const stockLocked = !isView && modal === 'edit' && activeProduct?.type === 'Stock'
+                      const hasStock = !isView && modal === 'edit' && !activeProduct?.is_kit && (stockMap[activeProduct?.id ?? '']?.onHand ?? 0) !== 0
+                      if (isView && !isKitNow) return null
+                      const blocked = stockLocked || hasStock
+                      return (
+                        <div className="pm-toggle-row" style={{ marginBottom: 12 }}>
+                          <div>
+                            <div className="pm-toggle-lbl">Kit / Bundle</div>
+                            <div className="pm-toggle-sub">
+                              Made up of other items and services, sold at its own price. Kits are Non Stock items.
+                              {blocked && <span style={{ color: 'var(--gray-400)', fontStyle: 'italic', display: 'block', marginTop: 2 }}>
+                                {stockLocked ? 'Stock items can’t become kits — create a Non Stock item instead.' : 'This item has stock on hand, so it can’t become a kit.'}
+                              </span>}
+                            </div>
+                          </div>
+                          <Toggle
+                            active={isKitNow}
+                            disabled={isView || blocked}
+                            onChange={on => {
+                              setForm(f => ({ ...f, is_kit: on, type: on ? 'NonStock' : f.type }))
+                              if (!on) setBomLines([])
+                            }}
+                          />
+                        </div>
+                      )
+                    })()}
                     <div className="modal-grid-2">
                       <Field label="Barcode">
                         <MInput value={isView ? (curProduct?.barcode ?? '') : form.barcode} onChange={val => setF('barcode', val)} placeholder="e.g. 9300675000959" disabled={isView} mono />
@@ -1688,6 +1809,20 @@ export default function ProductsTable({
                 </>
               )}
 
+              {modalTab === 'bom' && showBom && (
+                <Section title="Bill of Materials">
+                  <BomEditor
+                    kitId={activeProduct?.id ?? null}
+                    products={products}
+                    lines={bomLines}
+                    onChange={setBomLines}
+                    editable={!isView}
+                    loading={bomLoading}
+                    sellPrice={isView ? (curProduct?.sell_price ?? null) : (form.sell_price ? parseFloat(form.sell_price) : null)}
+                  />
+                </Section>
+              )}
+
               {modalTab === 'pricing' && (
                 <>
                   <div style={{ background: 'var(--white)', border: '1.5px solid var(--gray-200)', borderRadius: 12, overflow: 'hidden' }}>
@@ -1747,6 +1882,13 @@ export default function ProductsTable({
                 const hasGroups = groups.length > 0
                 const showBin = groups.some(g => g.bin_id)
                 // Stock on hand that has no serial / batch / expiry recorded against it (received before tracking was captured)
+                // Kits & Bundles: virtual stock at each location (whole kits the stock on hand of the items there could make)
+                const kitBom = virtualBoms && prod?.is_kit ? virtualBoms[prod.id] : undefined
+                const virtualAt = (locId: string) => virtualStock(kitBom ?? [], id => {
+                  const c = products.find(x => x.id === id)
+                  if (!c || c.track_stock === false || c.type !== 'Stock') return null
+                  return stockLevels.filter(sl => sl.product_id === id && sl.location_id === locId).reduce((t, sl) => t + Number(sl.quantity || 0), 0)
+                })
                 const looseRows = hasTracking ? locations.map(loc => {
                   const onHandHere = stockLevels.find(sl => sl.product_id === activeProduct?.id && sl.location_id === loc.id)?.quantity ?? 0
                   const grouped = groups.filter(g => g.location_id === loc.id).reduce((t, g) => t + g.quantity, 0)
@@ -1770,6 +1912,7 @@ export default function ProductsTable({
                               <th className="li-th" style={{ textAlign: 'right' }}>On Order</th>
                               <th className="li-th" style={{ textAlign: 'right' }}>Committed</th>
                               <th className="li-th" style={{ textAlign: 'right' }}>Available</th>
+                              {kitBom && <th className="li-th" style={{ textAlign: 'right' }} title="Kits that could be made from the stock on hand of their items at this location">Virtual Stock</th>}
                             </tr>
                           </thead>
                           <tbody>
@@ -1786,6 +1929,7 @@ export default function ProductsTable({
                                   <td className="li-td" style={{ textAlign: 'right', color: 'var(--gray-400)' }}>{q(onOrder, !!activeProduct?.serial_tracking)}</td>
                                   <td className="li-td" style={{ textAlign: 'right', color: 'var(--gray-400)' }}>{q(committed, !!activeProduct?.serial_tracking)}</td>
                                   <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: available <= 0 ? 'var(--danger)' : '#059669' }}>{q(available, !!activeProduct?.serial_tracking)}</td>
+                                  {kitBom && (() => { const vs = virtualAt(loc.id); return <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: vs == null ? 'var(--gray-400)' : vs <= 0 ? 'var(--danger)' : '#059669' }}>{vs == null ? '—' : q(vs, false)}</td> })()}
                                 </tr>
                               )
                             })}

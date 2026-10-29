@@ -1,6 +1,7 @@
 // src/app/api/org/purchases/route.ts
 import { NextResponse } from 'next/server'
 import { checkLineQuantities } from '@/lib/qty-server'
+import { prepareKitLines } from '@/lib/kits/order-lines-server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { pickPO, lineRow, costLineRow, nextPoNumber } from './shared'
 import { ownsOrder } from '@/lib/related'
@@ -25,7 +26,8 @@ export async function POST(request: Request) {
   const orgId = (m as { org_id: string }).org_id
 
   const body = await request.json()
-  const lines: Record<string, unknown>[] = Array.isArray(body.lines) ? body.lines : []
+  let lines: Record<string, unknown>[] = Array.isArray(body.lines) ? body.lines : []
+  { const k = await prepareKitLines(adminClient, orgId, 'purchase', lines); if (!k.ok) return NextResponse.json({ error: k.error }, { status: k.status }); lines = k.lines }
   { const e = await checkLineQuantities(adminClient, orgId, lines, 'quantity_ordered'); if (e) return NextResponse.json({ error: e }, { status: 400 }) }
   const costLines: Record<string, unknown>[] = Array.isArray(body.cost_lines) ? body.cost_lines : []
   if (lines.length === 0) return NextResponse.json({ error: 'Add at least one line item.' }, { status: 400 })

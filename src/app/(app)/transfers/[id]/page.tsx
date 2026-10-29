@@ -2,6 +2,7 @@
 import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { redirect, notFound } from 'next/navigation'
 import TransferForm from '@/components/app/transfer-form'
+import { loadKitColumns, loadKitScreenData } from '@/lib/kits/order-lines-server'
 
 export default async function ViewTransferPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -29,17 +30,27 @@ export default async function ViewTransferPage({ params }: { params: Promise<{ i
   ])
   if (!transfer) notFound()
 
+  // Kits & Bundles: kits can be transferred too (they are not stock items themselves, so they are added to the list here)
+  const kits = await loadKitScreenData(adminClient, m.org_id)
+  const kitIds = kits.enabled ? Object.keys(kits.catalog) : []
+  const kitProducts = kitIds.length ? ((await adminClient.from('products').select('id, name, sku, sell_uom, track_stock, type').eq('org_id', m.org_id).eq('is_active', true).in('id', kitIds)).data ?? []) : []
+  const allProducts = [...(products ?? []), ...kitProducts].sort((a, b) => String(a.name).localeCompare(String(b.name)))
+  const kc = await loadKitColumns(adminClient, m.org_id, id, 'transfer')
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const lineList = ((lines ?? []) as any[]).map(l => { const k = kc.get(l.id); return k ? { ...l, kit_group: k.kit_group, is_kit_parent: k.is_kit_parent, kit_qty_per: k.kit_qty_per, quantity: k.is_kit_parent ? (k.kit_qty ?? 0) : l.quantity } : l })
+
   return (
     <TransferForm
       orgId={m.org_id}
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       transfer={transfer as any}
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      lines={(lines ?? []) as any}
+      lines={lineList as any}
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       locations={(locations ?? []) as any}
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      products={(products ?? []) as any}
+      products={allProducts as any}
+      kits={kits}
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       stockLevels={(stockLevels ?? []) as any}
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

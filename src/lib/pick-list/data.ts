@@ -7,6 +7,8 @@
 import { loadPickData, PICK_ANY } from '@/lib/sales-pick-data'
 import { qtyFmtFromOrg } from '@/lib/qty'
 import { normalizePickListConfig } from './config'
+import { isShownKitItem, keepKitLine } from '@/lib/kits/doc-lines'
+import { loadKitDoc, type KitDoc } from '@/lib/kits/doc-lines-server'
 import type { PickListPayload, PickOrder, PickRow } from './types'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -79,6 +81,30 @@ function plan(loaded: Loaded): Map<string, Take[]> {
   return out
 }
 
+/** Applies the Kits & Bundles pick list setting to the rows of one order: kit headings are added and/or the kit's items are left out */
+function applyKit(kit: KitDoc | null, orderId: string, rows: PickRow[]): PickRow[] {
+  if (!kit || kit.mode === 'components') return rows
+  const parents = kit.rows.filter(r => r.so_id === orderId && r.is_kit_parent === true)
+  if (parents.length === 0) return rows
+  const heading = (p: Record<string, unknown>): PickRow => ({
+    line_id: String(p.id), product_id: String(p.product_id ?? ''), name: String(p.product_name ?? ''), sku: String(p.product_sku ?? ''),
+    note: null, unit: String(p.unit ?? 'Each'), qty: Number(p.quantity) || 0, bin: null, batch: null, expiry: null, serial: null, serialSlots: 0, heading: true,
+  })
+  const parentOf = (line: string) => { const g = kit.flags.get(line)?.kit_group; return g ? parents.find(p => p.kit_group === g) : undefined }
+  const out: PickRow[] = []
+  const done = new Set<string>()
+  for (const r of rows) {
+    const p = parentOf(r.line_id)
+    if (!p) { out.push(r); continue }
+    if (kit.mode === 'both') {
+      if (!done.has(String(p.id))) { out.push(heading(p)); done.add(String(p.id)) }
+      out.push({ ...r, kitItem: true })
+    }
+  }
+  for (const p of parents) if (!done.has(String(p.id))) out.push(heading(p))
+  return out
+}
+
 export async function loadPickListPayload(db: Db, orgId: string, ids: string[]): Promise<PickListPayload> {
   const loaded = await loadPickData(db, orgId, ids, PICK_ANY)
   const orderIds = loaded.orders.map(o => o.id)
@@ -92,6 +118,7 @@ export async function loadPickListPayload(db: Db, orgId: string, ids: string[]):
   const extra = new Map(((orderRows ?? []) as { id: string; expected_date: string | null; notes: string | null }[]).map(r => [r.id, r]))
   const lineNote = new Map(((lineRows ?? []) as { id: string; line_notes: string | null }[]).map(r => [r.id, r.line_notes]))
   const takes = plan(loaded)
+  const kit = await loadKitDoc(db, orgId, 'pick_list', 'sales', ids)
 
   const orders: PickOrder[] = loaded.orders.map(o => {
     const rows: PickRow[] = []
@@ -128,7 +155,7 @@ export async function loadPickListPayload(db: Db, orgId: string, ids: string[]):
       note: (e?.notes ?? '').trim() || null,
       location: o.location_name,
       needsSerials,
-      rows,
+      rows: applyKit(kit, o.id, rows),
     }
   })
 
@@ -155,6 +182,12 @@ export async function loadPickListPayload(db: Db, orgId: string, ids: string[]):
         let needsSerials = false
         for (const l of lines) {
           if (!l.product_id) continue
+          const kf = kit?.flags.get(l.id)
+          if (kit && !keepKitLine(kf, kit.mode)) continue
+          if (kf?.is_kit_parent) {
+            rows.push({ line_id: l.id, product_id: l.product_id, name: l.product_name ?? '', sku: l.product_sku ?? '', note: null, unit: l.unit ?? 'Each', qty: Number(l.quantity) || 0, bin: null, batch: null, expiry: null, serial: null, serialSlots: 0, heading: true })
+            continue
+          }
           const first = lines.find(x => x.product_id === l.product_id)
           if (first?.id !== l.id) continue // movements are per product: print them once, on the first line for that product
           const mine = ((mv ?? []) as M[]).filter(m => m.reference_id === o.id && m.product_id === l.product_id)
@@ -167,9 +200,9 @@ export async function loadPickListPayload(db: Db, orgId: string, ids: string[]):
             const key = [bin, m.batch_number, m.serial_number, m.expiry_date].join('|')
             const hit = merged.get(key)
             if (hit) hit.qty += qty
-            else merged.set(key, { line_id: l.id, product_id: l.product_id, name: l.product_name ?? '', sku: l.product_sku ?? '', note: (l.line_notes ?? '').trim() || null, unit: l.unit ?? 'Each', qty, bin, batch: m.batch_number, expiry: m.expiry_date, serial: m.serial_number, serialSlots: 0 })
+            else merged.set(key, { line_id: l.id, product_id: l.product_id, name: l.product_name ?? '', kitItem: isShownKitItem(kf, kit?.mode ?? 'components') || undefined, sku: l.product_sku ?? '', note: (l.line_notes ?? '').trim() || null, unit: l.unit ?? 'Each', qty, bin, batch: m.batch_number, expiry: m.expiry_date, serial: m.serial_number, serialSlots: 0 })
           }
-          if (merged.size === 0) rows.push({ line_id: l.id, product_id: l.product_id, name: l.product_name ?? '', sku: l.product_sku ?? '', note: (l.line_notes ?? '').trim() || null, unit: l.unit ?? 'Each', qty: Number(l.quantity) || 0, bin: null, batch: null, expiry: null, serial: null, serialSlots: 0 })
+          if (merged.size === 0) rows.push({ line_id: l.id, product_id: l.product_id, name: l.product_name ?? '', kitItem: isShownKitItem(kf, kit?.mode ?? 'components') || undefined, sku: l.product_sku ?? '', note: (l.line_notes ?? '').trim() || null, unit: l.unit ?? 'Each', qty: Number(l.quantity) || 0, bin: null, batch: null, expiry: null, serial: null, serialSlots: 0 })
           else rows.push(...merged.values())
         }
         rows.sort((a, b) => (a.bin === null ? 1 : 0) - (b.bin === null ? 1 : 0) || natural.compare(a.bin ?? '', b.bin ?? '') || natural.compare(a.name, b.name))

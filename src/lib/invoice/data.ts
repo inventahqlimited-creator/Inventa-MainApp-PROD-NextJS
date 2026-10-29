@@ -6,6 +6,8 @@
 import { loadLineTracking, uniq, type TrackedQty } from '@/lib/doc-tracking'
 import { loadTerms } from '@/lib/payment-terms-server'
 import { qtyFmtFromOrg } from '@/lib/qty'
+import { isShownKitItem, keepKitLine } from '@/lib/kits/doc-lines'
+import { loadKitDoc } from '@/lib/kits/doc-lines-server'
 import { normalizeInvoiceConfig } from './config'
 import type { InvoiceAddress, InvoiceBusiness, InvoiceCost, InvoiceLine, InvoiceOrder, InvoicePayload, InvoiceTax } from './types'
 
@@ -95,7 +97,8 @@ function invoiceNumber(soNumber: string, org: OrgDb, prefix: string): string {
   return `${prefix}${/^\d+$/.test(n) ? n : soNumber}`
 }
 
-export async function loadInvoicePayload(db: Db, orgId: string, ids: string[]): Promise<InvoicePayload> {
+/** kitDocs: false leaves every kit line and item line in (used when posting to Xero); true applies the Kits & Bundles invoice setting */
+export async function loadInvoicePayload(db: Db, orgId: string, ids: string[], opts: { kitDocs?: boolean } = {}): Promise<InvoicePayload> {
   const { data: orderRows } = await db
     .from('sales_orders')
     .select(`
@@ -112,6 +115,10 @@ export async function loadInvoicePayload(db: Db, orgId: string, ids: string[]): 
     .filter((o): o is OrderDb => !!o && INVOICE_STATUSES.includes(String(o.status).toLowerCase()))
 
   const orderIds = orders.map(o => o.id)
+  const kit = await loadKitDoc(db, orgId, 'invoice', 'sales', orderIds)
+  // the kit setting only decides what is printed; the maths (a kit counts at its ordered quantity) is the same for Xero
+  const display = opts.kitDocs === false ? null : kit
+  const hidden = new Set<InvoiceLine>()
   const customerIds = [...new Set(orders.map(o => o.customer_id).filter((x): x is string => !!x))]
   const none = Promise.resolve({ data: [] })
   // serial / batch / expiry per line (only needed when the invoice is set up to print them)
@@ -137,17 +144,21 @@ export async function loadInvoicePayload(db: Db, orgId: string, ids: string[]): 
     const lines: InvoiceLine[] = []
     for (const l of [...(o.sales_order_lines ?? [])].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))) {
       const picked = num(l.quantity_picked), packed = num(l.quantity_packed), sent = num(l.quantity_shipped)
-      const qty = nothingPickedYet ? num(l.quantity) : sent > 0 ? sent : packed > 0 ? packed : picked
+      const kf = kit?.flags.get(l.id)
+      // a kit line is a heading with its own price: it is not picked or shipped, so it always counts at the quantity ordered
+      const qty = kf?.is_kit_parent ? num(l.quantity) : nothingPickedYet ? num(l.quantity) : sent > 0 ? sent : packed > 0 ? packed : picked
       if (qty <= 0) continue
       const unitPrice = num(l.unit_price), discount = num(l.discount)
       const tracked = trackByLine.get(l.id) ?? []
-      lines.push({
-        name: clean(l.product_name), sku: clean(l.product_sku), qty, unitPrice, discount,
+      const built: InvoiceLine = {
+        name: clean(l.product_name), kitItem: display ? isShownKitItem(kf, display.mode) || undefined : undefined, sku: clean(l.product_sku), qty, unitPrice, discount,
         taxRate: num(l.tax_rate), amount: r2(qty * unitPrice * (1 - discount / 100)),
         serials: uniq(tracked.map(t => t.serial_number)),
         batches: uniq(tracked.map(t => t.batch_number)),
         expiries: uniq(tracked.map(t => (t.expiry_date ? String(t.expiry_date).slice(0, 10) : null))),
-      })
+      }
+      lines.push(built)
+      if (display && !keepKitLine(kf, display.mode)) hidden.add(built)
     }
     const costLines: InvoiceCost[] = (costsByOrder.get(o.id) ?? [])
       .filter(c => num(c.amount) !== 0)
@@ -190,7 +201,8 @@ export async function loadInvoicePayload(db: Db, orgId: string, ids: string[]): 
       currency: clean(o.currency) || clean(orgRow.base_currency) || clean(orgRow.currency) || 'NZD',
       bill_to: billTo(o.customer_id ? contactById.get(o.customer_id) : undefined, clean(o.customer_name)),
       ship_to: shipTo(o.customer_id ? contactById.get(o.customer_id) : undefined, clean(o.customer_name)),
-      lines, costs: costLines,
+      // totals above count every line; the printed list leaves out whichever of the kit / its items the setting hides
+      lines: hidden.size ? lines.filter(x => !hidden.has(x)) : lines, costs: costLines,
       items_subtotal: itemsSubtotal, costs_subtotal: costsSubtotal, discount_amount: discountAmount,
       subtotal, taxes, tax_total: taxTotal, total: r2(subtotal + taxTotal),
     }

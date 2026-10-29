@@ -34,8 +34,8 @@ function stamp(tz: string, now = new Date()) {
 // ── pieces ──
 const dash = '<em class="na">—</em>'
 const mono = (v: string | null | undefined) => (v ? `<span class="mono">${esc(v)}</span>` : dash)
-const lineCount = (rows: PickRow[]) => new Set(rows.map(r => r.line_id)).size
-const unitCount = (rows: PickRow[]) => rows.filter(r => !r.noStock).reduce((s, r) => s + r.qty, 0)
+const lineCount = (rows: PickRow[]) => new Set(rows.filter(r => !r.heading).map(r => r.line_id)).size
+const unitCount = (rows: PickRow[]) => rows.filter(r => !r.noStock && !r.heading).reduce((s, r) => s + r.qty, 0)
 
 type ColKey = 'notes' | 'bin' | 'batch' | 'serial' | 'expiry'
 const COL_DEFS: { key: ColKey; label: string; w: number }[] = [
@@ -71,12 +71,12 @@ function cell(key: ColKey, r: { note: string | null; noStock?: boolean; bin: str
   }
 }
 
-function productCell(name: string, sku: string): string {
-  return `<td><div class="pn">${esc(name)}</div>${sku ? `<span class="sku">${esc(sku)}</span>` : ''}</td>`
+function productCell(name: string, sku: string, item = false): string {
+  return `<td${item ? ' style="padding-left:30px"' : ''}><div class="pn"${item ? ' style="font-style:italic;font-weight:500"' : ''}>${esc(name)}</div>${sku ? `<span class="sku">${esc(sku)}</span>` : ''}</td>`
 }
 
 function rowTr(r: PickRow, cfg: PickListConfig): string {
-  return `<tr><td><span class="tick"></span></td>${productCell(r.name, r.sku)}${activeCols(cfg).map(c => cell(c.key, r)).join('')}<td class="r"><span class="qty">${qtyText(r.qty)}<small>${esc(unitLabel(r.unit))}</small></span></td></tr>`
+  return `<tr><td><span class="tick"></span></td>${productCell(r.name, r.sku, r.kitItem)}${activeCols(cfg).map(c => cell(c.key, r)).join('')}<td class="r"><span class="qty">${qtyText(r.qty)}<small>${esc(unitLabel(r.unit))}</small></span></td></tr>`
 }
 
 function header(title: string, sub: string, big: string, code: string, cfg: PickListConfig): string {

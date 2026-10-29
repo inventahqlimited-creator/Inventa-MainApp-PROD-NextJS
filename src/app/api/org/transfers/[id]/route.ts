@@ -1,6 +1,7 @@
 // src/app/api/org/transfers/[id]/route.ts
 import { NextResponse } from 'next/server'
 import { checkLineQuantities } from '@/lib/qty-server'
+import { prepareKitLines } from '@/lib/kits/order-lines-server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { pickTR, lineRow, validateTransfer } from '../shared'
 import { requireEditOrCancel } from '@/lib/auth/access'
@@ -73,6 +74,11 @@ export async function PATCH(request: Request, { params }: Params) {
     return NextResponse.json({ error: 'The From location can\'t change once items have been picked.' }, { status: 400 })
   }
 
+  if (Array.isArray(body.lines)) {
+    const k = await prepareKitLines(db, ctx.org_id, 'transfer', body.lines as Record<string, unknown>[], id)
+    if (!k.ok) return NextResponse.json({ error: k.error }, { status: k.status })
+    body.lines = k.lines
+  }
   if (Array.isArray(body.lines)) { const e = await checkLineQuantities(db, ctx.org_id, body.lines as Record<string, unknown>[], 'quantity'); if (e) return NextResponse.json({ error: e }, { status: 400 }) }
   // Validate lines before writing anything
   if (Array.isArray(body.lines)) {
@@ -84,7 +90,7 @@ export async function PATCH(request: Request, { params }: Params) {
       }
     }
     for (const l of incoming) {
-      if (!(Number(l.quantity) > 0)) return NextResponse.json({ error: 'Every line needs a quantity above zero.' }, { status: 400 })
+      if (l.is_kit_parent !== true && !(Number(l.quantity) > 0)) return NextResponse.json({ error: 'Every line needs a quantity above zero.' }, { status: 400 })
       const cur = l.id ? byId.get(l.id as string) : undefined
       if (!cur) continue
       const picked = Number(cur.quantity_picked ?? 0)

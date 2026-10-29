@@ -4,6 +4,7 @@ import { checkLineQuantities } from '@/lib/qty-server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { pickSO, lineRow, costLineRow } from '../shared'
 import { requireEditOrCancel } from '@/lib/auth/access'
+import { prepareSalesKitLines } from '@/lib/kits/order-lines-server'
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -83,6 +84,11 @@ export async function PATCH(request: Request, { params }: Params) {
     return NextResponse.json({ error: 'The ship-from location can\'t change once items have been picked.' }, { status: 400 })
   }
 
+  if (Array.isArray(body.lines)) {
+    const k = await prepareSalesKitLines(db, ctx.org_id, body.lines as Record<string, unknown>[], id)
+    if (!k.ok) return NextResponse.json({ error: k.error }, { status: k.status })
+    body.lines = k.lines
+  }
   if (Array.isArray(body.lines)) { const e = await checkLineQuantities(db, ctx.org_id, body.lines as Record<string, unknown>[], 'quantity'); if (e) return NextResponse.json({ error: e }, { status: 400 }) }
   // Validate lines before writing anything
   if (Array.isArray(body.lines)) {

@@ -3,6 +3,8 @@
 // to, where it is delivered, the lines at their ordered quantity, additional costs, order discount and tax (same maths as
 // the purchase order screen). The business details come from Settings.
 
+import { isShownKitItem, keepKitLine } from '@/lib/kits/doc-lines'
+import { loadKitDoc } from '@/lib/kits/doc-lines-server'
 import { loadTerms } from '@/lib/payment-terms-server'
 import { qtyFmtFromOrg } from '@/lib/qty'
 import { billTo, business, clean, num, r2, type ContactDb, type OrgDb } from '@/lib/invoice/data'
@@ -13,6 +15,7 @@ import { normalizePurchaseOrderConfig, toInvoiceConfig } from './config'
 type Db = any
 
 type LineDb = {
+  id?: string
   product_name: string | null; product_sku: string | null; quantity_ordered: number | null
   unit_cost: number | null; discount: number | null; tax_rate: number | null; sort_order: number | null
 }
@@ -32,7 +35,7 @@ export async function loadPurchaseOrderPayload(db: Db, orgId: string, ids: strin
     .select(`
       id, po_number, status, supplier_id, supplier_name, location_id, location_name, order_date, expected_date,
       terms, ref, reference, notes, currency, order_discount, order_discount_type,
-      purchase_order_lines ( product_name, product_sku, quantity_ordered, unit_cost, discount, tax_rate, sort_order )
+      purchase_order_lines ( id, product_name, product_sku, quantity_ordered, unit_cost, discount, tax_rate, sort_order )
     `)
     .eq('org_id', orgId)
     .in('id', ids)
@@ -41,6 +44,7 @@ export async function loadPurchaseOrderPayload(db: Db, orgId: string, ids: strin
   const orders = ids.map(i => all.find(o => o.id === i)).filter((o): o is OrderDb => !!o && String(o.status).toLowerCase() !== 'cancelled')
 
   const orderIds = orders.map(o => o.id)
+  const kit = await loadKitDoc(db, orgId, 'purchase_order', 'purchase', orderIds)
   const supplierIds = [...new Set(orders.map(o => o.supplier_id).filter((x): x is string => !!x))]
   const locationIds = [...new Set(orders.map(o => o.location_id).filter((x): x is string => !!x))]
   const none = Promise.resolve({ data: [] })
@@ -69,14 +73,31 @@ export async function loadPurchaseOrderPayload(db: Db, orgId: string, ids: strin
 
   const out: InvoiceOrder[] = orders.map(o => {
     const lines: InvoiceLine[] = []
+    const hidden = new Set<InvoiceLine>()
+    const groupOf = new Map<InvoiceLine, string>()
+    const parents: { line: InvoiceLine; group: string }[] = []
     for (const l of [...(o.purchase_order_lines ?? [])].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))) {
-      const qty = num(l.quantity_ordered)
+      const kf = l.id ? kit?.flags.get(l.id) : undefined
+      // a kit line holds the number of kits in kit_qty (its own quantity is 0) and is priced by its items
+      const qty = kf?.is_kit_parent ? num(kf.kit_qty) : num(l.quantity_ordered)
       if (qty <= 0) continue
       const unitPrice = num(l.unit_cost), discount = num(l.discount)
-      lines.push({
-        name: clean(l.product_name), sku: clean(l.product_sku), qty, unitPrice, discount,
+      const built: InvoiceLine = {
+        name: clean(l.product_name), kitItem: kit ? isShownKitItem(kf, kit.mode) || undefined : undefined, sku: clean(l.product_sku), qty, unitPrice, discount,
         taxRate: num(l.tax_rate), amount: r2(qty * unitPrice * (1 - discount / 100)),
-      })
+      }
+      lines.push(built)
+      if (kf?.kit_group) { if (kf.is_kit_parent) parents.push({ line: built, group: kf.kit_group }); else groupOf.set(built, kf.kit_group) }
+      if (kit && !keepKitLine(kf, kit.mode)) hidden.add(built)
+    }
+    // "Kit only": the kit line shows what its items add up to (the totals below still come from the items)
+    const shown = new Map<InvoiceLine, InvoiceLine>()
+    if (kit && kit.mode === 'parent') {
+      for (const p of parents) {
+        const kids = lines.filter(x => groupOf.get(x) === p.group)
+        const amount = r2(kids.reduce((s, x) => s + x.amount, 0))
+        shown.set(p.line, { ...p.line, unitPrice: p.line.qty > 0 ? r2(amount / p.line.qty) : 0, discount: 0, amount, taxRate: kids[0]?.taxRate ?? 0 })
+      }
     }
     const costLines: InvoiceCost[] = (costsByOrder.get(o.id) ?? [])
       .filter(c => num(c.amount) !== 0)
@@ -115,7 +136,7 @@ export async function loadPurchaseOrderPayload(db: Db, orgId: string, ids: strin
       currency: clean(o.currency) || clean(orgRow.base_currency) || clean(orgRow.currency) || 'NZD',
       bill_to: billTo(o.supplier_id ? contactById.get(o.supplier_id) : undefined, clean(o.supplier_name)),
       ship_to: deliverTo(o.location_id ? locationById.get(o.location_id) : undefined, clean(o.location_name)),
-      lines, costs: costLines,
+      lines: hidden.size || shown.size ? lines.filter(x => !hidden.has(x)).map(x => shown.get(x) ?? x) : lines, costs: costLines,
       items_subtotal: itemsSubtotal, costs_subtotal: costsSubtotal, discount_amount: discountAmount,
       subtotal, taxes, tax_total: taxTotal, total: r2(subtotal + taxTotal),
     }

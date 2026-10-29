@@ -1,4 +1,5 @@
 // src/app/(app)/purchases/[id]/receive/page.tsx
+import { loadKitColumns } from '@/lib/kits/order-lines-server'
 import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { normalizeMethod } from '@/lib/purchases/landed-cost'
@@ -55,7 +56,11 @@ export default async function ReceivePurchaseOrderPage({ params }: { params: Pro
   const orgT = (org ?? {}) as { landing_cost_method?: string | null; allow_over_receive?: boolean | null; serial_tracking?: boolean | null; batch_tracking?: boolean | null; expiry_tracking?: boolean | null }
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const raw = po as any
+  // A kit line is only a heading (its items are what gets received), so it isn't listed here
+  const kitCols = await loadKitColumns(adminClient, m.org_id, id, 'purchase')
   const lines = (raw.purchase_order_lines ?? [])
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    .filter((l: any) => !kitCols.get(l.id)?.is_kit_parent)
     .sort((a: { sort_order: number }, b: { sort_order: number }) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     .map(({ products, ...l }: any) => ({

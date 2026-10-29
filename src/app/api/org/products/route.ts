@@ -3,6 +3,7 @@ import { NextResponse } from 'next/server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { pick, badForeignKey, PRODUCT_FIELDS, PRODUCT_LINKS } from '@/lib/api/sanitize'
 import { requirePerm } from '@/lib/auth/access'
+import { ADDON_OFF_MESSAGE, hasAddon } from '@/lib/addons-server'
 
 export async function POST(request: Request) {
   const permGate = await requirePerm('create_products')
@@ -23,6 +24,13 @@ export async function POST(request: Request) {
 
   const clean = pick(await request.json().catch(() => null), PRODUCT_FIELDS)
   if (!clean) return NextResponse.json({ error: 'Invalid request body' }, { status: 400 })
+  // kits are an add-on: only organisations that have it switched on can mark a product as a kit
+  if (clean.is_kit === true) {
+    const orgForKit = (m as { org_id: string }).org_id
+    if (!(await hasAddon(adminClient, orgForKit, 'kits'))) return NextResponse.json({ error: ADDON_OFF_MESSAGE }, { status: 403 })
+    if (clean.type !== undefined && clean.type !== 'NonStock') return NextResponse.json({ error: 'A kit has to be a Non Stock item. Change the stock type to Non Stock first.' }, { status: 400 })
+    clean.track_stock = false // a kit holds no stock of its own — its items do
+  }
   const badFk = await badForeignKey(adminClient, (m as { org_id: string }).org_id, clean, PRODUCT_LINKS)
   if (badFk) return NextResponse.json({ error: `Invalid ${badFk}` }, { status: 400 })
   const { data, error } = await adminClient

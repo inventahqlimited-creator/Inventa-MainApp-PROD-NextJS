@@ -1,7 +1,10 @@
 'use client'
 
+import { templateCsv } from '@/lib/kits/import'
 import { useTermNames } from '@/components/app/payment-terms-provider'
 import { useState, useRef, useEffect } from 'react'
+import { useAddon } from '@/components/app/addons-provider'
+import { DEFAULT_KIT_SETTINGS, DOC_KEYS, DOC_LABELS, DOC_MODES, normalizeKitSettings, type DocMode, type KitSettings } from '@/lib/kits/settings'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import MemberModal from './member-modal'
@@ -57,6 +60,7 @@ const TABS = [
   { key: 'purchases', label: 'Purchases' },
   { key: 'transfers', label: 'Transfers' },
   { key: 'sales', label: 'Sales' },
+  { key: 'kits', label: 'Kits & Bundles' },
   { key: 'users', label: 'Users' },
   { key: 'notifications', label: 'Notifications' },
   { key: 'email', label: 'Email' },
@@ -907,6 +911,185 @@ function NotificationsCard({ initial, canManage, showToast }: {
 
 // ── Security: password policy ─────────────────────────────────────────
 
+function KitSettingsTab({ initial, canManage, showToast }: {
+  initial: unknown; canManage: boolean; showToast: (type: 'success' | 'error', msg: string) => void
+}) {
+  const [k, setK] = useState<KitSettings>(() => normalizeKitSettings(initial))
+  const [saving, setSaving] = useState(false)
+
+  async function save() {
+    setSaving(true)
+    try {
+      const res = await fetch('/api/org/kit-settings', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kit_settings: k }),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (res.ok) { setK(normalizeKitSettings(d.kit_settings ?? k)); showToast('success', 'Kits & Bundles settings saved') }
+      else showToast('error', d.error ?? 'We couldn’t save the settings. Please try again.')
+    } catch { showToast('error', 'Network error — please try again.') }
+    setSaving(false)
+  }
+
+  const ro = !canManage
+  return (
+    <>
+      <Card
+        title="Kits & Bundles"
+        subtitle="How kits behave on orders and what prints on your documents"
+        action={canManage ? <SaveBtn onClick={save} saving={saving} /> : undefined}
+      >
+        <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 10, opacity: ro ? 0.75 : 1 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--gray-400)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Show the items inside a kit on…</div>
+          <ToggleRow label="Sales orders" sub="Adding a kit also adds a line for each item inside it, which you can adjust per order. Off: the order shows the kit line only — the items are still taken from stock." active={k.expand_sales} onChange={v => !ro && setK(p => ({ ...p, expand_sales: v }))} />
+          <ToggleRow label="Purchase orders" sub="Adding a kit also adds a line for each item inside it. Off: the order shows the kit line only — the items are still received into stock." active={k.expand_purchase} onChange={v => !ro && setK(p => ({ ...p, expand_purchase: v }))} />
+          <ToggleRow label="Transfers" sub="Adding a kit also adds a line for each item inside it. Off: the transfer shows the kit line only — the items still move." active={k.expand_transfer} onChange={v => !ro && setK(p => ({ ...p, expand_transfer: v }))} />
+        </div>
+      </Card>
+
+      <Card title="Printed documents" subtitle="Choose what each document shows for a kit">
+        <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 10, opacity: ro ? 0.75 : 1 }}>
+          {DOC_KEYS.map(key => (
+            <div key={key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 14px', background: 'var(--gray-50)', border: '1.5px solid var(--gray-200)', borderRadius: 10 }}>
+              <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--slate)', fontFamily: 'var(--font-display)' }}>{DOC_LABELS[key]}</span>
+              <div style={{ width: 220 }}>
+                <Select value={k.docs[key]} disabled={ro} onChange={v => setK(p => ({ ...p, docs: { ...p.docs, [key]: v as DocMode } }))} options={DOC_MODES} />
+              </div>
+            </div>
+          ))}
+          <div style={{ fontSize: 12, color: 'var(--gray-400)', lineHeight: 1.5 }}>
+            Defaults: invoices and purchase orders show the kit only; pick lists, packing lists and transfers show the items.
+            {ro && ' You need the "Manage company settings" permission to change this.'}
+          </div>
+          <button type="button" className="btn btn-outline" style={{ alignSelf: 'flex-start', height: 30, fontSize: 12 }} disabled={ro}
+            onClick={() => setK(p => ({ ...p, docs: { ...DEFAULT_KIT_SETTINGS.docs } }))}>Reset to defaults</button>
+        </div>
+      </Card>
+
+      <KitImportCard canManage={canManage} showToast={showToast} />
+
+      <Card title="Virtual stock" subtitle="How many kits you could make right now">
+        <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 10, opacity: ro ? 0.75 : 1 }}>
+          <ToggleRow label="Show virtual stock for kits" sub="Adds a “Virtual stock” column to the Products list: the number of kits you can make from the items you have, based on the scarcest item. It follows the location filter, like stock on hand. Services don’t limit it." active={k.show_virtual_stock} onChange={v => !ro && setK(p => ({ ...p, show_virtual_stock: v }))} />
+        </div>
+      </Card>
+    </>
+  )
+}
+
+type KitImportResult = { line: number; kitSku: string; compSku: string; status: 'ok' | 'error' | 'skipped'; message: string }
+type KitImportSummary = { kits: number; rows: number; errors: number; skipped: number; applied: boolean }
+
+// Bulk import of kit Bills of Materials from a CSV file: check first, then import
+function KitImportCard({ canManage, showToast }: { canManage: boolean; showToast: (type: 'success' | 'error', msg: string) => void }) {
+  const [csv, setCsv] = useState<string | null>(null)
+  const [fileName, setFileName] = useState('')
+  const [busy, setBusy] = useState(false)
+  const [results, setResults] = useState<KitImportResult[] | null>(null)
+  const [summary, setSummary] = useState<KitImportSummary | null>(null)
+  const [error, setError] = useState<string | null>(null)
+
+  function downloadTemplate() {
+    const text = templateCsv()
+    const url = URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' }))
+    const a = document.createElement('a'); a.href = url; a.download = 'kits-import-template.csv'; document.body.appendChild(a); a.click(); a.remove()
+    setTimeout(() => URL.revokeObjectURL(url), 1000)
+  }
+
+  async function run(text: string, apply: boolean) {
+    setBusy(true); setError(null)
+    try {
+      const res = await fetch('/api/org/kits/import', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ csv: text, apply }) })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) { setError(d.error ?? 'We couldn’t read that file. Please try again.'); setResults(null); setSummary(null) }
+      else {
+        setResults(d.results ?? []); setSummary(d.summary ?? null)
+        if (apply) showToast('success', `${d.summary?.kits ?? 0} kit${d.summary?.kits === 1 ? '' : 's'} imported`)
+      }
+    } catch { setError('Network error — please try again.') }
+    setBusy(false)
+  }
+
+  async function onFile(f: File | null) {
+    setResults(null); setSummary(null); setError(null); setCsv(null); setFileName('')
+    if (!f) return
+    if (f.size > 4_000_000) { setError('The file is too large. Please split it into smaller files.'); return }
+    const text = await f.text()
+    setCsv(text); setFileName(f.name)
+    await run(text, false)
+  }
+
+  const badge = (st: KitImportResult['status']) => st === 'ok' ? { bg: '#D1FAE5', fg: '#065F46', label: 'OK' } : st === 'skipped' ? { bg: '#FEF3C7', fg: '#92400E', label: 'Skipped' } : { bg: '#FEE2E2', fg: '#B91C1C', label: 'Problem' }
+  const readyKits = summary && !summary.applied ? summary.kits : 0
+
+  return (
+    <Card title="Import kits" subtitle="Set up many kits at once from a spreadsheet">
+      <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 12, opacity: canManage ? 1 : 0.75 }}>
+        <div style={{ fontSize: 13, color: 'var(--gray-500, var(--gray-400))', lineHeight: 1.6 }}>
+          One row for each item inside a kit: the kit’s SKU, the item’s SKU, the quantity, and optionally the unit. The kit must already exist as a <strong>Non Stock</strong> item with no stock — importing turns on its kit setting. Importing a kit <strong>replaces</strong> all of its existing items. Save your spreadsheet as CSV before uploading.
+        </div>
+        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+          <button type="button" className="btn btn-outline" style={{ height: 34, fontSize: 13 }} onClick={downloadTemplate}>Download template</button>
+          <label className="btn btn-primary" style={{ height: 34, fontSize: 13, display: 'inline-flex', alignItems: 'center', cursor: canManage && !busy ? 'pointer' : 'not-allowed', opacity: canManage && !busy ? 1 : 0.6 }}>
+            Choose CSV file
+            <input type="file" accept=".csv,text/csv" disabled={!canManage || busy} style={{ display: 'none' }}
+              onChange={e => { const f = e.target.files?.[0] ?? null; e.target.value = ''; void onFile(f) }} />
+          </label>
+          {fileName && <span style={{ fontSize: 12.5, color: 'var(--gray-400)' }}>{fileName}</span>}
+          {busy && <span style={{ fontSize: 12.5, color: 'var(--gray-400)' }}>Working…</span>}
+        </div>
+        {!canManage && <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>You need the “Manage company settings” permission to import kits.</div>}
+        {error && <div style={{ background: '#FEF2F2', border: '1.5px solid #FECACA', borderRadius: 10, padding: '10px 14px', fontSize: 13, color: '#B91C1C' }}>{error}</div>}
+
+        {summary && results && (
+          <>
+            <div style={{ background: 'var(--teal-surface)', border: '1px solid var(--teal-pale)', borderRadius: 9, padding: '10px 14px', fontSize: 13, color: 'var(--teal)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
+              <span>
+                {summary.applied ? 'Import finished: ' : 'File checked: '}
+                <strong>{summary.kits} kit{summary.kits === 1 ? '' : 's'}</strong> {summary.applied ? 'imported' : 'ready to import'}
+                {summary.errors > 0 && <> · <strong>{summary.errors}</strong> row{summary.errors === 1 ? '' : 's'} with a problem</>}
+                {summary.skipped > 0 && <> · {summary.skipped} skipped</>}
+              </span>
+              {readyKits > 0 && csv && (
+                <button type="button" className="btn btn-primary" style={{ height: 32, fontSize: 13 }} disabled={busy || !canManage} onClick={() => run(csv, true)}>
+                  Import {readyKits} kit{readyKits === 1 ? '' : 's'}
+                </button>
+              )}
+            </div>
+            {!summary.applied && summary.errors + summary.skipped > 0 && (
+              <div style={{ fontSize: 12, color: 'var(--gray-400)', lineHeight: 1.5 }}>A kit with a problem row isn’t imported at all, so no kit is left half built. Fix the file and choose it again, or import the ready kits now and the rest later.</div>
+            )}
+            <div style={{ border: '1px solid var(--gray-100)', borderRadius: 12, overflow: 'auto', maxHeight: 380 }}>
+              <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 560 }}>
+                <thead>
+                  <tr style={{ background: 'var(--gray-50)', position: 'sticky', top: 0 }}>
+                    <th className="li-th" style={{ width: 54 }}>Row</th>
+                    <th className="li-th" style={{ textAlign: 'left' }}>Kit</th>
+                    <th className="li-th" style={{ textAlign: 'left' }}>Item</th>
+                    <th className="li-th" style={{ width: 90 }}>Result</th>
+                    <th className="li-th" style={{ textAlign: 'left' }}>Details</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {results.map(r => { const b = badge(r.status); return (
+                    <tr key={r.line} style={{ borderBottom: '1px solid var(--gray-50)' }}>
+                      <td className="li-td" style={{ color: 'var(--gray-400)', fontSize: 12.5 }}>{r.line}</td>
+                      <td className="li-td" style={{ fontSize: 13, fontWeight: 600, color: 'var(--slate)' }}>{r.kitSku || '—'}</td>
+                      <td className="li-td" style={{ fontSize: 13 }}>{r.compSku || '—'}</td>
+                      <td className="li-td"><span className="badge" style={{ background: b.bg, color: b.fg }}>{b.label}</span></td>
+                      <td className="li-td" style={{ fontSize: 12.5, color: 'var(--gray-500, var(--gray-400))', lineHeight: 1.45 }}>{r.message}</td>
+                    </tr>
+                  ) })}
+                </tbody>
+              </table>
+            </div>
+          </>
+        )}
+      </div>
+    </Card>
+  )
+}
+
 function PasswordPolicyCard({ initial, canManage, showToast }: {
   initial: unknown; canManage: boolean; showToast: (type: 'success' | 'error', msg: string) => void
 }) {
@@ -1163,6 +1346,7 @@ export default function SettingsClient({
   const router = useRouter()
   const canManageSecurity = useCan('manage_security')
   const canManageCompany = useCan('manage_company')
+  const kitsOn = useAddon('kits')
   const [security, setSecurity] = useState<SecuritySettings>(() => normalizeSecurity(org.security_settings))
   const [tab, setTab] = useState<Tab>((initialTab as Tab) ?? 'general')
   const xeroInstalled = Boolean(org.xero_enabled)
@@ -1612,7 +1796,7 @@ export default function SettingsClient({
           </div>
         </div>
         <div className="tab-bar">
-          {TABS.map(t => (
+          {TABS.filter(t => t.key !== 'kits' || kitsOn).map(t => (
             <div key={t.key} className={`tab-item${tab === t.key ? ' active' : ''}`} onClick={() => setTab(t.key)}>{t.label}</div>
           ))}
         </div>
@@ -2395,6 +2579,10 @@ export default function SettingsClient({
 
         {/* ── NOTIFICATIONS ── */}
         {tab === 'email' && <EmailSettingsTab />}
+
+        {tab === 'kits' && kitsOn && (
+          <KitSettingsTab initial={org.kit_settings} canManage={canManageCompany} showToast={showToast} />
+        )}
 
         {tab === 'notifications' && (
           <NotificationsCard initial={org.notification_settings} canManage={canManageCompany} showToast={showToast} />

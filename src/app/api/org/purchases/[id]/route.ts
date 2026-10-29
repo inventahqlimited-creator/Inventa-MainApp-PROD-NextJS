@@ -4,6 +4,7 @@ import { checkLineQuantities } from '@/lib/qty-server'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { pickPO, lineRow, costLineRow } from '../shared'
 import { requireEditOrCancel } from '@/lib/auth/access'
+import { prepareKitLines } from '@/lib/kits/order-lines-server'
 
 type Params = { params: Promise<{ id: string }> }
 
@@ -49,6 +50,11 @@ export async function PATCH(request: Request, { params }: Params) {
     if (error) return NextResponse.json({ error: error.message }, { status: 500 })
   }
 
+  if (Array.isArray(body.lines)) {
+    const k = await prepareKitLines(db, ctx.org_id, 'purchase', body.lines as Record<string, unknown>[], id)
+    if (!k.ok) return NextResponse.json({ error: k.error }, { status: k.status })
+    body.lines = k.lines
+  }
   if (Array.isArray(body.lines)) { const e = await checkLineQuantities(db, ctx.org_id, body.lines as Record<string, unknown>[], 'quantity_ordered'); if (e) return NextResponse.json({ error: e }, { status: 400 }) }
 
   // 2. Lines — only when the edit screen sends them. Update existing rows in place so

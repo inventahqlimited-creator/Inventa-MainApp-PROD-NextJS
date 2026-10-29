@@ -4,6 +4,7 @@
 // New / view / edit a stock transfer. Flow: Draft → Open → Picking → Picked → Closed (or Cancelled).
 // Same layout and behaviour as the Sales order form.
 
+import { arrangeKitLines, kitApplyQty, kitLinesFor, kitRemove, type KitScreenData } from '@/lib/kits/order-lines'
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { useQty } from '@/components/app/qty-provider'
@@ -24,10 +25,12 @@ type Transfer = {
   transfer_date: string | null; expected_date: string | null; notes: string | null
 }
 type DbLine = {
+  kit_group?: string | null; is_kit_parent?: boolean; kit_qty_per?: number | null // Kits & Bundles: the kit line and its item lines share kit_group
   id: string; product_id: string | null; product_name: string | null; product_sku: string | null; unit: string | null
   quantity: number; quantity_picked: number | null; from_bin_id: string | null; to_bin_id: string | null; sort_order: number | null
 }
 type Line = {
+  kit_group?: string | null; is_kit_parent?: boolean; kit_qty_per?: number | null
   key: string; id?: string; product_id: string; product_name: string; product_sku: string; unit: string
   quantity: number; quantity_picked: number; from_bin_id: string; to_bin_id: string
 }
@@ -163,7 +166,7 @@ function TransferActions({ transferId, number, canEdit, canCancel, onEdit, onCan
   )
 }
 
-export default function TransferForm({ transfer, lines: dbLines, locations, products, stockLevels, bins, defaultFromId, cloneOf = null }: {
+export default function TransferForm({ transfer, lines: dbLines, locations, products, stockLevels, bins, defaultFromId, cloneOf = null, kits }: {
   orgId: string
   transfer: Transfer | null
   lines: DbLine[]
@@ -174,6 +177,8 @@ export default function TransferForm({ transfer, lines: dbLines, locations, prod
   defaultFromId: string | null
   /** New transfer started from an existing one (Actions → Clone Order): its locations, notes and lines are copied. */
   cloneOf?: { from_location_id: string | null; to_location_id: string | null; notes: string | null } | null
+  /** Kits & Bundles add-on: on/off, settings and each kit's items */
+  kits?: KitScreenData
 }) {
   const router = useRouter()
   const { q, places } = useQty()
@@ -184,7 +189,12 @@ export default function TransferForm({ transfer, lines: dbLines, locations, prod
     key: l.id, id: l.id, product_id: l.product_id ?? '', product_name: l.product_name ?? '', product_sku: l.product_sku ?? '',
     unit: l.unit ?? 'Each', quantity: Number(l.quantity), quantity_picked: Number(l.quantity_picked ?? 0),
     from_bin_id: l.from_bin_id ?? '', to_bin_id: l.to_bin_id ?? '',
+    ...(l.kit_group ? { kit_group: l.kit_group, is_kit_parent: !!l.is_kit_parent, kit_qty_per: l.kit_qty_per ?? null } : {}),
   }))
+  const kitUi = { catalog: kits?.enabled ? kits.catalog : {}, expand: kits?.settings.expand_transfer !== false, kind: 'transfer' as const }
+  // item lines of a kit get the same shape as any other line
+  const kitItem = (k: Line): Line => ({ ...k, key: newKey(), quantity_picked: 0, from_bin_id: '', to_bin_id: '' })
+  const withKits = (ls: Line[]): Line[] => arrangeKitLines(ls, kitUi, kitItem) as Line[]
 
   const [mode, setMode] = useState<'view' | 'edit'>(isNew ? 'edit' : 'view')
   const [fromId, setFromId] = useState<string | null>(transfer?.from_location_id ?? (isNew ? cloneOf?.from_location_id ?? defaultFromId : null))
@@ -193,7 +203,10 @@ export default function TransferForm({ transfer, lines: dbLines, locations, prod
   const [expectedDate, setExpectedDate] = useState((transfer?.expected_date ?? '').slice(0, 10))
   const [notes, setNotes] = useState(transfer?.notes ?? cloneOf?.notes ?? '')
   // a clone starts with the same items, but nothing picked and no link to the original lines
-  const [lines, setLines] = useState<Line[]>(() => (cloneOf && !transfer ? toLines(dbLines).map(l => ({ ...l, key: newKey(), id: undefined, quantity_picked: 0 })) : toLines(dbLines)))
+  const [lines, setLines] = useState<Line[]>(() => (cloneOf && !transfer
+    // a cloned kit starts again from the kit's current items
+    ? withKits(toLines(dbLines).filter(l => !(l.kit_group && !l.is_kit_parent)).map(l => ({ ...l, key: newKey(), id: undefined, quantity_picked: 0, kit_group: undefined })))
+    : withKits(toLines(dbLines))))
   const [openDd, setOpenDd] = useState<string | null>(null)
   const [itemSearch, setItemSearch] = useState('')
   const [itemDropOpen, setItemDropOpen] = useState(false)
@@ -212,7 +225,7 @@ export default function TransferForm({ transfer, lines: dbLines, locations, prod
     if (!transfer) return
     setFromId(transfer.from_location_id); setToId(transfer.to_location_id)
     setTransferDate((transfer.transfer_date ?? today()).slice(0, 10)); setExpectedDate((transfer.expected_date ?? '').slice(0, 10))
-    setNotes(transfer.notes ?? ''); setLines(toLines(dbLines)); setMode('view')
+    setNotes(transfer.notes ?? ''); setLines(withKits(toLines(dbLines))); setMode('view')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transfer, dbLines])
 
@@ -249,17 +262,30 @@ export default function TransferForm({ transfer, lines: dbLines, locations, prod
   const filteredProducts = useMemo(() => {
     const q = itemSearch.trim().toLowerCase()
     return products
-      .filter(p => p.track_stock !== false && p.type === 'Stock')
+      .filter(p => (p.track_stock !== false && p.type === 'Stock') || !!kitUi.catalog[p.id])
       .filter(p => !q || p.name.toLowerCase().includes(q) || (p.sku ?? '').toLowerCase().includes(q))
       .slice(0, 50)
-  }, [products, itemSearch])
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [products, itemSearch, kits])
 
   function addLine(p: Product) {
+    if (kitUi.catalog[p.id]) {
+      const parent: Line = { key: newKey(), product_id: p.id, product_name: p.name, product_sku: p.sku ?? '', unit: p.sell_uom ?? 'Each', quantity: 1, quantity_picked: 0, from_bin_id: '', to_bin_id: '' }
+      setLines(ls => [...ls, ...(kitLinesFor(p.id, parent, kitUi, kitItem) as Line[])])
+      setItemSearch(''); setItemDropOpen(false)
+      return
+    }
     setLines(ls => [...ls, { key: newKey(), product_id: p.id, product_name: p.name, product_sku: p.sku ?? '', unit: p.sell_uom ?? 'Each', quantity: 1, quantity_picked: 0, from_bin_id: '', to_bin_id: '' }])
     setItemSearch(''); setItemDropOpen(false)
   }
-  function updateLine(key: string, patch: Partial<Line>) { setLines(ls => ls.map(l => (l.key === key ? { ...l, ...patch } : l))) }
-  function removeLine(key: string) { setLines(ls => ls.filter(l => l.key !== key)) }
+  function updateLine(key: string, patch: Partial<Line>) {
+    setLines(ls => {
+      const out = ls.map(l => (l.key === key ? { ...l, ...patch } : l))
+      const idx = out.findIndex(l => l.key === key)
+      return patch.quantity !== undefined && idx >= 0 ? (kitApplyQty(out, idx, Number(patch.quantity) || 0, 'transfer') as Line[]) : out
+    })
+  }
+  function removeLine(key: string) { setLines(ls => { const idx = ls.findIndex(l => l.key === key); return idx < 0 ? ls : (kitRemove(ls, idx) as Line[]) }) }
 
   function pickFrom(l: Loc) { setFromId(l.id); setLines(ls => ls.map(x => ({ ...x, from_bin_id: '' }))) }
   function pickTo(l: Loc) { setToId(l.id); setLines(ls => ls.map(x => ({ ...x, to_bin_id: '' }))) }
@@ -293,6 +319,7 @@ export default function TransferForm({ transfer, lines: dbLines, locations, prod
         ...(l.id ? { id: l.id } : {}),
         product_id: l.product_id, product_name: l.product_name, product_sku: l.product_sku, unit: l.unit,
         quantity: l.quantity, from_bin_id: l.from_bin_id || null, to_bin_id: l.to_bin_id || null,
+        ...(l.kit_group ? { kit_group: l.kit_group, is_kit_parent: !!l.is_kit_parent, kit_qty_per: l.kit_qty_per ?? null } : {}),
       })),
     }
     try {
@@ -339,7 +366,7 @@ export default function TransferForm({ transfer, lines: dbLines, locations, prod
     if (!transfer) return
     setFromId(transfer.from_location_id); setToId(transfer.to_location_id)
     setTransferDate((transfer.transfer_date ?? today()).slice(0, 10)); setExpectedDate((transfer.expected_date ?? '').slice(0, 10))
-    setNotes(transfer.notes ?? ''); setLines(toLines(dbLines)); setError(null); setMode('view')
+    setNotes(transfer.notes ?? ''); setLines(withKits(toLines(dbLines))); setError(null); setMode('view')
   }
 
   const thStyle = { fontSize: 10, fontWeight: 700, letterSpacing: '0.1em', textTransform: 'uppercase' as const, color: 'var(--gray-400)', fontFamily: 'var(--font-ui)' }
@@ -458,12 +485,14 @@ export default function TransferForm({ transfer, lines: dbLines, locations, prod
                   const fullyPicked = l.quantity_picked > 0 && l.quantity_picked >= l.quantity
                   const lockQty = !editable || fullyPicked
                   const lockFrom = !editable || l.quantity_picked > 0
+                  const isKitItem = !!l.kit_group && !l.is_kit_parent
                   return (
                     <tr key={l.key} style={{ borderBottom: '1px solid var(--gray-50)' }}>
                       <td className="li-td"><span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--gray-400)' }}>{l.product_sku}</span></td>
                       <td className="li-td">
-                        <span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{l.product_name}</span>
-                        {editable && fromId && <div style={{ fontSize: 11, color: 'var(--gray-400)' }}>On hand at {fromLoc?.name}: {q(onHand[l.product_id] ?? 0, l.product_id)}</div>}
+                        <span style={{ fontWeight: isKitItem ? 500 : 600, color: 'var(--slate)', fontSize: 13, paddingLeft: isKitItem ? 16 : 0 }}>{isKitItem ? '↳ ' : ''}{l.product_name}</span>
+                        {l.is_kit_parent && <span className="badge" style={{ background: '#EDE9FE', color: '#5B21B6', marginLeft: 8 }}>Kit</span>}
+                        {editable && fromId && !l.is_kit_parent && <div style={{ fontSize: 11, color: 'var(--gray-400)' }}>On hand at {fromLoc?.name}: {q(onHand[l.product_id] ?? 0, l.product_id)}</div>}
                       </td>
                       <td className="li-td" style={{ textAlign: 'center', fontSize: 12, color: 'var(--gray-400)' }}>{l.unit}</td>
                       <td className="li-td" style={{ textAlign: 'right' }}>
@@ -474,17 +503,17 @@ export default function TransferForm({ transfer, lines: dbLines, locations, prod
                       {showPickedCol && <td className="li-td" style={{ textAlign: 'right', fontSize: 13, color: l.quantity_picked >= l.quantity ? '#065F46' : 'var(--gray-400)', fontWeight: 600 }}>{q(l.quantity_picked, l.product_id)}</td>}
                       {showFromBin && (
                         <td className="li-td">
-                          {lockFrom ? <span style={{ fontSize: 13, color: 'var(--gray-500, var(--gray-400))' }}>{binLabel(l.from_bin_id, fromBins)}</span> : binSelect(l.from_bin_id, fromBins, v => updateLine(l.key, { from_bin_id: v }), false)}
+                          {l.is_kit_parent ? null : lockFrom ? <span style={{ fontSize: 13, color: 'var(--gray-500, var(--gray-400))' }}>{binLabel(l.from_bin_id, fromBins)}</span> : binSelect(l.from_bin_id, fromBins, v => updateLine(l.key, { from_bin_id: v }), false)}
                         </td>
                       )}
                       {showToBin && (
                         <td className="li-td">
-                          {!editable ? <span style={{ fontSize: 13, color: 'var(--gray-500, var(--gray-400))' }}>{binLabel(l.to_bin_id, toBins)}</span> : binSelect(l.to_bin_id, toBins, v => updateLine(l.key, { to_bin_id: v }), false)}
+                          {l.is_kit_parent ? null : !editable ? <span style={{ fontSize: 13, color: 'var(--gray-500, var(--gray-400))' }}>{binLabel(l.to_bin_id, toBins)}</span> : binSelect(l.to_bin_id, toBins, v => updateLine(l.key, { to_bin_id: v }), false)}
                         </td>
                       )}
                       {editable && (
                         <td className="li-td">
-                          {l.quantity_picked > 0 ? null : (
+                          {l.quantity_picked > 0 || isKitItem ? null : (
                             <button onClick={() => removeLine(l.key)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: 'var(--gray-300)' }} title="Remove">
                               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M10 11v6"/><path d="M14 11v6"/></svg>
                             </button>
@@ -524,7 +553,7 @@ export default function TransferForm({ transfer, lines: dbLines, locations, prod
                           return (
                             <div key={p.id} className="fp-item" style={{ display: 'grid', gridTemplateColumns: PICK_COLS, alignItems: 'center', gap: 8 }} onClick={() => addLine(p)}>
                               <span style={{ fontFamily: 'monospace', fontSize: 12, color: 'var(--gray-400)' }}>{p.sku ?? '—'}</span>
-                              <span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{p.name}</span>
+                              <span style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{p.name}{kitUi.catalog[p.id] && <span className="badge" style={{ background: '#EDE9FE', color: '#5B21B6', marginLeft: 8 }}>Kit</span>}</span>
                               <span style={{ fontSize: 12, color: 'var(--gray-400)', textAlign: 'center' }}>{p.sell_uom ?? 'Each'}</span>
                               <span style={{ fontSize: 13, fontWeight: 600, textAlign: 'right', color: !fromId ? 'var(--gray-400)' : oh <= 0 ? 'var(--danger)' : '#059669' }}>{fromId ? oh : '—'}</span>
                               <span style={{ fontSize: 13, textAlign: 'right', color: 'var(--gray-400)' }}>{fromId ? committed : '—'}</span>

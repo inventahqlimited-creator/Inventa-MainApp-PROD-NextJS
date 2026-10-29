@@ -52,7 +52,7 @@ export async function runScope(db: Db, orgId: string, scope: Scope, settings: Xe
     rep[part] = r.summary
   }
 
-  const order = prefs.inventory_tracked ? (['bills', 'invoices'] as const) : (['invoices', 'bills', 'adjustments'] as const)
+  const order = prefs.inventory_tracked ? (['adjustments', 'bills', 'invoices'] as const) : (['invoices', 'bills', 'adjustments'] as const)
   for (const part of order) {
     if (!want[part] || skip.has(part) || rep.stopped) continue
     const post = part === 'invoices' ? postEligibleInvoices : part === 'bills' ? postEligibleBills : postEligibleAdjustments

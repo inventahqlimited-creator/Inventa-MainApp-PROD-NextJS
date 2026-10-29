@@ -36,6 +36,12 @@ export function lineRow(l: Record<string, unknown>, i: number) {
     tax_name: str(l.tax_name),
     line_notes: str(l.line_notes),
     sort_order: i,
+    // kit lines (only present on orders with kits, so other orders never touch these columns)
+    ...(l.kit_group ? {
+      kit_group: str(l.kit_group), is_kit_parent: l.is_kit_parent === true,
+      kit_qty_per: l.kit_qty_per == null ? null : num(l.kit_qty_per),
+      kit_qty: l.kit_qty == null ? null : num(l.kit_qty),
+    } : {}),
     // total_cost is a generated column in the DB — never send it
   }
 }

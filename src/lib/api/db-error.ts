@@ -26,6 +26,9 @@ function parseKey(details?: string | null): { field: string | null; value: strin
 export function saveError(error: DbErr, noun: string): { message: string; status: number } {
   const code = error?.code ?? ''
   const msg = error?.message ?? ''
+  // our own rule messages (kits etc.) are already written for customers: "KIT: …"
+  const own = /^KIT: ([\s\S]+)$/.exec(msg)
+  if (own) return { message: own[1], status: 400 }
   if (code === '23505' || /duplicate key/i.test(msg)) {
     const { field, value } = parseKey(error?.details)
     if (field && value) return { message: `There’s already a ${noun} with the ${field} “${value}”. Please use a different ${field}.`, status: 409 }

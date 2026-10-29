@@ -3,6 +3,7 @@ import { requireHub } from '@/lib/hub/guard'
 import { logHub } from '@/lib/hub/activity'
 import { isUuid } from '@/lib/auth/platform-admin'
 import { isPlan, planLabel } from '@/lib/hub/constants'
+import { ADDONS, normalizeAddons, parseAddonsPatch } from '@/lib/addons'
 
 const STATUSES = ['active', 'inactive', 'suspended']
 const DATE_RE = /^\d{4}-\d{2}-\d{2}$/
@@ -29,6 +30,7 @@ const FIELDS: Record<string, Field> = {
   subscription_amount: { label: 'Amount (AUD)', parse: v => { const n = Number(v); return Number.isFinite(n) && n >= 0 && n < 1e9 ? Math.round(n * 100) / 100 : undefined } },
   subscription_start:  { label: 'Start date', parse: v => (v === null || v === '' ? null : typeof v === 'string' && DATE_RE.test(v) ? v : undefined) },
   subscription_end:    { label: 'End date', parse: v => (v === null || v === '' ? null : typeof v === 'string' && DATE_RE.test(v) ? v : undefined) },
+  addons:              { label: 'Add-ons', parse: parseAddonsPatch },
 }
 
 export async function PATCH(request: Request, { params }: { params: Promise<{ id: string }> }) {
@@ -50,6 +52,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const { data: before } = await g.db.from('organisations').select('*').eq('id', id).maybeSingle()
   if (!before) return NextResponse.json({ error: 'Organisation not found' }, { status: 404 })
   const o = before as Record<string, unknown>
+  // add-ons arrive as a partial { kits: true }: merge into what is stored so one switch never resets another
+  if (update.addons) update.addons = { ...normalizeAddons(o.addons), ...(update.addons as object) }
 
   // a lower user limit than the people already on the team would be confusing — block it
   if (typeof update.user_limit === 'number') {
@@ -60,7 +64,8 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   const end = (update.subscription_end ?? o.subscription_end) as string | null
   if (start && end && end < start) return NextResponse.json({ error: 'End date can’t be before the start date.' }, { status: 400 })
 
-  const changes = Object.entries(update).filter(([k, v]) => (o[k] ?? null) !== v)
+  const same = (k: string, v: unknown) => (k === 'addons' ? JSON.stringify(normalizeAddons(o.addons)) === JSON.stringify(v) : (o[k] ?? null) === v)
+  const changes = Object.entries(update).filter(([k, v]) => !same(k, v))
   if (changes.length === 0) return NextResponse.json({ success: true })
 
   const { error } = await g.db.from('organisations').update(Object.fromEntries(changes)).eq('id', id)
@@ -68,6 +73,13 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
 
   const show = (k: string, v: unknown) => (FIELDS[k].fmt ? FIELDS[k].fmt!(v) : v === null || v === '' ? 'blank' : String(v))
   for (const [k, v] of changes) {
+    if (k === 'addons') {
+      const was = normalizeAddons(o.addons), now = v as Record<string, boolean>
+      for (const a of ADDONS.filter(x => was[x.key] !== now[x.key])) {
+        await logHub(g.db, { orgId: id, actorId: g.user.id, actorEmail: g.user.email, action: `addon.${a.key}.${now[a.key] ? 'enabled' : 'disabled'}`, summary: `${a.label} ${now[a.key] ? 'enabled' : 'disabled'}`, details: { addon: a.key, from: was[a.key], to: now[a.key] } })
+      }
+      continue
+    }
     const isToggle = k === 'xero_enabled'
     await logHub(g.db, {
       orgId: id, actorId: g.user.id, actorEmail: g.user.email,

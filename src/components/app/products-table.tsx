@@ -1882,6 +1882,13 @@ export default function ProductsTable({
                 const hasGroups = groups.length > 0
                 const showBin = groups.some(g => g.bin_id)
                 // Stock on hand that has no serial / batch / expiry recorded against it (received before tracking was captured)
+                // Kits & Bundles: virtual stock at each location (whole kits the stock on hand of the items there could make)
+                const kitBom = virtualBoms && prod?.is_kit ? virtualBoms[prod.id] : undefined
+                const virtualAt = (locId: string) => virtualStock(kitBom ?? [], id => {
+                  const c = products.find(x => x.id === id)
+                  if (!c || c.track_stock === false || c.type !== 'Stock') return null
+                  return stockLevels.filter(sl => sl.product_id === id && sl.location_id === locId).reduce((t, sl) => t + Number(sl.quantity || 0), 0)
+                })
                 const looseRows = hasTracking ? locations.map(loc => {
                   const onHandHere = stockLevels.find(sl => sl.product_id === activeProduct?.id && sl.location_id === loc.id)?.quantity ?? 0
                   const grouped = groups.filter(g => g.location_id === loc.id).reduce((t, g) => t + g.quantity, 0)
@@ -1905,6 +1912,7 @@ export default function ProductsTable({
                               <th className="li-th" style={{ textAlign: 'right' }}>On Order</th>
                               <th className="li-th" style={{ textAlign: 'right' }}>Committed</th>
                               <th className="li-th" style={{ textAlign: 'right' }}>Available</th>
+                              {kitBom && <th className="li-th" style={{ textAlign: 'right' }} title="Kits that could be made from the stock on hand of their items at this location">Virtual Stock</th>}
                             </tr>
                           </thead>
                           <tbody>
@@ -1921,6 +1929,7 @@ export default function ProductsTable({
                                   <td className="li-td" style={{ textAlign: 'right', color: 'var(--gray-400)' }}>{q(onOrder, !!activeProduct?.serial_tracking)}</td>
                                   <td className="li-td" style={{ textAlign: 'right', color: 'var(--gray-400)' }}>{q(committed, !!activeProduct?.serial_tracking)}</td>
                                   <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: available <= 0 ? 'var(--danger)' : '#059669' }}>{q(available, !!activeProduct?.serial_tracking)}</td>
+                                  {kitBom && (() => { const vs = virtualAt(loc.id); return <td className="li-td" style={{ textAlign: 'right', fontWeight: 600, color: vs == null ? 'var(--gray-400)' : vs <= 0 ? 'var(--danger)' : '#059669' }}>{vs == null ? '—' : q(vs, false)}</td> })()}
                                 </tr>
                               )
                             })}

@@ -6,6 +6,8 @@ import { createClient } from '@/lib/supabase/client'
 import { PostToXeroButton, XeroColumnHeader, XeroPostNotice, XeroStatusBadge, usePostToXero, type XeroTableInfo } from '@/components/app/xero-sync-ui'
 import { toast } from '@/components/app/toast'
 import { useQty } from '@/components/app/qty-provider'
+import { useAddon } from '@/components/app/addons-provider'
+import { BomEditor, type BomUiLine } from '@/components/app/bom-editor'
 
 type Product = {
   id: string
@@ -38,6 +40,7 @@ type Product = {
   buy_tax_rate_id: string | null
   sell_tax_rate_id: string | null
   custom_fields: Record<string, string> | null
+  is_kit?: boolean | null
 }
 
 type StockLevel = {
@@ -92,6 +95,7 @@ type ModalForm = {
   notes: string
   is_active: boolean
   track_stock: boolean
+  is_kit: boolean
 }
 
 const EMPTY_FORM: ModalForm = {
@@ -100,7 +104,7 @@ const EMPTY_FORM: ModalForm = {
   sell_price: '', sell_uom: 'Each', sell_uom_qty: '1',
   serial_tracking: false, batch_tracking: false, expiry_tracking: false,
   default_supplier_id: '', supplier_code: '', lead_time_days: '', min_order_qty: '',
-  notes: '', is_active: true, track_stock: true,
+  notes: '', is_active: true, track_stock: true, is_kit: false,
 }
 
 const UOM_OPTIONS = ['Each','Box','Carton','Kg','g','L','mL','m','Pair','Pack','Set','Dozen','Roll','Sheet','Unit']
@@ -796,7 +800,10 @@ export default function ProductsTable({
   const [modal, setModal] = useState<'closed' | 'view' | 'add' | 'edit'>('closed')
   const [activeProduct, setActiveProduct] = useState<Product | null>(null)
   const [form, setForm] = useState<ModalForm>(EMPTY_FORM)
-  const [modalTab, setModalTab] = useState<'details' | 'pricing' | 'stock' | 'orders' | 'custom'>('details')
+  const [modalTab, setModalTab] = useState<'details' | 'bom' | 'pricing' | 'stock' | 'orders' | 'custom'>('details')
+  const kitsOn = useAddon('kits')
+  const [bomLines, setBomLines] = useState<BomUiLine[]>([])
+  const [bomLoading, setBomLoading] = useState(false)
   const [saving, setSaving] = useState(false)
   const [error, setErrorRaw] = useState<string | null>(null)
   const setError = (m: string | null) => { setErrorRaw(m); if (m) toast.error(m) }
@@ -885,7 +892,26 @@ export default function ProductsTable({
     return res.ok
   }
 
+  async function loadBom(p: Product) {
+    setBomLines([])
+    if (!kitsOn || !p.is_kit) return
+    setBomLoading(true)
+    try {
+      const res = await fetch(`/api/org/products/${p.id}/bom`, { cache: 'no-store' })
+      if (res.ok) {
+        const d = await res.json()
+        setBomLines((d.lines ?? []).map((l: { component_id: string; quantity: number; guide_price: number | null }) => ({
+          component_id: l.component_id, quantity: String(l.quantity), guide_price: l.guide_price == null ? '' : String(l.guide_price),
+        })))
+      } else {
+        setError('We couldn’t load the Bill of Materials. Please close and reopen this product.')
+      }
+    } catch { setError('We couldn’t load the Bill of Materials — please check your connection.') }
+    setBomLoading(false)
+  }
+
   function openView(p: Product) {
+    loadBom(p)
     loadPricing(p.id)
     setActiveProduct(p)
     setModal('view')
@@ -902,6 +928,7 @@ export default function ProductsTable({
     setForm(f => ({ ...f, buy_tax_rate_id: f.buy_tax_rate_id || defaultTaxId, sell_tax_rate_id: f.sell_tax_rate_id || defaultTaxId }))
     setModal('add')
     setModalTab('details')
+    setBomLines([])
     setError(null)
     setCustomFieldValues({})
     setPricing(PRICE_LEVEL_NAMES.map(l => ({ price_level: l, price: 0, break_qty: 1 })))
@@ -929,6 +956,7 @@ export default function ProductsTable({
       lead_time_days: p.lead_time_days != null ? String(p.lead_time_days) : '',
       min_order_qty: p.min_order_qty != null ? String(p.min_order_qty) : '',
       notes: p.notes ?? '', is_active: p.is_active ?? true, track_stock: p.track_stock ?? true,
+      is_kit: !!p.is_kit,
     })
     setActiveProduct(p)
     setModal('edit')
@@ -936,6 +964,7 @@ export default function ProductsTable({
     setError(null)
     setCustomFieldValues(p.custom_fields ?? {})
     loadPricing(p.id)
+    loadBom(p)
   }
 
   function closeModal() {
@@ -963,6 +992,14 @@ export default function ProductsTable({
   async function handleSave() {
     if (!form.name.trim()) { setError('Product name is required.'); return }
     if (!form.sku.trim()) { setError('Product # (SKU) is required.'); return }
+    const isKit = kitsOn && form.is_kit
+    if (isKit) {
+      if (form.type !== 'NonStock') { setError('A kit must be a Non Stock item. Change the product type to Non Stock first.'); return }
+      for (let i = 0; i < bomLines.length; i++) {
+        const q = Number(bomLines[i].quantity)
+        if (!Number.isFinite(q) || q <= 0) { setModalTab('bom'); setError(`Bill of Materials: enter a quantity greater than zero on line ${i + 1}.`); return }
+      }
+    }
     setSaving(true)
     setError(null)
 
@@ -992,6 +1029,7 @@ export default function ProductsTable({
       notes: form.notes || null,
       is_active: form.is_active,
       track_stock: form.track_stock,
+      ...(kitsOn ? { is_kit: form.is_kit } : {}),
       custom_fields: Object.keys(customFieldValues).length > 0 ? customFieldValues : null,
     }
 
@@ -1011,6 +1049,24 @@ export default function ProductsTable({
     if (canViewPricing) {
       const ok = await savePricing(isEdit ? activeProduct.id : data.id)
       if (!ok) { setError('The product was saved, but its price level prices could not be saved. Please try again.'); return }
+    }
+
+    // Bill of Materials (kits only)
+    if (isKit) {
+      const productId = isEdit ? activeProduct.id : data.id
+      const r = await fetch(`/api/org/products/${productId}/bom`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ lines: bomLines.map(l => ({ component_id: l.component_id, quantity: Number(l.quantity), guide_price: l.guide_price === '' ? null : Number(l.guide_price) })) }),
+      })
+      if (!r.ok) {
+        const b = await r.json().catch(() => ({}))
+        const saved = { ...(isEdit ? activeProduct : {}), ...payload, id: productId, last_cost: null, avg_cost: null, custom_fields: customFieldValues } as Product
+        setProducts(prev => (prev.some(p => p.id === productId) ? prev.map(p => (p.id === productId ? { ...p, ...saved } : p)) : [...prev, saved]))
+        setActiveProduct(saved); setModal('edit'); setModalTab('bom')
+        setError(`The product was saved, but its Bill of Materials could not be: ${b.error ?? 'please try again.'}`)
+        return
+      }
     }
 
     toast.success(isEdit ? 'Product updated' : 'Product created')
@@ -1112,6 +1168,7 @@ export default function ProductsTable({
   const v = visibleCols
   const isView = modal === 'view'
   const curProduct = isView ? activeProduct : null
+  const showBom = kitsOn && (isView ? !!curProduct?.is_kit : form.is_kit)
   const supplierName = (id: string) => suppliers?.find(s => s.id === id)?.name ?? 'Select supplier…'
 
   return (
@@ -1444,9 +1501,10 @@ export default function ProductsTable({
             </div>
 
             <div className="modal-tab-bar">
-              {(['details', 'pricing', 'custom', 'stock', 'orders'] as const)
+              {(['details', 'bom', 'pricing', 'custom', 'stock', 'orders'] as const)
                 .filter(t => {
                   if (t === 'stock' || t === 'orders') return isView
+                  if (t === 'bom') return showBom
                   if (t === 'custom') return customFields.length > 0 || customLists.length > 0
                   if (t === 'pricing') return canViewPricing
                   return true
@@ -1457,7 +1515,7 @@ export default function ProductsTable({
                   if (t === 'orders' && activeProduct && productOrders.length === 0) loadOrders(activeProduct.id)
                   if (t === 'stock' && activeProduct) loadStockGroups(activeProduct.id)
                 }}>
-                  {t === 'details' ? 'Details' : t === 'pricing' ? 'Price Levels' : t === 'stock' ? 'Stock Details' : t === 'orders' ? 'Orders' : 'Custom Fields'}
+                  {t === 'details' ? 'Details' : t === 'bom' ? 'Bill of Materials' : t === 'pricing' ? 'Price Levels' : t === 'stock' ? 'Stock Details' : t === 'orders' ? 'Orders' : 'Custom Fields'}
                 </div>
               ))}
             </div>
@@ -1483,9 +1541,9 @@ export default function ProductsTable({
                             {['Stock', 'NonStock', 'Service'].map(t => {
                               const isStockLocked = modal === 'edit' && activeProduct?.type === 'Stock'
                               // When product was created as Stock, can't switch to NonStock/Service; also can't switch other types back to Stock
-                              const disabled = isStockLocked
+                              const disabled = (kitsOn && form.is_kit && t !== 'NonStock') || (isStockLocked
                                 ? t !== 'Stock' // locked on Stock — other buttons disabled
-                                : modal === 'edit' && t === 'Stock' && activeProduct?.type !== 'Stock' // existing non-Stock product — Stock button disabled (new products can pick any type)
+                                : modal === 'edit' && t === 'Stock' && activeProduct?.type !== 'Stock') // existing non-Stock product — Stock button disabled (new products can pick any type)
                               return (
                                 <button
                                   key={t}
@@ -1503,6 +1561,32 @@ export default function ProductsTable({
                         )}
                       </Field>
                     </div>
+                    {kitsOn && (() => {
+                      const isKitNow = isView ? !!curProduct?.is_kit : form.is_kit
+                      const stockLocked = !isView && modal === 'edit' && activeProduct?.type === 'Stock'
+                      const hasStock = !isView && modal === 'edit' && !activeProduct?.is_kit && (stockMap[activeProduct?.id ?? '']?.onHand ?? 0) !== 0
+                      if (isView && !isKitNow) return null
+                      const blocked = stockLocked || hasStock
+                      return (
+                        <div style={{ margin: '4px 0 10px' }}>
+                          <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13.5, fontWeight: 600, cursor: isView || blocked ? 'default' : 'pointer', opacity: blocked ? 0.6 : 1 }}>
+                            <input type="checkbox" checked={isKitNow} disabled={isView || blocked}
+                              onChange={e => {
+                                const on = e.target.checked
+                                setForm(f => ({ ...f, is_kit: on, type: on ? 'NonStock' : f.type }))
+                                if (!on) setBomLines([])
+                                else setModalTab('bom')
+                              }} />
+                            This item is a kit / bundle
+                          </label>
+                          <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 3, marginLeft: 24, lineHeight: 1.5 }}>
+                            {blocked
+                              ? (stockLocked ? 'Stock items can’t become kits. Create a Non Stock item for the kit instead.' : 'This item has stock on hand, so it can’t become a kit. Clear its stock first.')
+                              : 'Made up of other items and services. Sold at its own price; the items inside are taken from stock. Kits are Non Stock items.'}
+                          </div>
+                        </div>
+                      )
+                    })()}
                     <div className="modal-grid-2">
                       <Field label="Barcode">
                         <MInput value={isView ? (curProduct?.barcode ?? '') : form.barcode} onChange={val => setF('barcode', val)} placeholder="e.g. 9300675000959" disabled={isView} mono />
@@ -1686,6 +1770,20 @@ export default function ProductsTable({
                     <textarea className="modal-input" value={isView ? (curProduct?.notes ?? '') : form.notes} onChange={e => setF('notes', e.target.value)} placeholder="Internal notes about this product…" rows={3} disabled={isView} style={{ resize: 'vertical', height: 80, lineHeight: 1.6, opacity: isView ? 0.7 : 1 }} />
                   </div>
                 </>
+              )}
+
+              {modalTab === 'bom' && showBom && (
+                <Section title="Bill of Materials">
+                  <BomEditor
+                    kitId={activeProduct?.id ?? null}
+                    products={products}
+                    lines={bomLines}
+                    onChange={setBomLines}
+                    editable={!isView}
+                    loading={bomLoading}
+                    sellPrice={isView ? (curProduct?.sell_price ?? null) : (form.sell_price ? parseFloat(form.sell_price) : null)}
+                  />
+                </Section>
               )}
 
               {modalTab === 'pricing' && (

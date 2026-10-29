@@ -7,7 +7,7 @@
 import { loadPickData, PICK_ANY } from '@/lib/sales-pick-data'
 import { qtyFmtFromOrg } from '@/lib/qty'
 import { normalizePickListConfig } from './config'
-import { keepKitLine, kitItemName } from '@/lib/kits/doc-lines'
+import { isShownKitItem, keepKitLine } from '@/lib/kits/doc-lines'
 import { loadKitDoc, type KitDoc } from '@/lib/kits/doc-lines-server'
 import type { PickListPayload, PickOrder, PickRow } from './types'
 
@@ -98,7 +98,7 @@ function applyKit(kit: KitDoc | null, orderId: string, rows: PickRow[]): PickRow
     if (!p) { out.push(r); continue }
     if (kit.mode === 'both') {
       if (!done.has(String(p.id))) { out.push(heading(p)); done.add(String(p.id)) }
-      out.push({ ...r, name: kitItemName(r.name, kit.flags.get(r.line_id), 'both') })
+      out.push({ ...r, kitItem: true })
     }
   }
   for (const p of parents) if (!done.has(String(p.id))) out.push(heading(p))
@@ -200,9 +200,9 @@ export async function loadPickListPayload(db: Db, orgId: string, ids: string[]):
             const key = [bin, m.batch_number, m.serial_number, m.expiry_date].join('|')
             const hit = merged.get(key)
             if (hit) hit.qty += qty
-            else merged.set(key, { line_id: l.id, product_id: l.product_id, name: kitItemName(l.product_name ?? '', kf, kit?.mode ?? 'components'), sku: l.product_sku ?? '', note: (l.line_notes ?? '').trim() || null, unit: l.unit ?? 'Each', qty, bin, batch: m.batch_number, expiry: m.expiry_date, serial: m.serial_number, serialSlots: 0 })
+            else merged.set(key, { line_id: l.id, product_id: l.product_id, name: l.product_name ?? '', kitItem: isShownKitItem(kf, kit?.mode ?? 'components') || undefined, sku: l.product_sku ?? '', note: (l.line_notes ?? '').trim() || null, unit: l.unit ?? 'Each', qty, bin, batch: m.batch_number, expiry: m.expiry_date, serial: m.serial_number, serialSlots: 0 })
           }
-          if (merged.size === 0) rows.push({ line_id: l.id, product_id: l.product_id, name: kitItemName(l.product_name ?? '', kf, kit?.mode ?? 'components'), sku: l.product_sku ?? '', note: (l.line_notes ?? '').trim() || null, unit: l.unit ?? 'Each', qty: Number(l.quantity) || 0, bin: null, batch: null, expiry: null, serial: null, serialSlots: 0 })
+          if (merged.size === 0) rows.push({ line_id: l.id, product_id: l.product_id, name: l.product_name ?? '', kitItem: isShownKitItem(kf, kit?.mode ?? 'components') || undefined, sku: l.product_sku ?? '', note: (l.line_notes ?? '').trim() || null, unit: l.unit ?? 'Each', qty: Number(l.quantity) || 0, bin: null, batch: null, expiry: null, serial: null, serialSlots: 0 })
           else rows.push(...merged.values())
         }
         rows.sort((a, b) => (a.bin === null ? 1 : 0) - (b.bin === null ? 1 : 0) || natural.compare(a.bin ?? '', b.bin ?? '') || natural.compare(a.name, b.name))

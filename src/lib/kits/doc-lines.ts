@@ -10,6 +10,9 @@ export function keepKitLine(f: KitFlag | undefined | null, mode: DocMode): boole
   return mode !== 'parent'
 }
 
+/** True for an item that is printed under its kit (so the document can set it apart: italic, indented) */
+export const isShownKitItem = (f: KitFlag | undefined | null, mode: DocMode) => !!f && !!f.kit_group && !f.is_kit_parent && mode === 'both'
+
 /** An item shown under its kit is marked with an arrow so it reads as part of the kit. Items shown on their own keep their name. */
 export function kitItemName(name: string, f: KitFlag | undefined | null, mode: DocMode): string {
   return f && f.kit_group && !f.is_kit_parent && mode === 'both' ? `↳ ${name}` : name

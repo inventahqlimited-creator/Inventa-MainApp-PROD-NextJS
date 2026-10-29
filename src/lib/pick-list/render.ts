@@ -71,12 +71,12 @@ function cell(key: ColKey, r: { note: string | null; noStock?: boolean; bin: str
   }
 }
 
-function productCell(name: string, sku: string): string {
-  return `<td><div class="pn">${esc(name)}</div>${sku ? `<span class="sku">${esc(sku)}</span>` : ''}</td>`
+function productCell(name: string, sku: string, item = false): string {
+  return `<td${item ? ' style="padding-left:30px"' : ''}><div class="pn"${item ? ' style="font-style:italic;font-weight:500"' : ''}>${esc(name)}</div>${sku ? `<span class="sku">${esc(sku)}</span>` : ''}</td>`
 }
 
 function rowTr(r: PickRow, cfg: PickListConfig): string {
-  return `<tr><td><span class="tick"></span></td>${productCell(r.name, r.sku)}${activeCols(cfg).map(c => cell(c.key, r)).join('')}<td class="r"><span class="qty">${qtyText(r.qty)}<small>${esc(unitLabel(r.unit))}</small></span></td></tr>`
+  return `<tr><td><span class="tick"></span></td>${productCell(r.name, r.sku, r.kitItem)}${activeCols(cfg).map(c => cell(c.key, r)).join('')}<td class="r"><span class="qty">${qtyText(r.qty)}<small>${esc(unitLabel(r.unit))}</small></span></td></tr>`
 }
 
 function header(title: string, sub: string, big: string, code: string, cfg: PickListConfig): string {

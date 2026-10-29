@@ -76,13 +76,13 @@ function lineTable(o: InvoiceOrder, cfg: InvoiceConfig, money: (n: number) => st
   ].filter((c): c is { key: string; label: string; w: number } => !!c))
   const th = (t: string, right = false): TableCell => ({ text: t.toUpperCase(), fontSize: 6.5, bold: true, color: COLORS.mut, characterSpacing: 0.7, fillColor: COLORS.tint, alignment: right ? 'right' : 'left', margin: [0, 2, 0, 2] })
   const head: TableCell[] = [th('Description'), ...track.map(t => th(t.label)), th('Qty', true), ...cols.map(c => th(c.label, true)), th('Amount', true)]
-  const desc = (name: string, sub: string): TableCell => ({ stack: [{ text: name, bold: true, fontSize: 9.5 }, ...(sub ? [{ text: sub, color: COLORS.mut, fontSize: 7.5, margin: [0, 1, 0, 0] }] : [])] as Content[] })
+  const desc = (name: string, sub: string, item = false): TableCell => ({ ...(item ? { margin: [16, 0, 0, 0] } : {}), stack: [{ text: name, bold: !item, italics: item, fontSize: 9.5 }, ...(sub ? [{ text: sub, color: COLORS.mut, fontSize: 7.5, margin: [0, 1, 0, 0] }] : [])] as Content[] })
   const num = (t: string, bold = false): TableCell => ({ text: t, alignment: 'right', bold, noWrap: true })
 
   const body: TableCell[][] = [head]
   for (const l of o.lines) {
     body.push([
-      desc(l.name, cfg.columns.sku ? l.sku : ''),
+      desc(l.name, cfg.columns.sku ? l.sku : '', l.kitItem),
       ...track.map((t): TableCell => {
         const v = t.key === 'serial' ? l.serials : t.key === 'batch' ? l.batches : (l.expiries ?? []).map(fmtDate)
         return { text: (v ?? []).length ? (v ?? []).join('\n') : dash, fontSize: 7.5, color: (v ?? []).length ? COLORS.ink : COLORS.mut }

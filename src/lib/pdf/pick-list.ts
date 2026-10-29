@@ -102,8 +102,9 @@ function itemsTable(o: PickOrder, cfg: PickListConfig): Content {
     body.push([
       tick() as TableCell,
       {
+        ...(r.kitItem ? { margin: [16, 0, 0, 0] } : {}),
         stack: [
-          { text: r.name, bold: true, fontSize: 10 },
+          { text: r.name, bold: !r.kitItem, italics: !!r.kitItem, fontSize: 10 },
           ...(r.sku ? [{ text: r.sku, color: MUT, fontSize: 8 }] : []),
         ] as Content[],
       },

@@ -1,6 +1,7 @@
 'use client'
 
 import { useState, useMemo, useEffect, useRef } from 'react'
+import { virtualStock } from '@/lib/kits/virtual-stock'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
 import { PostToXeroButton, XeroColumnHeader, XeroPostNotice, XeroStatusBadge, usePostToXero, type XeroTableInfo } from '@/components/app/xero-sync-ui'
@@ -122,6 +123,7 @@ const COLS = [
   { key: 'on_order', label: 'On Order' },
   { key: 'committed', label: 'Committed' },
   { key: 'available', label: 'Available' },
+  { key: 'virtual', label: 'Virtual Stock' }, // kits only: shown when Settings > Kits & Bundles > virtual stock is on
 ]
 
 const DEFAULT_VISIBLE = new Set(['type', 'status', 'unit', 'sell_price', 'on_hand', 'on_order', 'committed', 'available'])
@@ -704,8 +706,11 @@ export default function ProductsTable({
   customLists = [],
   permissions = {},
   xero,
+  virtualBoms,
 }: {
   xero?: XeroTableInfo
+  /** Kits & Bundles virtual stock: each kit's items. Only passed when the add-on and the setting are on. */
+  virtualBoms?: Record<string, { component_id: string; quantity: number }[]>
   products: Product[]
   stockLevels: StockLevel[]
   locations: Location[]
@@ -1109,6 +1114,34 @@ export default function ProductsTable({
     return map
   }, [stockLevels, locationFilter])
 
+  // Virtual stock: whole kits the available stock of their items could make, for the location chosen in the filter (same as On Hand)
+  const virtualOn = !!virtualBoms
+  const virtualMap = useMemo(() => {
+    const out: Record<string, number | null> = {}
+    if (!virtualBoms) return out
+    const byId = new Map(products.map(p => [p.id, p]))
+    const avail = (id: string) => {
+      const c = byId.get(id)
+      if (!c || c.track_stock === false || c.type !== 'Stock') return null
+      return stockMap[id]?.available ?? 0
+    }
+    for (const kitId in virtualBoms) out[kitId] = virtualStock(virtualBoms[kitId], avail)
+    return out
+  }, [virtualBoms, products, stockMap])
+  // the column appears for everyone the first time, then it is theirs to hide
+  useEffect(() => {
+    if (!virtualOn) return
+    try {
+      if (localStorage.getItem('products-virtual-col-seen')) return
+      localStorage.setItem('products-virtual-col-seen', '1')
+      setVisibleCols(prev => {
+        const next = new Set(prev); next.add('virtual')
+        try { localStorage.setItem('products-visible-cols', JSON.stringify([...next])) } catch {}
+        return next
+      })
+    } catch {}
+  }, [virtualOn])
+
   const filtered = useMemo(() => {
     return products.filter(p => {
       if (!showInactive && !p.is_active) return false
@@ -1288,7 +1321,7 @@ export default function ProductsTable({
           {colOpen && (
             <div className="inv-dropdown col-dropdown" style={{ display: 'block' }}>
               <div className="col-dropdown-title">Show / Hide Columns</div>
-              {COLS.filter(col => canViewPricing || !['sell_price', 'cost_price'].includes(col.key)).map(col => (
+              {COLS.filter(col => (canViewPricing || !['sell_price', 'cost_price'].includes(col.key)) && (virtualOn || col.key !== 'virtual')).map(col => (
                 <label key={col.key} className="col-check-item">
                   <input type="checkbox" checked={v.has(col.key)} onChange={e => {
                     setVisibleCols(prev => {
@@ -1398,6 +1431,7 @@ export default function ProductsTable({
                 {v.has('on_order') && <th style={{ textAlign: 'right' }}>On Order</th>}
                 {v.has('committed') && <th style={{ textAlign: 'right' }}>Committed</th>}
                 {v.has('available') && <th style={{ textAlign: 'right' }}>Available</th>}
+                {virtualOn && v.has('virtual') && <th style={{ textAlign: 'right' }} title="Kits that could be made from the available stock of their items">Virtual Stock</th>}
                 {xero?.show && <XeroColumnHeader />}
                 <th style={{ width: 40 }} />
               </tr>
@@ -1430,6 +1464,7 @@ export default function ProductsTable({
                     {v.has('on_hand') && <td style={{ textAlign: 'right' }}>{p.track_stock ? <span style={{ fontWeight: 600, color: stock.onHand <= 0 ? 'var(--danger)' : 'var(--slate)' }}>{q(stock.onHand, !!p.serial_tracking)}</span> : <span className="td-muted">—</span>}</td>}
                     {v.has('on_order') && <td style={{ textAlign: 'right' }} className="td-muted">{p.track_stock ? q(stock.onOrder, !!p.serial_tracking) : '—'}</td>}
                     {v.has('committed') && <td style={{ textAlign: 'right' }} className="td-muted">{p.track_stock ? q(stock.committed, !!p.serial_tracking) : '—'}</td>}
+                    {virtualOn && v.has('virtual') && <td style={{ textAlign: 'right' }}>{p.is_kit && virtualMap[p.id] != null ? <span style={{ fontWeight: 600, color: (virtualMap[p.id] ?? 0) <= 0 ? 'var(--danger)' : '#059669' }}>{q(virtualMap[p.id] as number, false)}</span> : <span className="td-muted">—</span>}</td>}
                     {v.has('available') && <td style={{ textAlign: 'right' }}>{p.track_stock ? <span style={{ fontWeight: 600, color: stock.available <= 0 ? 'var(--danger)' : '#059669' }}>{q(stock.available, !!p.serial_tracking)}</span> : <span className="td-muted">—</span>}</td>}
                     {xero?.show && <td><XeroStatusBadge info={xeroRecords[p.id]} /></td>}
                     {(canEdit || (xero?.show && xero.canPost)) && (

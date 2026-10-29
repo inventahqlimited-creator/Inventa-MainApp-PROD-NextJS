@@ -9,7 +9,7 @@ type Line = Record<string, unknown>
 type Prod = { id: string; name: string; sku: string | null; sell_uom: string | null; buy_uom: string | null; unit: string | null; avg_cost: number | null; last_cost: number | null; cost_price: number | null; buy_tax_rate_id: string | null; tax_rate: number | string | null }
 
 // where each kind of order keeps its lines
-const TABLE: Record<OrderKind, { lines: string; fk: string }> = {
+export const TABLE: Record<OrderKind, { lines: string; fk: string }> = {
   sales: { lines: 'sales_order_lines', fk: 'so_id' },
   purchase: { lines: 'purchase_order_lines', fk: 'po_id' },
   transfer: { lines: 'transfer_order_lines', fk: 'tr_id' },

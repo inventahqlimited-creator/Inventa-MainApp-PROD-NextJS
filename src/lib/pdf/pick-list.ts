@@ -160,8 +160,8 @@ export async function renderPickListPdf(payload: PickListPayload, orderIndex = 0
 
   content.push(itemsTable(o, cfg))
 
-  const lines = new Set(o.rows.map(r => r.line_id)).size
-  const units = o.rows.filter(r => !r.noStock).reduce((s, r) => s + r.qty, 0)
+  const lines = new Set(o.rows.filter(r => !r.heading).map(r => r.line_id)).size
+  const units = o.rows.filter(r => !r.noStock && !r.heading).reduce((s, r) => s + r.qty, 0)
   const bins = new Set(o.rows.filter(r => r.bin && !r.noStock).map(r => r.bin)).size
   const serialLines = new Set(o.rows.filter(r => r.serial || r.serialSlots > 0).map(r => r.line_id)).size
   const stats = [

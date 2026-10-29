@@ -17,6 +17,7 @@ export type PickRow = {
   serial: string | null // a serial number already assigned to this stock
   serialSlots: number // blank write-in lines to print when the product is serial-tracked and no number is known
   noStock?: boolean // part of the line that no stock can cover
+  heading?: boolean // a kit line shown above / instead of its items: nothing is picked for it, so it isn't counted
 }
 
 export type PickOrder = {

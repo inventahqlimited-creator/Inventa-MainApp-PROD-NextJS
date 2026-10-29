@@ -114,7 +114,7 @@ export async function postInvoice(db: Db, orgId: string, soId: string, settings:
   }
 
   // The printed invoice is the source for the number, date, terms and total, so Xero matches what the customer was sent.
-  const payload = await loadInvoicePayload(db, orgId, [soId])
+  const payload = await loadInvoicePayload(db, orgId, [soId], { kitDocs: false })
   const inv = payload.orders[0]
   if (!inv) return fail(409, 'This order can’t be invoiced.')
 

@@ -4,6 +4,8 @@
 // picks). Quantities come from the cartons: the ones on the Pack screen right now (overrides), else the saved ones,
 // else whatever was packed / picked.
 
+import { keepKitLine, kitItemName } from '@/lib/kits/doc-lines'
+import { loadKitDoc } from '@/lib/kits/doc-lines-server'
 import { qtyFmtFromOrg } from '@/lib/qty'
 import { loadLineTracking } from '@/lib/doc-tracking'
 import { normalizePackingListConfig } from './config'
@@ -95,6 +97,7 @@ export async function loadPackingListPayload(db: Db, orgId: string, ids: string[
     .filter((o): o is OrderRow => !!o && PACK_PRINT_STATUSES.includes(String(o.status).toLowerCase()))
 
   const orderIds = orders.map(o => o.id)
+  const kit = await loadKitDoc(db, orgId, 'packing_list', 'sales', orderIds)
   const customerIds = [...new Set(orders.map(o => o.customer_id).filter((x): x is string => !!x))]
   const locationIds = [...new Set(orders.map(o => o.location_id).filter((x): x is string => !!x))]
   const none = Promise.resolve({ data: [] })
@@ -128,12 +131,19 @@ export async function loadPackingListPayload(db: Db, orgId: string, ids: string[
     const rows: PackRow[] = []
     const lines = [...(o.sales_order_lines ?? [])].sort((a, b) => (a.sort_order ?? 0) - (b.sort_order ?? 0))
     for (const l of lines) {
+      const kf = kit?.flags.get(l.id)
+      if (kit && !keepKitLine(kf, kit.mode)) continue
       const ordered = num(l.quantity)
       const picked = num(l.quantity_picked), packed = num(l.quantity_packed), sent = num(l.quantity_shipped)
       if (ordered <= 0 && picked <= 0) continue
       const shipped = cartonLines ? (cartonQty.get(l.id) ?? 0) : sent > 0 ? sent : packed > 0 ? packed : picked
-      const base = { line_id: l.id, name: clean(l.product_name), sku: clean(l.product_sku), note: clean(l.line_notes) || null, unit: clean(l.unit) || 'Each' }
+      const base = { line_id: l.id, name: kit ? kitItemName(clean(l.product_name), kf, kit.mode) : clean(l.product_name), sku: clean(l.product_sku), note: clean(l.line_notes) || null, unit: clean(l.unit) || 'Each' }
 
+      // a kit line is only a heading (its items are what gets packed), so it is complete once the order is
+      if (kf?.is_kit_parent) {
+        rows.push({ ...base, ordered, shipped: ordered, backorder: 0, batch: null, expiry: null, serials: [], heading: true })
+        continue
+      }
       // share what was shipped across the batches / serials it was picked from
       const groups: { batch: string | null; expiry: string | null; qty: number; serials: string[] }[] = []
       let left = shipped

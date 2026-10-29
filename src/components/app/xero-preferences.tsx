@@ -125,7 +125,7 @@ export default function XeroPreferences() {
             </div>
             {draft.inventory_tracked && (
               <div style={{ ...hint, marginTop: 12, lineHeight: 1.5 }}>
-                To make this work, set your products up as tracked items in Xero (we match them by item code). Only tracked stock items already in Xero are sent. Xero won’t let you sell a tracked item it has no stock of, so InventaHQ sends your purchase bills and stock adjustments before your invoices.
+                To make this work, set your products up as tracked items in Xero (we match them by item code). Only tracked stock items already in Xero are sent. Xero won’t let you sell a tracked item it has no stock of, so InventaHQ sends your stock adjustments and purchase bills before your invoices.
               </div>
             )}
             {data.prefs.inventory_tracked !== draft.inventory_tracked && (

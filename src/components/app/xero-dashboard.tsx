@@ -462,7 +462,7 @@ export default function XeroDashboard({ isAdmin }: { isAdmin: boolean }) {
           <div style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 700, color: 'var(--slate)' }}>Sync everything</div>
           <div style={{ fontSize: 12.5, color: 'var(--gray-400)', marginTop: 2 }}>
             {info?.prefs.inventory_tracked
-              ? 'Sends new contacts, then products, then received purchase orders (bills), stock adjustments (bills and credit notes) and closed sales orders (invoices) to Xero.'
+              ? 'Sends new contacts, then products, then stock adjustments (bills and credit notes), received purchase orders (bills) and closed sales orders (invoices) to Xero.'
               : 'Sends new contacts, then products, then closed sales orders (invoices), received purchase orders (bills) and stock adjustments (journals) to Xero.'}
           </div>
           {info && (

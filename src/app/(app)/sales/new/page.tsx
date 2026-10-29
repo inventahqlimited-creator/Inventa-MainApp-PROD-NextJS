@@ -2,6 +2,7 @@
 import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import SalesOrderForm from '@/components/app/sales-order-form'
+import { loadKitColumns, loadKitScreenData } from '@/lib/kits/order-lines-server'
 
 export default async function NewSalesOrderPage({ searchParams }: { searchParams: Promise<{ clone?: string; from_po?: string }> }) {
   const { clone, from_po } = await searchParams
@@ -60,7 +61,7 @@ export default async function NewSalesOrderPage({ searchParams }: { searchParams
       .select(`
         id, customer_id, customer_name, location_id, location_name, expected_date, terms, notes, ref, currency,
         price_level_id, order_discount, order_discount_type, order_discount_amount,
-        sales_order_lines ( product_id, product_name, product_sku, unit, quantity, unit_price, discount, tax_rate, tax_rate_id, tax_name, line_notes, sort_order ),
+        sales_order_lines ( id, product_id, product_name, product_sku, unit, quantity, unit_price, discount, tax_rate, tax_rate_id, tax_name, line_notes, sort_order ),
         sales_order_cost_lines ( product_id, product_name, product_sku, description, amount, tax_rate, tax_rate_id, tax_name, sort_order )
       `)
       .eq('id', clone)
@@ -70,10 +71,12 @@ export default async function NewSalesOrderPage({ searchParams }: { searchParams
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const o = src as any
       const bySort = (a: { sort_order: number | null }, b: { sort_order: number | null }) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
+      // A cloned kit starts again from the kit's current items, so saved item lines are left out
+      const kitCols = await loadKitColumns(adminClient, m.org_id, clone)
       prefill = {
         ...o,
         id: '', so_number: null, status: 'Draft', order_date: null, total_amount: null,
-        lines: [...(o.sales_order_lines ?? [])].sort(bySort),
+        lines: [...(o.sales_order_lines ?? [])].filter((l: { id: string }) => { const k = kitCols.get(l.id); return !(k && !k.is_kit_parent) }).sort(bySort),
         cost_lines: [...(o.sales_order_cost_lines ?? [])].sort(bySort),
       }
     }
@@ -116,6 +119,7 @@ export default async function NewSalesOrderPage({ searchParams }: { searchParams
   }
 
   const curs = (currencies ?? []) as { code: string; is_base: boolean | null }[]
+  const kits = await loadKitScreenData(adminClient, m.org_id)
   const orgData = (org ?? {}) as { so_default_payment_terms?: string | null; so_default_ship_from?: string | null; decimal_places?: number | null; quotes_enabled?: boolean | null }
 
   return (
@@ -123,6 +127,7 @@ export default async function NewSalesOrderPage({ searchParams }: { searchParams
       orgId={m.org_id}
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       prefill={prefill as any}
+      kits={kits}
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       customers={(customers ?? []) as any}
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

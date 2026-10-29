@@ -34,6 +34,7 @@ export async function PATCH(request: Request, { params }: Params) {
     const orgForKit = ctx.org_id
     if (!(await hasAddon(ctx.adminClient, orgForKit, 'kits'))) return NextResponse.json({ error: ADDON_OFF_MESSAGE }, { status: 403 })
     if (clean.type !== undefined && clean.type !== 'NonStock') return NextResponse.json({ error: 'A kit has to be a Non Stock item. Change the stock type to Non Stock first.' }, { status: 400 })
+    clean.track_stock = false // a kit holds no stock of its own — its items do
   }
   const badFk = await badForeignKey(ctx.adminClient, ctx.org_id, clean, PRODUCT_LINKS)
   if (badFk) return NextResponse.json({ error: `Invalid ${badFk}` }, { status: 400 })

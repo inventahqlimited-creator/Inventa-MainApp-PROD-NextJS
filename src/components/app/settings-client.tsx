@@ -2,6 +2,8 @@
 
 import { useTermNames } from '@/components/app/payment-terms-provider'
 import { useState, useRef, useEffect } from 'react'
+import { useAddon } from '@/components/app/addons-provider'
+import { DEFAULT_KIT_SETTINGS, DOC_KEYS, DOC_LABELS, DOC_MODES, normalizeKitSettings, type DocMode, type KitSettings } from '@/lib/kits/settings'
 import { useRouter } from 'next/navigation'
 import Link from 'next/link'
 import MemberModal from './member-modal'
@@ -57,6 +59,7 @@ const TABS = [
   { key: 'purchases', label: 'Purchases' },
   { key: 'transfers', label: 'Transfers' },
   { key: 'sales', label: 'Sales' },
+  { key: 'kits', label: 'Kits & Bundles' },
   { key: 'users', label: 'Users' },
   { key: 'notifications', label: 'Notifications' },
   { key: 'email', label: 'Email' },
@@ -907,6 +910,70 @@ function NotificationsCard({ initial, canManage, showToast }: {
 
 // ── Security: password policy ─────────────────────────────────────────
 
+function KitSettingsTab({ initial, canManage, showToast }: {
+  initial: unknown; canManage: boolean; showToast: (type: 'success' | 'error', msg: string) => void
+}) {
+  const [k, setK] = useState<KitSettings>(() => normalizeKitSettings(initial))
+  const [saving, setSaving] = useState(false)
+
+  async function save() {
+    setSaving(true)
+    try {
+      const res = await fetch('/api/org/kit-settings', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kit_settings: k }),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (res.ok) { setK(normalizeKitSettings(d.kit_settings ?? k)); showToast('success', 'Kits & Bundles settings saved') }
+      else showToast('error', d.error ?? 'We couldn’t save the settings. Please try again.')
+    } catch { showToast('error', 'Network error — please try again.') }
+    setSaving(false)
+  }
+
+  const ro = !canManage
+  return (
+    <>
+      <Card
+        title="Kits & Bundles"
+        subtitle="How kits behave on orders and what prints on your documents"
+        action={canManage ? <SaveBtn onClick={save} saving={saving} /> : undefined}
+      >
+        <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 10, opacity: ro ? 0.75 : 1 }}>
+          <div style={{ fontSize: 12.5, fontWeight: 700, color: 'var(--gray-400)', textTransform: 'uppercase', letterSpacing: '0.06em' }}>Show the items inside a kit on…</div>
+          <ToggleRow label="Sales orders" sub="Adding a kit also adds a line for each item inside it, which you can adjust per order. Off: the order shows the kit line only — the items are still taken from stock." active={k.expand_sales} onChange={v => !ro && setK(p => ({ ...p, expand_sales: v }))} />
+          <ToggleRow label="Purchase orders" sub="Adding a kit also adds a line for each item inside it. Off: the order shows the kit line only — the items are still received into stock." active={k.expand_purchase} onChange={v => !ro && setK(p => ({ ...p, expand_purchase: v }))} />
+          <ToggleRow label="Transfers" sub="Adding a kit also adds a line for each item inside it. Off: the transfer shows the kit line only — the items still move." active={k.expand_transfer} onChange={v => !ro && setK(p => ({ ...p, expand_transfer: v }))} />
+        </div>
+      </Card>
+
+      <Card title="Printed documents" subtitle="Choose what each document shows for a kit">
+        <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 10, opacity: ro ? 0.75 : 1 }}>
+          {DOC_KEYS.map(key => (
+            <div key={key} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, padding: '10px 14px', background: 'var(--gray-50)', border: '1.5px solid var(--gray-200)', borderRadius: 10 }}>
+              <span style={{ fontSize: 13.5, fontWeight: 600, color: 'var(--slate)', fontFamily: 'var(--font-display)' }}>{DOC_LABELS[key]}</span>
+              <div style={{ width: 220 }}>
+                <Select value={k.docs[key]} disabled={ro} onChange={v => setK(p => ({ ...p, docs: { ...p.docs, [key]: v as DocMode } }))} options={DOC_MODES} />
+              </div>
+            </div>
+          ))}
+          <div style={{ fontSize: 12, color: 'var(--gray-400)', lineHeight: 1.5 }}>
+            Defaults: invoices and purchase orders show the kit only; pick lists, packing lists and transfers show the items.
+            {ro && ' You need the "Manage company settings" permission to change this.'}
+          </div>
+          <button type="button" className="btn btn-outline" style={{ alignSelf: 'flex-start', height: 30, fontSize: 12 }} disabled={ro}
+            onClick={() => setK(p => ({ ...p, docs: { ...DEFAULT_KIT_SETTINGS.docs } }))}>Reset to defaults</button>
+        </div>
+      </Card>
+
+      <Card title="Virtual stock" subtitle="How many kits you could make right now">
+        <div style={{ padding: '16px 18px', display: 'flex', flexDirection: 'column', gap: 10, opacity: ro ? 0.75 : 1 }}>
+          <ToggleRow label="Show virtual stock for kits" sub="Adds a “Virtual stock” column to the Products list: the number of kits you can make from the items you have, based on the scarcest item. It follows the location filter, like stock on hand. Services don’t limit it." active={k.show_virtual_stock} onChange={v => !ro && setK(p => ({ ...p, show_virtual_stock: v }))} />
+        </div>
+      </Card>
+    </>
+  )
+}
+
 function PasswordPolicyCard({ initial, canManage, showToast }: {
   initial: unknown; canManage: boolean; showToast: (type: 'success' | 'error', msg: string) => void
 }) {
@@ -1163,6 +1230,7 @@ export default function SettingsClient({
   const router = useRouter()
   const canManageSecurity = useCan('manage_security')
   const canManageCompany = useCan('manage_company')
+  const kitsOn = useAddon('kits')
   const [security, setSecurity] = useState<SecuritySettings>(() => normalizeSecurity(org.security_settings))
   const [tab, setTab] = useState<Tab>((initialTab as Tab) ?? 'general')
   const xeroInstalled = Boolean(org.xero_enabled)
@@ -1612,7 +1680,7 @@ export default function SettingsClient({
           </div>
         </div>
         <div className="tab-bar">
-          {TABS.map(t => (
+          {TABS.filter(t => t.key !== 'kits' || kitsOn).map(t => (
             <div key={t.key} className={`tab-item${tab === t.key ? ' active' : ''}`} onClick={() => setTab(t.key)}>{t.label}</div>
           ))}
         </div>
@@ -2395,6 +2463,10 @@ export default function SettingsClient({
 
         {/* ── NOTIFICATIONS ── */}
         {tab === 'email' && <EmailSettingsTab />}
+
+        {tab === 'kits' && kitsOn && (
+          <KitSettingsTab initial={org.kit_settings} canManage={canManageCompany} showToast={showToast} />
+        )}
 
         {tab === 'notifications' && (
           <NotificationsCard initial={org.notification_settings} canManage={canManageCompany} showToast={showToast} />

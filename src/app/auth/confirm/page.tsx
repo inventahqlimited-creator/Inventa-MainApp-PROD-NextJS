@@ -3,6 +3,7 @@
 import { useEffect } from 'react'
 import { useRouter } from 'next/navigation'
 import { createBrowserClient } from '@supabase/ssr'
+import { browserSessionCookies } from '@/lib/supabase/client'
 
 export default function AuthConfirmPage() {
   const router = useRouter()
@@ -10,7 +11,8 @@ export default function AuthConfirmPage() {
   useEffect(() => {
     const supabase = createBrowserClient(
       process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      { cookies: browserSessionCookies }
     )
 
     const query = new URLSearchParams(window.location.search)

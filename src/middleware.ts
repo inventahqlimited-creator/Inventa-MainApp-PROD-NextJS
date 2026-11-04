@@ -1,6 +1,7 @@
 import { createServerClient } from '@supabase/ssr'
 import { NextResponse, type NextRequest } from 'next/server'
 import { rateLimit, clientIp } from '@/lib/rate-limit'
+import { sessionOnly } from '@/lib/auth/session-cookies'
 
 const MIN = 60_000
 const HOUR = 60 * MIN
@@ -39,7 +40,16 @@ export async function middleware(request: NextRequest) {
   const blocked = limited(request)
   if (blocked) return blocked
 
-  let supabaseResponse = NextResponse.next({ request })
+  // When this person last opened a page, BEFORE this request updates it. Passed to the app layout as a header,
+  // because the layout would otherwise read the fresh "now" value written below and the session timeout would never fire.
+  const prevLastActive = request.cookies.get('inv_la')?.value ?? ''
+  const forward = () => {
+    const headers = new Headers(request.headers)
+    headers.set('x-inv-prev-la', prevLastActive)
+    return NextResponse.next({ request: { headers } })
+  }
+
+  let supabaseResponse = forward()
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -49,9 +59,9 @@ export async function middleware(request: NextRequest) {
         getAll() { return request.cookies.getAll() },
         setAll(cookiesToSet) {
           cookiesToSet.forEach(({ name, value }) => request.cookies.set(name, value))
-          supabaseResponse = NextResponse.next({ request })
+          supabaseResponse = forward()
           cookiesToSet.forEach(({ name, value, options }) =>
-            supabaseResponse.cookies.set(name, value, options)
+            supabaseResponse.cookies.set(name, value, sessionOnly(options))
           )
         },
       },
@@ -77,6 +87,10 @@ export async function middleware(request: NextRequest) {
   if (isPublic) {
     if (user && pathname === '/login') {
       return go(isHub ? '/admin' : '/')
+    }
+    // Signing in starts a fresh "last active" clock, so a visit from days ago doesn't time out the new session
+    if (pathname.startsWith('/login') || pathname.startsWith('/auth')) {
+      supabaseResponse.cookies.set('inv_la', '', { path: '/', maxAge: 0 })
     }
     return supabaseResponse
   }
@@ -116,7 +130,7 @@ export async function middleware(request: NextRequest) {
   // Background API calls don't count as activity.
   if (!pathname.startsWith('/api/')) {
     supabaseResponse.cookies.set('inv_la', String(Date.now()), {
-      httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', path: '/', maxAge: 60 * 60 * 24 * 7,
+      httpOnly: true, sameSite: 'lax', secure: process.env.NODE_ENV === 'production', path: '/', maxAge: 60 * 60 * 24 * 400,
     })
   }
 

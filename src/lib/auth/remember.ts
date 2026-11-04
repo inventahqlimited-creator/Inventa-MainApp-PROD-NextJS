@@ -1,17 +1,13 @@
 // Client-side helpers for the login page's "Remember me" tickbox.
 //
-// Ticked   -> stay signed in on this device (normal behaviour) and prefill the email next time.
-// Unticked -> the session lasts until the browser is closed.
+// "Remember me" only remembers the email address and fills it in next time. Saving the password is left to the
+// browser's own password manager (the form uses autocomplete="username" / "current-password"); we never store it.
 //
-// Cookies set by Supabase outlive the browser session, so "session only" is enforced here:
-// a flag in localStorage says "don't keep me", and a flag in sessionStorage says "this browser
-// session is still the one that signed in". If the first is set but the second is missing,
-// the browser was closed in between, so we sign out.
-import type { SupabaseClient } from '@supabase/supabase-js'
-
+// It does NOT keep anyone signed in: sign-in cookies end when the browser closes (src/lib/auth/session-cookies.ts),
+// and the organisation's session timeout signs people out after the set time away.
 const EMAIL_KEY = 'inventa_remember_email'
-const NO_REMEMBER_KEY = 'inventa_no_remember'
-const ACTIVE_KEY = 'inventa_active_session'
+// Left over from the old "session only" mode; removed when someone next signs in.
+const OLD_KEYS = { local: 'inventa_no_remember', session: 'inventa_active_session' }
 
 function safe<T>(fn: () => T, fallback: T): T {
   try { return fn() } catch { return fallback }
@@ -23,28 +19,10 @@ export function getRememberedEmail(): string {
 
 export function applyRememberChoice(remember: boolean, email: string) {
   safe(() => {
-    if (remember) {
-      window.localStorage.setItem(EMAIL_KEY, email)
-      window.localStorage.removeItem(NO_REMEMBER_KEY)
-    } else {
-      window.localStorage.removeItem(EMAIL_KEY)
-      window.localStorage.setItem(NO_REMEMBER_KEY, '1')
-    }
-    window.sessionStorage.setItem(ACTIVE_KEY, '1')
+    if (remember) window.localStorage.setItem(EMAIL_KEY, email)
+    else window.localStorage.removeItem(EMAIL_KEY)
+    window.localStorage.removeItem(OLD_KEYS.local)
+    window.sessionStorage.removeItem(OLD_KEYS.session)
   }, undefined)
 }
 
-/** Returns true if the user chose not to be remembered and the browser has since been closed. */
-export function sessionHasExpired(): boolean {
-  return safe(() => (
-    window.localStorage.getItem(NO_REMEMBER_KEY) === '1' &&
-    window.sessionStorage.getItem(ACTIVE_KEY) !== '1'
-  ), false)
-}
-
-export async function signOutIfSessionExpired(supabase: SupabaseClient): Promise<boolean> {
-  if (!sessionHasExpired()) return false
-  await supabase.auth.signOut()
-  window.location.replace('/login')
-  return true
-}

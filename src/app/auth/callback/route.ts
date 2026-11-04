@@ -3,6 +3,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { cookies } from 'next/headers'
 import type { NextRequest } from 'next/server'
 import { redirectTo } from '@/lib/auth/redirect'
+import { sessionOnly } from '@/lib/auth/session-cookies'
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
@@ -24,7 +25,7 @@ export async function GET(request: NextRequest) {
           getAll() { return cookieStore.getAll() },
           setAll(cookiesToSet) {
             cookiesToSet.forEach(({ name, value, options }) =>
-              cookieStore.set(name, value, options)
+              cookieStore.set(name, value, sessionOnly(options))
             )
           },
         },

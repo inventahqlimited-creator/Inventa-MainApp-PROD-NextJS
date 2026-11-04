@@ -6,7 +6,6 @@ import { createClient } from '@/lib/supabase/client'
 import NotificationBell from '@/components/app/notification-bell'
 import GlobalSearch from '@/components/app/global-search'
 import ProfileModal, { type ProfileData } from '@/components/app/profile-modal'
-import { signOutIfSessionExpired } from '@/lib/auth/remember'
 
 export default function AppTopbar({
   displayName,
@@ -52,9 +51,8 @@ export default function AppTopbar({
     return () => document.removeEventListener('mousedown', handle)
   }, [])
 
-  // "Remember me" unticked: end the session once the browser has been closed; also warm up /login for a quick sign-out
+  // Warm up /login for a quick sign-out
   useEffect(() => {
-    signOutIfSessionExpired(supabase)
     router.prefetch('/login')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])

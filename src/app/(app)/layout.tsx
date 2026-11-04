@@ -2,7 +2,7 @@ import { AddonsProvider } from '@/components/app/addons-provider'
 import { normalizeAddons } from '@/lib/addons'
 import { createAdminClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
-import { cookies, headers } from 'next/headers'
+import { headers } from 'next/headers'
 import { getAccessUnchecked } from '@/lib/auth/access'
 import { loadSecurity, isIpAllowed } from '@/lib/auth/security-settings'
 import { clientIp } from '@/lib/rate-limit'
@@ -43,7 +43,8 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     )
   }
   // Session timeout: a person who hasn't opened a page for longer than the limit is signed out
-  const lastSeen = Number((await cookies()).get('inv_la')?.value)
+  // The previous visit's time, passed on by the middleware before it records this visit
+  const lastSeen = Number((await headers()).get('x-inv-prev-la'))
   if (lastSeen && Date.now() - lastSeen > security.session_timeout_minutes * 60_000) redirect('/auth/timeout')
 
   const { data: membership } = await adminClient

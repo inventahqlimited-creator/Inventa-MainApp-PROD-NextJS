@@ -234,12 +234,12 @@ export default function LoginForm() {
                 {error && <div className="error-box">{error}</div>}
                 <div className="field">
                   <label>Email address</label>
-                  <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@company.com" required autoComplete="email"/>
+                  <input type="email" value={email} onChange={e => setEmail(e.target.value)} placeholder="you@company.com" required autoComplete="username" name="email"/>
                 </div>
                 <div className="field">
                   <label>Password</label>
                   <div className="pw-wrap">
-                    <input type={showPw ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" required autoComplete="current-password"/>
+                    <input type={showPw ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)} placeholder="••••••••" required autoComplete="current-password" name="password"/>
                     <button type="button" className="pw-toggle" onClick={() => setShowPw(!showPw)}>
                       <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>
                     </button>

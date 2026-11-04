@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react'
 import { usePathname, useRouter } from 'next/navigation'
 import { createClient } from '@/lib/supabase/client'
-import { signOutIfSessionExpired } from '@/lib/auth/remember'
 
 interface Props {
   userName: string
@@ -18,7 +17,6 @@ export default function HubSidebar({ userName, userEmail }: Props) {
   const [signingOut, setSigningOut] = useState(false)
 
   useEffect(() => {
-    signOutIfSessionExpired(supabase)
     router.prefetch('/login')
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])

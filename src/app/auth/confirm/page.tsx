@@ -19,7 +19,7 @@ export default function AuthConfirmPage() {
     const finishInvite = () => {
       fetch('/auth/accept', { method: 'POST' })
         .catch(() => null)
-        .then(() => router.replace('/auth/update-password'))
+        .then(() => router.replace('/auth/update-password?invite=1'))
     }
 
     const query = new URLSearchParams(window.location.search)

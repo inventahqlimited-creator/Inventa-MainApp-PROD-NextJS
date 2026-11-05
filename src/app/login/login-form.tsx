@@ -23,6 +23,7 @@ export default function LoginForm() {
   const [password, setPassword] = useState('')
   const [loading, setLoading]   = useState(false)
   const [error, setError]       = useState('')
+  const [notice, setNotice]     = useState('')
   const [showPw, setShowPw]     = useState(false)
   const [remember, setRemember] = useState(true)
   const [view, setView]         = useState<'signin' | 'forgot' | 'forgot-sent'>('signin')
@@ -44,6 +45,8 @@ export default function LoginForm() {
       router.replace(`/auth/confirm${search}${hash}`)
       return
     }
+
+    if (q.get('welcome') === '1') setNotice('Your password is set. Sign in with your email and new password.')
 
     // Show why a link failed instead of silently showing the sign-in form
     const code = q.get('error') ?? h.get('error_code') ?? h.get('error')
@@ -175,6 +178,7 @@ export default function LoginForm() {
         .btn-signin { width: 100%; height: 48px; background: var(--teal); color: white; border: none; border-radius: 13px; font-family: var(--font-display); font-size: 15px; font-weight: 700; cursor: pointer; box-shadow: 0 4px 14px rgba(13,148,136,0.28); transition: background 150ms; }
         .btn-signin:hover { background: var(--teal-hover); }
         .btn-signin:disabled { opacity: 0.7; cursor: not-allowed; }
+        .notice-box { background: #F0FDFA; border: 1.5px solid #99F6E4; border-radius: 13px; padding: 12px 14px; font-size: 13px; color: #0F766E; margin-bottom: 18px; }
         .error-box { background: #FEF2F2; border: 1.5px solid #FECACA; border-radius: 13px; padding: 12px 14px; font-size: 13px; color: #B91C1C; margin-bottom: 18px; }
         .back-btn { background: none; border: none; cursor: pointer; font-size: 13px; color: var(--gray-400); display: flex; align-items: center; gap: 6px; padding: 0; margin-bottom: 24px; }
         .sent-icon { width: 52px; height: 52px; border-radius: 50%; background: var(--teal-surface); border: 1.5px solid var(--teal-pale); display: flex; align-items: center; justify-content: center; margin: 0 auto 16px; color: var(--teal); }
@@ -231,6 +235,7 @@ export default function LoginForm() {
                     : 'Sign in to your inventaHQ workspace.'
                   }
                 </div>
+                {notice && !error && <div className="notice-box">{notice}</div>}
                 {error && <div className="error-box">{error}</div>}
                 <div className="field">
                   <label>Email address</label>

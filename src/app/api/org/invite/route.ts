@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { inviteData } from '@/lib/auth/invite-data'
 import { isSupportEmail } from '@/lib/hub/support'
 import { createAdminClient } from '@/lib/supabase/server'
 import { requirePerm } from '@/lib/auth/access'
@@ -76,7 +77,7 @@ export async function POST(request: Request) {
 
   const { error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(email, {
     redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`,
-    data: { org_id: m.org_id, role },
+    data: await inviteData(adminClient, m.org_id, role),
   })
 
   if (inviteError) {

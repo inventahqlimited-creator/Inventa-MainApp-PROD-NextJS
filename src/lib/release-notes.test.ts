@@ -16,4 +16,10 @@ describe('release notes', () => {
     expect(recentReleases(new Date('2026-10-20')).map(r => r.id)).toContain('2026-10-13')
     expect(recentReleases(new Date('2027-03-01'))).toEqual([])
   })
+  it('hides releases from before the person joined', () => {
+    const now = new Date('2026-10-20')
+    expect(recentReleases(now, 3, '2026-10-14T01:00:00Z').map(r => r.id)).not.toContain('2026-10-13')
+    expect(recentReleases(now, 3, '2026-10-13T23:00:00Z').map(r => r.id)).toContain('2026-10-13')
+    expect(recentReleases(now, 3, null).map(r => r.id)).toContain('2026-10-13')
+  })
 })

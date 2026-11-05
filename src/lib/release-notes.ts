@@ -73,7 +73,9 @@ export const RELEASES: ReleaseNote[] = [
 ]
 
 /** Releases still worth announcing: the newest few, from the last 45 days (so a brand-new user isn't shown a long history). */
-export function recentReleases(now: Date = new Date(), max = 3): ReleaseNote[] {
+/** `joined` (the day the person joined, YYYY-MM-DD or a timestamp) hides releases from before they joined. */
+export function recentReleases(now: Date = new Date(), max = 3, joined?: string | null): ReleaseNote[] {
   const cutoff = now.getTime() - 45 * 86_400_000
-  return RELEASES.filter(r => Date.parse(r.date) >= cutoff).slice(0, max)
+  const since = joined && /^\d{4}-\d{2}-\d{2}/.test(joined) ? joined.slice(0, 10) : ''
+  return RELEASES.filter(r => Date.parse(r.date) >= cutoff && (!since || r.date >= since)).slice(0, max)
 }

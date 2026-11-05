@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
 
     const user = data?.user
     // A newly accepted invite goes on to choose a password
-    if (user && (await acceptPendingInvite(createAdminClient(), user)) > 0) return redirectTo('/auth/update-password')
+    if (user && (await acceptPendingInvite(createAdminClient(), user)) > 0) return redirectTo('/auth/update-password?invite=1')
 
     return redirectTo(next)
   }

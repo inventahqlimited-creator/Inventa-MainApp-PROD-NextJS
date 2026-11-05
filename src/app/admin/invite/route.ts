@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { inviteData } from '@/lib/auth/invite-data'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 
 export async function POST(request: Request) {
@@ -28,7 +29,7 @@ export async function POST(request: Request) {
 
   const { error } = await adminClient.auth.admin.inviteUserByEmail(email, {
     redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`,
-    data: { org_id: orgId, role },
+    data: await inviteData(adminClient, orgId, role),
   })
 
   if (error) {

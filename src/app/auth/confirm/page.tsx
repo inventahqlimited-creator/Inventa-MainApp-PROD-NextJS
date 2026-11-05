@@ -15,6 +15,13 @@ export default function AuthConfirmPage() {
       { cookies: browserSessionCookies }
     )
 
+    // An invite link has signed the person in: accept the invite, then let them choose a password
+    const finishInvite = () => {
+      fetch('/auth/accept', { method: 'POST' })
+        .catch(() => null)
+        .then(() => router.replace('/auth/update-password'))
+    }
+
     const query = new URLSearchParams(window.location.search)
 
     // Link that carries a one-time token (works in any browser): verify it, then continue
@@ -25,6 +32,7 @@ export default function AuthConfirmPage() {
         .verifyOtp({ token_hash: tokenHash, type: otpType as 'recovery' | 'invite' | 'email' | 'magiclink' })
         .then(({ error }) => {
           if (error) { router.replace('/login?error=session_failed'); return }
+          if (otpType === 'invite') { finishInvite(); return }
           router.replace(otpType === 'recovery' ? '/auth/update-password' : '/dashboard')
         })
       return
@@ -59,6 +67,8 @@ export default function AuthConfirmPage() {
         }
         if (type === 'recovery') {
           router.replace('/auth/update-password')
+        } else if (type === 'invite') {
+          finishInvite()
         } else {
           router.replace('/dashboard')
         }

@@ -4,6 +4,7 @@ import { cookies } from 'next/headers'
 import type { NextRequest } from 'next/server'
 import { redirectTo } from '@/lib/auth/redirect'
 import { sessionOnly } from '@/lib/auth/session-cookies'
+import { acceptPendingInvite } from '@/lib/auth/accept-invite'
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
@@ -36,24 +37,8 @@ export async function GET(request: NextRequest) {
     if (exchangeError) return redirectTo('/login?error=auth_callback_failed')
 
     const user = data?.user
-    if (user) {
-      const meta = user.user_metadata as { org_id?: string; role?: string } | null
-
-      if (meta?.org_id) {
-        const admin = createAdminClient()
-
-        await admin
-          .from('org_members')
-          .update({
-            user_id:       user.id,
-            invite_status: 'accepted',
-            accepted_at:   new Date().toISOString(),
-          })
-          .eq('org_id', meta.org_id)
-          .eq('email', user.email)
-          .eq('invite_status', 'pending')
-      }
-    }
+    // A newly accepted invite goes on to choose a password
+    if (user && (await acceptPendingInvite(createAdminClient(), user)) > 0) return redirectTo('/auth/update-password')
 
     return redirectTo(next)
   }

@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { inviteData } from '@/lib/auth/invite-data'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { isPlatformAdmin, isUuid, isEmail, isFixedRole } from '@/lib/auth/platform-admin'
 
@@ -27,7 +28,7 @@ export async function POST(request: Request) {
 
   const { error } = await admin.auth.admin.inviteUserByEmail(email, {
     redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`,
-    data: { org_id: orgId, role: isFixedRole(role) ? role : m.role },
+    data: await inviteData(admin, orgId, isFixedRole(role) ? role : m.role),
   })
 
   if (error) {

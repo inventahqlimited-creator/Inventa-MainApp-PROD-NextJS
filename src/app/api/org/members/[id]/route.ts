@@ -1,6 +1,7 @@
 // src/app/api/org/members/[id]/route.ts
 // One team member — read, edit (details, role, active/inactive, pending email) and remove.
 // Needs "Invite, edit and remove users" (reading needs "View users"). Only an Administrator can touch another Administrator or make one.
+import { inviteData } from '@/lib/auth/invite-data'
 import { NextResponse } from 'next/server'
 import { createAdminClient } from '@/lib/supabase/server'
 import { getAccess, can } from '@/lib/auth/access'
@@ -130,7 +131,7 @@ export async function PATCH(request: Request, { params }: Params) {
     }
     const { error: invErr } = await c.db.auth.admin.inviteUserByEmail(reinvite, {
       redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`,
-      data: { org_id: c.orgId, role: update.role ?? t.role },
+      data: await inviteData(c.db, c.orgId, update.role ?? t.role),
     })
     if (invErr) return NextResponse.json({ error: `Saved, but the invite email failed: ${invErr.message}` }, { status: 500 })
     return NextResponse.json({ success: true, invited: reinvite })

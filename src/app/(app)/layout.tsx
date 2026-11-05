@@ -54,6 +54,17 @@ export default async function AppLayout({ children }: { children: React.ReactNod
     .eq('invite_status', 'accepted')
     .single()
 
+  // When the person joined: "What's new" notes only start from then, never back-dated
+  const { data: joinRow } = await adminClient
+    .from('org_members')
+    .select('accepted_at, invited_at')
+    .eq('user_id', access.userId)
+    .eq('invite_status', 'accepted')
+    .limit(1)
+    .maybeSingle()
+  const joinInfo = joinRow as { accepted_at?: string | null; invited_at?: string | null } | null
+  const joined = joinInfo?.accepted_at ?? joinInfo?.invited_at ?? null
+
   const m = {
     role: access.role,
     org_id: access.orgId,
@@ -109,6 +120,7 @@ export default async function AppLayout({ children }: { children: React.ReactNod
           orgName={orgName}
           email={user.email ?? ''}
           avatarUrl={m.avatar_url ?? ''}
+          joined={joined}
         />
         <div className="content">
           <PermissionsProvider perms={access.perms} isAdmin={access.isAdmin}>

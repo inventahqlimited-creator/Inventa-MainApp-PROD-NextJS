@@ -14,6 +14,7 @@ export default function AppTopbar({
   orgName,
   email,
   avatarUrl = '',
+  joined = null,
   canCreateContact = true,
   canCreateProduct = true,
   canViewProducts = true,
@@ -24,6 +25,7 @@ export default function AppTopbar({
   orgName: string
   email: string
   avatarUrl?: string
+  joined?: string | null
   canCreateContact?: boolean
   canCreateProduct?: boolean
   canViewProducts?: boolean
@@ -184,7 +186,7 @@ export default function AppTopbar({
         <div className="topbar-divider" />
 
         {/* Notification bell — SECOND */}
-        <NotificationBell />
+        <NotificationBell joined={joined} />
 
         {/* Help — THIRD */}
         <button className="icon-btn" title="Help" onClick={() => window.open('https://help.inventahq.com/', '_blank', 'noopener,noreferrer')}>

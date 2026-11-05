@@ -12,9 +12,12 @@ export default function UpdatePasswordPage() {
 
   const [requirements, setRequirements] = useState('')
   const [expired, setExpired] = useState(false)
+  const [invited, setInvited] = useState(false)
 
   useEffect(() => {
-    setExpired(new URLSearchParams(window.location.search).get('expired') === '1')
+    const q = new URLSearchParams(window.location.search)
+    setExpired(q.get('expired') === '1')
+    setInvited(q.get('invite') === '1')
     fetch('/auth/password').then(r => r.ok ? r.json() : null).then(d => { if (d?.requirements) setRequirements(d.requirements) }).catch(() => {})
   }, [])
 
@@ -32,6 +35,8 @@ export default function UpdatePasswordPage() {
     })
     setLoading(false)
     if (res.ok) {
+      // A newly invited person signs in again with their new password
+      if (invited) { window.location.href = '/auth/timeout?reason=welcome'; return }
       router.replace('/dashboard')
     } else {
       const d = await res.json().catch(() => ({}))
@@ -47,7 +52,7 @@ export default function UpdatePasswordPage() {
             Set your password
           </h1>
           <p className="mt-1 text-sm text-slate-400">
-            {expired ? 'Your password has expired. Choose a new one to continue.' : 'Choose a password to secure your account.'}
+            {expired ? 'Your password has expired. Choose a new one to continue.' : invited ? 'Welcome! Choose a password for your account. You’ll then sign in with it.' : 'Choose a password to secure your account.'}
           </p>
         </div>
 

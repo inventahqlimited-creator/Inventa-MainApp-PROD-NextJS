@@ -13,12 +13,12 @@ const KEY = 'inv_notif_read'
 const localDate = () => { const d = new Date(); return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}` }
 const loadRead = (): Set<string> => { try { return new Set(JSON.parse(localStorage.getItem(KEY) ?? '[]')) } catch { return new Set() } }
 
-export default function NotificationBell() {
+export default function NotificationBell({ joined = null }: { joined?: string | null }) {
   const router = useRouter()
   const [alerts, setAlerts] = useState<Alert[]>([])
   const [read, setRead] = useState<Set<string>>(new Set())
   const [open, setOpen] = useState(false)
-  const [releases] = useState<ReleaseNote[]>(() => recentReleases())
+  const [releases] = useState<ReleaseNote[]>(() => recentReleases(new Date(), 3, joined))
   const [showRelease, setShowRelease] = useState<ReleaseNote | null>(null)
   const ref = useRef<HTMLDivElement>(null)
 

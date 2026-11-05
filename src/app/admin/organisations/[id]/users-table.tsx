@@ -34,6 +34,8 @@ export default function UsersTable({ members, orgId, limit }: { members: MemberR
   const [editing, setEditing] = useState('')
   const [draft, setDraft] = useState({ first_name: '', last_name: '', role: 'staff' })
   const [saving, setSaving] = useState(false)
+  const [confirmRemove, setConfirmRemove] = useState('')
+  const [removing, setRemoving] = useState('')
 
   const used = members.filter(m => m.invite_status === 'accepted' || m.invite_status === 'pending').length
   const full = limit !== null && used >= limit
@@ -48,6 +50,14 @@ export default function UsersTable({ members, orgId, limit }: { members: MemberR
     setResending('')
     if (res.ok) { setResent(m.id); setTimeout(() => setResent(''), 3000) }
     else setError((await res.json().catch(() => ({}))).error || 'Failed to resend invite.')
+  }
+
+  async function handleRemove(m: MemberRow) {
+    setRemoving(m.id); setError('')
+    const res = await fetch(`/api/admin/orgs/${orgId}/members/${m.id}`, { method: 'DELETE' })
+    setRemoving(''); setConfirmRemove('')
+    if (!res.ok) { setError((await res.json().catch(() => ({}))).error || 'Could not remove this user.'); return }
+    router.refresh()
   }
 
   function startEdit(m: MemberRow) {
@@ -142,7 +152,18 @@ export default function UsersTable({ members, orgId, limit }: { members: MemberR
                               {resending === m.id ? 'Sending…' : resent === m.id ? '✓ Sent' : 'Resend invite'}
                             </button>
                           )}
-                          <button onClick={() => startEdit(m)} style={small(false)}>Edit</button>
+                          {confirmRemove === m.id ? (
+                            <>
+                              <span style={{ fontSize: '12px', color: '#FCA5A5', alignSelf: 'center' }}>Remove this user?</span>
+                              <button onClick={() => setConfirmRemove('')} style={small(false)}>Cancel</button>
+                              <button onClick={() => handleRemove(m)} disabled={removing === m.id} style={{ ...small(true, removing === m.id), background: '#DC2626' }}>{removing === m.id ? 'Removing…' : 'Yes, remove'}</button>
+                            </>
+                          ) : (
+                            <>
+                              <button onClick={() => startEdit(m)} style={small(false)}>Edit</button>
+                              <button onClick={() => { setError(''); setConfirmRemove(m.id) }} style={{ ...small(false), color: '#FCA5A5' }}>Remove</button>
+                            </>
+                          )}
                         </div>
                       )}
                     </td>

@@ -11,6 +11,7 @@ import { clientIp } from '@/lib/rate-limit'
 import { isIpAllowed, loadSecurity } from '@/lib/auth/security-settings'
 import { isSupportEmail } from '@/lib/hub/support'
 import { leaseValid } from '@/lib/hub/support-lease'
+import { acceptPendingInvite } from '@/lib/auth/accept-invite'
 import { homePath, resolvePermissions, type PermKey, type PermissionSet } from '@/lib/permissions'
 
 export type Access = {
@@ -32,13 +33,16 @@ export async function getAccessUnchecked(): Promise<Access | null> {
   const db = createAdminClient()
   // Inventa support sessions only work while a tab is open and renewing the lease
   if (isSupportEmail(user.email) && !(await leaseValid(db, user.id))) return null
-  const { data: m } = await db
+  const lookup = () => db
     .from('org_members')
     .select('org_id, role, custom_role_id, first_name, last_name')
     .eq('user_id', user.id)
     .eq('invite_status', 'accepted')
     .limit(1)
     .maybeSingle()
+  let { data: m } = await lookup()
+  // Signed in through an invite link but not yet marked accepted (for example an older invite): accept it now
+  if (!m && (await acceptPendingInvite(db, user)) > 0) ({ data: m } = await lookup())
   if (!m) return null
   const mem = m as { org_id: string; role: string; custom_role_id: string | null; first_name: string | null; last_name: string | null }
 

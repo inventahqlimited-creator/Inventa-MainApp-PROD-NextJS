@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { sendInvite } from '@/lib/auth/send-invite'
 import { inviteData } from '@/lib/auth/invite-data'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { isPlatformAdmin, isUuid, isEmail, isFixedRole } from '@/lib/auth/platform-admin'
@@ -26,14 +27,14 @@ export async function POST(request: Request) {
   if (!m) return NextResponse.json({ error: 'No such member' }, { status: 404 })
   if (m.invite_status === 'accepted') return NextResponse.json({ error: 'This user has already accepted' }, { status: 400 })
 
-  const { error } = await admin.auth.admin.inviteUserByEmail(email, {
+  const sent = await sendInvite(admin, email, {
     redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`,
     data: await inviteData(admin, orgId, isFixedRole(role) ? role : m.role),
   })
 
-  if (error) {
-    console.error('admin resend-invite failed', error.message)
-    return NextResponse.json({ error: 'Could not send the invitation' }, { status: 500 })
+  if (!sent.ok) {
+    console.error('admin resend-invite failed', sent.error)
+    return NextResponse.json({ error: sent.error }, { status: sent.status })
   }
   return NextResponse.json({ success: true })
 }

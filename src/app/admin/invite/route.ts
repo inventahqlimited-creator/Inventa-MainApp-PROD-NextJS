@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { sendInvite } from '@/lib/auth/send-invite'
 import { inviteData } from '@/lib/auth/invite-data'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 
@@ -27,13 +28,13 @@ export async function POST(request: Request) {
   // Use admin client to send invite — bypasses RLS
   const adminClient = createAdminClient()
 
-  const { error } = await adminClient.auth.admin.inviteUserByEmail(email, {
+  const sent = await sendInvite(adminClient, email, {
     redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`,
     data: await inviteData(adminClient, orgId, role),
   })
 
-  if (error) {
-    return NextResponse.json({ error: error.message }, { status: 500 })
+  if (!sent.ok) {
+    return NextResponse.json({ error: sent.error }, { status: sent.status })
   }
 
   return NextResponse.json({ success: true })

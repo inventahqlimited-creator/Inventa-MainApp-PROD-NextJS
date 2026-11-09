@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server'
+import { sendInvite } from '@/lib/auth/send-invite'
 import { inviteData } from '@/lib/auth/invite-data'
 import { isSupportEmail } from '@/lib/hub/support'
 import { createAdminClient } from '@/lib/supabase/server'
@@ -75,14 +76,14 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: insertError.message }, { status: 500 })
   }
 
-  const { error: inviteError } = await adminClient.auth.admin.inviteUserByEmail(email, {
+  const sent = await sendInvite(adminClient, email, {
     redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`,
     data: await inviteData(adminClient, m.org_id, role),
   })
 
-  if (inviteError) {
+  if (!sent.ok) {
     await adminClient.from('org_members').delete().eq('org_id', m.org_id).eq('email', email)
-    return NextResponse.json({ error: inviteError.message }, { status: 500 })
+    return NextResponse.json({ error: sent.error }, { status: sent.status })
   }
 
   return NextResponse.json({ success: true })

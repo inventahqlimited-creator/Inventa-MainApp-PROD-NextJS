@@ -43,3 +43,47 @@ export async function PATCH(request: Request, { params }: { params: Promise<{ id
   await logHub(g.db, { orgId: id, actorId: g.user.id, actorEmail: g.user.email, action: 'user.updated', summary: `Edited user ${who} (${parts.join('; ')})`, details: { member: mid, changes: Object.fromEntries(changed) } })
   return NextResponse.json({ success: true })
 }
+
+/** Removes a person from an organisation. Someone who never signed in has their unused login deleted, so the address can be invited again;
+ *  someone who has used the app is only blocked from signing in (their history stays). */
+export async function DELETE(_request: Request, { params }: { params: Promise<{ id: string; mid: string }> }) {
+  const g = await requireHub()
+  if ('res' in g) return g.res
+  const { id, mid } = await params
+  if (!isUuid(id) || !isUuid(mid)) return NextResponse.json({ error: 'Bad id' }, { status: 400 })
+
+  const { data: t } = await g.db.from('org_members').select('id, role, email, user_id, invite_status').eq('id', mid).eq('org_id', id).maybeSingle()
+  if (!t) return NextResponse.json({ error: 'User not found' }, { status: 404 })
+  const m = t as { role: string; email: string | null; user_id: string | null; invite_status: string }
+
+  // never leave an organisation without an administrator
+  if (m.role === 'admin' && m.invite_status === 'accepted') {
+    const { count } = await g.db.from('org_members').select('id', { count: 'exact', head: true }).eq('org_id', id).eq('role', 'admin').eq('invite_status', 'accepted')
+    if ((count ?? 0) <= 1) return NextResponse.json({ error: 'This is the only administrator — make someone else an administrator before removing them.' }, { status: 400 })
+  }
+
+  const { error } = await g.db.from('org_members').delete().eq('id', mid).eq('org_id', id)
+  if (error) return NextResponse.json({ error: 'Could not remove this user. Please try again.' }, { status: 500 })
+
+  if (m.user_id) {
+    // does this person belong to any other organisation?
+    const { count: others } = await g.db.from('org_members').select('id', { count: 'exact', head: true }).eq('user_id', m.user_id)
+    if ((others ?? 0) === 0) {
+      const { data: au } = await g.db.auth.admin.getUserById(m.user_id)
+      const used = Boolean((au?.user as { last_sign_in_at?: string | null } | undefined)?.last_sign_in_at)
+      if (used) await g.db.auth.admin.updateUserById(m.user_id, { ban_duration: '876000h' })
+      else await g.db.auth.admin.deleteUser(m.user_id)
+    }
+  } else if (m.email) {
+    // invited but never accepted: delete the unused login created for the invite so the address can be invited again
+    const { data: list } = await g.db.auth.admin.listUsers({ perPage: 200 })
+    const un = (list?.users ?? []).find((u: { email?: string | null; last_sign_in_at?: string | null }) => (u.email ?? '').toLowerCase() === m.email!.toLowerCase() && !u.last_sign_in_at)
+    if (un) {
+      const { count: elsewhere } = await g.db.from('org_members').select('id', { count: 'exact', head: true }).eq('email', m.email)
+      if ((elsewhere ?? 0) === 0) await g.db.auth.admin.deleteUser((un as { id: string }).id)
+    }
+  }
+
+  await logHub(g.db, { orgId: id, actorId: g.user.id, actorEmail: g.user.email, action: 'user.removed', summary: `Removed user ${m.email ?? 'user'} (${m.role})`, details: { member: mid } })
+  return NextResponse.json({ success: true })
+}

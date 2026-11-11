@@ -169,15 +169,15 @@ export default function AuditLog({ allowed, disabled = false }: { allowed: boole
       <div className="table-container">
         {error && <div style={{ margin: 16, padding: '10px 14px', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 10, fontSize: 13, color: '#B91C1C' }}>{error}</div>}
         <div className="table-wrap" ref={scrollRef}>
-        <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed' }}>
+        <table style={{ width: '100%', borderCollapse: 'collapse', tableLayout: 'fixed', minWidth: 1100 }}>
           <thead>
             <tr>
               <th style={{ width: 150 }}>TIMESTAMP</th>
               <th style={{ width: 120 }}>CATEGORY</th>
               <th style={{ width: 180 }}>ACTION</th>
-              <th style={{ width: 170 }}>REFERENCE</th>
+              <th style={{ width: 230 }}>REFERENCE</th>
               <th>DETAIL</th>
-              <th style={{ width: 160 }}>USER</th>
+              <th style={{ width: 190 }}>USER</th>
             </tr>
           </thead>
           <tbody>
@@ -197,12 +197,12 @@ export default function AuditLog({ allowed, disabled = false }: { allowed: boole
                   <td style={{ padding: '10px 14px' }}>
                     <span style={{ background: bg, color, fontSize: 10.5, fontWeight: 700, padding: '2px 8px', borderRadius: 20, whiteSpace: 'nowrap' }}>{e.category}</span>
                   </td>
-                  <td style={{ padding: '10px 14px', fontSize: 12.5, color: 'var(--gray-400)', overflowWrap: 'anywhere' }}>{e.action}</td>
-                  <td style={{ padding: '10px 14px', fontSize: 12.5, fontFamily: 'var(--font-display)', fontWeight: 700, color: 'var(--teal)', overflowWrap: 'anywhere' }}>
+                  <td style={{ padding: '10px 14px', fontSize: 12.5, color: 'var(--gray-400)', overflowWrap: 'anywhere', whiteSpace: 'normal' }}>{e.action}</td>
+                  <td style={{ padding: '10px 14px', fontSize: 12.5, fontFamily: 'var(--font-display)', fontWeight: 700, color: 'var(--teal)', overflowWrap: 'anywhere', whiteSpace: 'normal' }}>
                     {href ? <a href={href} onClick={ev => { ev.preventDefault(); router.push(href) }} style={{ color: 'inherit', textDecoration: 'none' }}>{e.ref}</a> : e.ref}
                   </td>
-                  <td style={{ padding: '10px 14px', fontSize: 12.5, color: 'var(--gray-400)', lineHeight: 1.5, overflowWrap: 'anywhere' }}>{e.detail}</td>
-                  <td style={{ padding: '10px 14px', fontSize: 12, fontWeight: 600, color: 'var(--slate)', overflowWrap: 'anywhere' }}>{e.user_name ?? '—'}</td>
+                  <td style={{ padding: '10px 14px', fontSize: 12.5, color: 'var(--gray-400)', lineHeight: 1.5, overflowWrap: 'anywhere', whiteSpace: 'normal' }}>{e.detail}</td>
+                  <td style={{ padding: '10px 14px', fontSize: 12, fontWeight: 600, color: 'var(--slate)', overflowWrap: 'anywhere', whiteSpace: 'normal' }}>{e.user_name ?? '—'}</td>
                 </tr>
               )
             })}

@@ -13,7 +13,7 @@ export async function acceptPendingInvite(db: Db, user: Pick<User, 'id' | 'email
     .from('org_members')
     .update({ user_id: user.id, invite_status: 'accepted', accepted_at: new Date().toISOString() })
     .eq('org_id', orgId)
-    .eq('email', user.email)
+    .ilike('email', user.email.replace(/[\\%_]/g, c => `\\${c}`))
     .eq('invite_status', 'pending')
     .select('id')
   if (error) return 0

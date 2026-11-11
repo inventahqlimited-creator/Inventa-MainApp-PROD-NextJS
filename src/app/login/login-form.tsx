@@ -83,6 +83,9 @@ export default function LoginForm() {
       } else {
         const appAccess = list.find(m => m.invite_status === 'accepted')
         if (!appAccess) {
+          // Signed in through an invite but not yet marked accepted (the invite row has no user attached yet): accept it now
+          const acc = await fetch('/auth/accept', { method: 'POST' }).then(r => r.json()).catch(() => null) as { accepted?: number } | null
+          if (acc && (acc.accepted ?? 0) > 0) { router.refresh(); router.push('/'); return }
           await supabase.auth.signOut()
           const pending = list.find(m => m.invite_status === 'pending')
           if (pending) {

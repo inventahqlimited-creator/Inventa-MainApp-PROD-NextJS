@@ -17,8 +17,10 @@ export default function AuthConfirmPage() {
 
     // An invite link has signed the person in: accept the invite, then let them choose a password
     const finishInvite = () => {
-      fetch('/auth/accept', { method: 'POST' })
-        .catch(() => null)
+      const accept = () => fetch('/auth/accept', { method: 'POST' }).then(r => r.json()).catch(() => null) as Promise<{ accepted?: number } | null>
+      // try twice: the sign-in cookie can take a moment to be readable by the server
+      accept()
+        .then(r => ((r?.accepted ?? 0) > 0 ? r : new Promise<typeof r>(res => setTimeout(() => accept().then(res), 700))))
         .then(() => router.replace('/auth/update-password?invite=1'))
     }
 

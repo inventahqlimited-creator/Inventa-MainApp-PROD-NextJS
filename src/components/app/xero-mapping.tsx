@@ -3,6 +3,7 @@
 // Settings → Integrations → Xero → "Accounts and tax": the default Xero accounts and which Xero tax
 // rate each Inventa tax rate posts as. Suggestions are filled in; nothing is saved until the admin clicks Save.
 import { useCallback, useEffect, useMemo, useState } from 'react'
+import { toast } from '@/components/app/toast'
 import type { AccountLists, InventaTax, TaxMap, XeroSettings, XeroTaxRate } from '@/lib/xero/mapping'
 type XeroAccount = AccountLists['sales'][number]
 
@@ -17,7 +18,7 @@ type Payload = {
 
 type Draft = { sales: string; purchases: string; inventory: string; adjustment: string; tax: TaxMap }
 
-// Kept for the rest of the session, so reopening Xero settings is instant. "Refresh from Xero" fetches fresh lists.
+// Kept for the rest of the session, so reopening Xero settings is instant. "Import from Xero" fetches fresh lists.
 let cached: { at: number; payload: Payload } | null = null
 const FRESH_MS = 5 * 60_000
 /** Call when the Xero organisation changes (connect, disconnect) so old lists are never shown. */
@@ -55,6 +56,7 @@ export default function XeroMapping() {
   const [msg, setMsg] = useState<{ kind: 'ok' | 'err'; text: string } | null>(null)
   const [busy, setBusy] = useState(false)
   const [saved, setSaved] = useState<string>('')
+  const [importing, setImporting] = useState(false)
 
   const load = useCallback(async (force = false) => {
     const apply = (p: Payload) => {
@@ -77,6 +79,25 @@ export default function XeroMapping() {
   }, [])
 
   useEffect(() => { void load() }, [load])
+
+  async function importFromXero() {
+    setImporting(true)
+    try {
+      const res = await fetch('/api/integrations/xero/mapping?refresh=1', { cache: 'no-store' })
+      const body = await res.json().catch(() => ({}))
+      if (!res.ok) { toast.error(body.error ?? 'Could not import from Xero. Please try again.'); return }
+      const p = body as Payload
+      cached = { at: Date.now(), payload: p }
+      const accounts = new Set(Object.values(p.accounts).flat().map(a => a.code)).size
+      setData(p)
+      setDraft(d => (d && JSON.stringify(d) !== saved ? d : draftFrom(p, false)))
+      toast.success(`Imported from Xero: ${accounts} accounts and ${p.taxRates.length} tax rates.`)
+    } catch {
+      toast.error('Network error. Please try again.')
+    } finally {
+      setImporting(false)
+    }
+  }
 
   const dirty = useMemo(() => draft !== null && JSON.stringify(draft) !== saved, [draft, saved])
   const notSavedYet = data !== null && !data.settings.sales_account_code
@@ -221,8 +242,8 @@ export default function XeroMapping() {
           <button className="btn btn-primary" style={{ height: 38 }} disabled={busy || !dirty || !draft.sales || !draft.purchases} onClick={() => void save()}>
             {busy ? 'Saving…' : 'Save'}
           </button>
-          <button className="btn btn-outline" style={{ height: 38 }} disabled={busy} onClick={() => { setDraft(draftFrom(data, true)); setMsg(null) }}>Use suggestions</button>
-          <button className="btn btn-outline" style={{ height: 38 }} disabled={busy} onClick={() => void load(true)}>Refresh from Xero</button>
+          <button className="btn btn-outline" style={{ height: 38 }} disabled={busy || importing} title="Fill the dropdowns with the accounts and tax rates we'd pick. Nothing is saved until you click Save." onClick={() => { setDraft(draftFrom(data, true)); setMsg(null); toast.success('Suggestions filled in. Click Save to keep them.') }}>Use suggestions</button>
+          <button className="btn btn-outline" style={{ height: 38 }} disabled={busy || importing} onClick={() => void importFromXero()}>{importing ? 'Importing…' : 'Import from Xero'}</button>
         </div>
       ) : (
         <div style={{ fontSize: 12.5, color: 'var(--gray-400)', marginTop: 16 }}>Only admins can change the Xero mapping.</div>

@@ -25,6 +25,7 @@ type Contact = {
   currency: string | null
   tier: string | null
   price_level_id: string | null
+  default_location?: string | null
   terms: string | null
   tax_rate: string | null
   balance_owing: number | null
@@ -60,6 +61,7 @@ type ModalForm = {
   currency: string
   tier: string
   price_level_id: string
+  default_location: string
   terms: string
   tax_rate: string
   credit_limit: string
@@ -80,7 +82,7 @@ type ModalForm = {
 
 const EMPTY_FORM: ModalForm = {
   name: '', type: 'supplier', email: '', phone: '', website: '', tax_number: '',
-  currency: 'NZD', tier: '', price_level_id: '', terms: 'Net 30', tax_rate: '',
+  currency: 'NZD', tier: '', price_level_id: '', default_location: '', terms: 'Net 30', tax_rate: '',
   credit_limit: '0', disc_type: 'percent', disc_value: '0',
   bill_street: '', bill_city: '', bill_postcode: '', bill_country: 'New Zealand',
   ship_name: '', ship_street: '', ship_city: '', ship_postcode: '', ship_country: 'New Zealand',
@@ -284,7 +286,7 @@ export default function ContactsTable({
   }
 
   function openAdd() {
-    setForm({ ...EMPTY_FORM, currency: defaultCurrency, tier: '', price_level_id: defaultTier, terms: defaults?.payment_terms || 'Net 30', tax_rate: savedTax ? `${savedTax.rate}% — ${savedTax.name}` : (taxRateOptions.length > 1 ? taxRateOptions[1].value : '') })
+    setForm({ ...EMPTY_FORM, currency: defaultCurrency, tier: '', price_level_id: defaultTier, default_location: locations.some(l => l.id === defaults?.location_id) ? defaults!.location_id : '', terms: defaults?.payment_terms || 'Net 30', tax_rate: savedTax ? `${savedTax.rate}% — ${savedTax.name}` : (taxRateOptions.length > 1 ? taxRateOptions[1].value : '') })
     setActiveContact(null)
     setModal('add')
     setModalTab('details')
@@ -299,7 +301,7 @@ export default function ContactsTable({
       name: c.name, type: c.type,
       email: c.email ?? '', phone: c.phone ?? '', website: c.website ?? '',
       tax_number: c.tax_number ?? '', currency: c.currency ?? 'NZD',
-      tier: '', price_level_id: c.price_level_id ?? '', terms: c.terms ?? 'Net 30', tax_rate: c.tax_rate ?? '',
+      tier: '', price_level_id: c.price_level_id ?? '', default_location: locations.find(l => l.id === c.default_location || l.name === c.default_location)?.id ?? '', terms: c.terms ?? 'Net 30', tax_rate: c.tax_rate ?? '',
       credit_limit: String(c.credit_limit ?? 0), disc_type: c.disc_type ?? 'percent',
       disc_value: String(c.disc_value ?? 0),
       bill_street: c.bill_street ?? '', bill_city: c.bill_city ?? '',
@@ -394,6 +396,7 @@ export default function ContactsTable({
       website: form.website || null, tax_number: form.tax_number || null,
       currency: form.currency,
       price_level_id: form.price_level_id || null,
+      default_location: form.default_location || null,
       tier: selectedPriceLevel?.name ?? null,
       terms: form.terms,
       tax_rate: form.tax_rate || null,
@@ -961,6 +964,13 @@ export default function ContactsTable({
                         <MInput value={priceLevels.find(p => p.id === activeContact?.price_level_id)?.name ?? activeContact?.tier ?? '—'} disabled />
                       ) : (
                         <MSelect value={form.price_level_id} onChange={v => set('price_level_id', v)} options={[{ value: '', label: '— None —' }, ...tierOptions]} />
+                      )}
+                    </Field>
+                    <Field label="Default Location">
+                      {modal === 'view' ? (
+                        <MInput value={locations.find(l => l.id === activeContact?.default_location || l.name === activeContact?.default_location)?.name ?? '—'} disabled />
+                      ) : (
+                        <MSelect value={form.default_location} onChange={v => set('default_location', v)} options={[{ value: '', label: '— None —' }, ...locations.map(l => ({ value: l.id, label: l.name }))]} />
                       )}
                     </Field>
                     <Field label="Payment Terms">

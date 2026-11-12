@@ -739,16 +739,17 @@ function InlineEditable({ value, onChange, style }: { value: string; onChange: (
   )
 }
 
-function ContactsTab({ taxRates, currencies, locations, priceLevels, orgId, showToast }: {
+function ContactsTab({ taxRates, currencies, baseCurrency, locations, priceLevels, orgId, showToast }: {
   taxRates: TaxRate[]
   currencies: Currency[]
+  baseCurrency: string
   locations: Location[]
   priceLevels: PriceLevel[]
   orgId: string
   showToast: (type: 'success' | 'error', msg: string) => void
 }) {
   const [defTaxRate, setDefTaxRate] = useState('')
-  const [defCurrency, setDefCurrency] = useState('')
+  const [defCurrency, setDefCurrency] = useState(baseCurrency)
   const [defLocation, setDefLocation] = useState('')
   const [defPaymentTerms, setDefPaymentTerms] = useState('Net 30')
   const termNames = useTermNames()
@@ -762,8 +763,8 @@ function ContactsTab({ taxRates, currencies, locations, priceLevels, orgId, show
     ...taxRates.map(t => ({ value: t.id, label: `${t.code} — ${t.name} (${t.rate}%)` }))
   ]
   const currencyOptions = [
-    { value: '', label: '— None —' },
-    ...currencies.map(c => ({ value: c.id, label: `${c.code} — ${c.name}` }))
+    { value: baseCurrency, label: `${baseCurrency} — base currency` },
+    ...currencies.filter(c => c.code !== baseCurrency).map(c => ({ value: c.code, label: `${c.code} — ${c.name}` }))
   ]
   const locationOptions = [
     { value: '', label: '— None —' },
@@ -2055,6 +2056,7 @@ export default function SettingsClient({
           <ContactsTab
             taxRates={taxRates}
             currencies={currencies}
+            baseCurrency={baseCurrency}
             locations={locations}
             priceLevels={priceLevels}
             orgId={orgId}

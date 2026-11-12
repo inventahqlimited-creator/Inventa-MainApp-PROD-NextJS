@@ -1,4 +1,5 @@
 'use client'
+import { normalizeContactDefaults } from '@/lib/contact-defaults'
 
 import { templateCsv } from '@/lib/kits/import'
 import { useTermNames } from '@/components/app/payment-terms-provider'
@@ -739,22 +740,24 @@ function InlineEditable({ value, onChange, style }: { value: string; onChange: (
   )
 }
 
-function ContactsTab({ taxRates, currencies, locations, priceLevels, orgId, showToast }: {
+function ContactsTab({ taxRates, currencies, baseCurrency, locations, priceLevels, saved, showToast }: {
   taxRates: TaxRate[]
   currencies: Currency[]
+  baseCurrency: string
   locations: Location[]
   priceLevels: PriceLevel[]
-  orgId: string
+  saved: unknown
   showToast: (type: 'success' | 'error', msg: string) => void
 }) {
-  const [defTaxRate, setDefTaxRate] = useState('')
-  const [defCurrency, setDefCurrency] = useState('')
-  const [defLocation, setDefLocation] = useState('')
-  const [defPaymentTerms, setDefPaymentTerms] = useState('Net 30')
+  const init = normalizeContactDefaults(saved)
+  const [defTaxRate, setDefTaxRate] = useState(init.tax_rate_id)
+  const [defCurrency, setDefCurrency] = useState(init.currency || baseCurrency)
+  const [defLocation, setDefLocation] = useState(init.location_id)
+  const [defPaymentTerms, setDefPaymentTerms] = useState(init.payment_terms || 'Net 30')
   const termNames = useTermNames()
   const canC = useCan('manage_contact_settings'), canS = useCan('manage_sales_settings'), canP = useCan('manage_purchase_settings')
   const canManageTerms = canC || canS || canP
-  const [defPriceTier, setDefPriceTier] = useState('')
+  const [defPriceTier, setDefPriceTier] = useState(init.price_level_id)
   const [saving, setSaving] = useState(false)
 
   const taxOptions = [
@@ -762,36 +765,42 @@ function ContactsTab({ taxRates, currencies, locations, priceLevels, orgId, show
     ...taxRates.map(t => ({ value: t.id, label: `${t.code} — ${t.name} (${t.rate}%)` }))
   ]
   const currencyOptions = [
-    { value: '', label: '— None —' },
-    ...currencies.map(c => ({ value: c.id, label: `${c.code} — ${c.name}` }))
-  ]
-  const locationOptions = [
-    { value: '', label: '— None —' },
-    ...locations.filter(l => l.active).map(l => ({ value: l.id, label: l.name }))
+    { value: baseCurrency, label: `${baseCurrency} — base currency` },
+    ...currencies.filter(c => c.code !== baseCurrency).map(c => ({ value: c.code, label: `${c.code} — ${c.name}` }))
   ]
 
   async function save() {
     setSaving(true)
-    await new Promise(r => setTimeout(r, 300))
-    setSaving(false)
-    showToast('success', 'Contact defaults saved')
+    try {
+      const res = await fetch('/api/org/contact-defaults', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contact_defaults: { tax_rate_id: defTaxRate, currency: defCurrency, payment_terms: defPaymentTerms, price_level_id: defPriceTier, location_id: defLocation } }),
+      })
+      const d = await res.json().catch(() => ({}))
+      if (!res.ok) { showToast('error', d.error ?? 'Could not save the defaults'); return }
+      showToast('success', 'Contact defaults saved')
+    } catch {
+      showToast('error', 'Network error. Please try again.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
     <>
       <Card title="Default Contact Settings" subtitle="Pre-filled values when adding a new contact" action={<SaveBtn onClick={save} saving={saving} />}>
-        <div style={{ padding: '16px 20px', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 14 }}>
+        <div style={{ padding: '16px 20px', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
           <Field label="Default Tax Rate">
             <Select value={defTaxRate} onChange={setDefTaxRate} options={taxOptions} />
           </Field>
           <Field label="Default Currency">
             <Select value={defCurrency} onChange={setDefCurrency} options={currencyOptions} />
           </Field>
-          <Field label="Default Location">
-            <Select value={defLocation} onChange={setDefLocation} options={locationOptions} />
-          </Field>
           <Field label="Default Payment Terms">
             <Select value={defPaymentTerms} onChange={setDefPaymentTerms} options={termNames.map(t => ({ value: t, label: t }))} />
+          </Field>
+          <Field label="Default Location">
+            <Select value={defLocation} onChange={setDefLocation} options={[{ value: '', label: '— None —' }, ...locations.filter(l => l.active).map(l => ({ value: l.id, label: l.name }))]} />
           </Field>
           <Field label="Default Price Tier">
             <Select value={defPriceTier} onChange={setDefPriceTier} options={[{ value: '', label: '— None —' }, ...priceLevels.map(pl => ({ value: pl.id, label: pl.name }))]} />
@@ -2055,9 +2064,10 @@ export default function SettingsClient({
           <ContactsTab
             taxRates={taxRates}
             currencies={currencies}
+            baseCurrency={baseCurrency}
             locations={locations}
             priceLevels={priceLevels}
-            orgId={orgId}
+            saved={org.contact_defaults}
             showToast={showToast}
           />
         )}

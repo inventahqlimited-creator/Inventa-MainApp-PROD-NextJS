@@ -22,11 +22,7 @@ export async function GET() {
   if (!data || data.length === 0) {
     const defaults = [
       { name: 'Each', abbr: 'ea', sort_order: 1 },
-      { name: 'Box', abbr: 'w', sort_order: 2 },
-      { name: 'Carton', abbr: 'ctn', sort_order: 3 },
-      { name: 'Pallet', abbr: 'plt', sort_order: 4 },
-      { name: 'kg', abbr: 'kg', sort_order: 5 },
-      { name: 'Litre', abbr: 'L', sort_order: 6 },
+      { name: 'Box', abbr: 'box', sort_order: 2 },
     ].map(d => ({ ...d, org_id: auth.orgId }))
     const { data: seeded } = await auth.adminClient.from('uoms').insert(defaults).select()
     data = seeded

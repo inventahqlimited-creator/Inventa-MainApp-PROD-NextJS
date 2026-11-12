@@ -16,18 +16,8 @@ export async function GET() {
   const auth = await getAuth()
   if (!auth) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  let { data } = await auth.adminClient.from('price_levels').select('*').eq('org_id', auth.orgId).order('created_at')
-
-  // Seed defaults if none exist
-  if (!data || data.length === 0) {
-    const defaults = [
-      { name: 'Retail', is_default: true, org_id: auth.orgId },
-      { name: 'Wholesale', is_default: false, org_id: auth.orgId },
-      { name: 'VIP', is_default: false, org_id: auth.orgId },
-    ]
-    const { data: seeded } = await auth.adminClient.from('price_levels').insert(defaults).select()
-    data = seeded
-  }
+  // New organisations start with no price levels (products use the standard price); the admin adds their own.
+  const { data } = await auth.adminClient.from('price_levels').select('*').eq('org_id', auth.orgId).order('created_at')
 
   return NextResponse.json(data ?? [])
 }

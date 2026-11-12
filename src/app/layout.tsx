@@ -1,18 +1,17 @@
 import type { Metadata } from 'next'
-import localFont from 'next/font/local'
+import { Plus_Jakarta_Sans, Inter } from 'next/font/google'
 import './globals.css'
 
-// Fonts are bundled in the app (src/app/fonts) so builds never depend on Google Fonts being reachable.
-const plusJakartaSans = localFont({
-  src: './fonts/plus-jakarta-sans-latin-wght-normal.woff2',
-  weight: '200 800',
+const plusJakartaSans = Plus_Jakarta_Sans({
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700', '800'],
   variable: '--font-display',
   display: 'swap',
 })
 
-const inter = localFont({
-  src: './fonts/inter-latin-wght-normal.woff2',
-  weight: '100 900',
+const inter = Inter({
+  subsets: ['latin'],
+  weight: ['400', '500', '600', '700'],
   variable: '--font-ui',
   display: 'swap',
 })

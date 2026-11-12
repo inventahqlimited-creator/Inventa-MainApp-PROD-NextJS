@@ -114,12 +114,12 @@ export default function XeroPreferences() {
               </div>
               {true && (
                 <div>
-                  <label style={label}>{draft.inventory_tracked ? 'Post stock adjustment bills and credit notes as' : 'Post stock adjustment journals as'}</label>
+                  <label style={label}>Send stock adjustments to Xero as</label>
                   <select style={selectStyle} disabled={!can} value={draft.journal_status} onChange={e => set('journal_status', e.target.value as XeroPrefs['journal_status'])}>
                     <option value="DRAFT">Draft (review in Xero first)</option>
                     <option value="POSTED">{draft.inventory_tracked ? 'Approved' : 'Posted'}</option>
                   </select>
-                  <div style={hint}>{draft.inventory_tracked ? 'Choose the stock adjustment account under Accounts and tax. Xero only moves stock when the bill or credit note is approved.' : 'Choose the inventory and stock adjustment accounts under Accounts and tax.'}</div>
+                  <div style={hint}>{draft.journal_status === 'DRAFT' ? 'Waits in Xero until you approve it.' : 'Goes live in Xero straight away.'}</div>
                 </div>
               )}
             </div>

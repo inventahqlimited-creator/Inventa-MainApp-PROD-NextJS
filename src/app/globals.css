@@ -53,7 +53,9 @@ body {
 }
 
 /* Sidebar */
-.sidebar{width:var(--nav-width);background:var(--slate);display:flex;flex-direction:column;flex-shrink:0;height:100vh;z-index:10;}
+.sidebar{width:var(--nav-width);background:var(--slate);display:flex;flex-direction:column;flex-shrink:0;height:100vh;height:100dvh;z-index:10;}
+.sidebar-nav > *{flex-shrink:0;}
+.sidebar-nav > div:empty{flex-shrink:1;}
 .sidebar-logo{padding:26px 20px 22px;border-bottom:1px solid rgba(255,255,255,0.07);flex-shrink:0;}
 .sidebar-nav{flex:1;padding:10px 8px;overflow-y:auto;overflow-x:hidden;display:flex;flex-direction:column;}
 .nav-section-label{font-size:10px;font-weight:700;letter-spacing:0.13em;text-transform:uppercase;color:rgba(255,255,255,0.22);padding:14px 12px 5px;font-family:var(--font-ui);}

@@ -165,7 +165,7 @@ export default function AppSidebar({ perms = fullSet(), xeroEnabled = false, aud
         </svg>
       </div>
 
-      <nav className="sidebar-nav" style={{ display: 'flex', flexDirection: 'column', flex: 1, overflow: 'hidden' }}>
+      <nav className="sidebar-nav" style={{ display: 'flex', flexDirection: 'column', flex: 1, overflowY: 'auto', overflowX: 'hidden', minHeight: 0 }}>
         {/* Dashboard */}
         <div>
           {visibleMain.map(item => <NavLink key={item.href} {...item} />)}

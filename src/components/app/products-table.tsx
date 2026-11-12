@@ -110,7 +110,7 @@ const EMPTY_FORM: ModalForm = {
 
 const UOM_OPTIONS = ['Each','Box','Carton','Kg','g','L','mL','m','Pair','Pack','Set','Dozen','Roll','Sheet','Unit']
 
-const PRICE_LEVELS = ['Retail', 'Wholesale', 'VIP']
+const PRICE_LEVELS: string[] = []
 
 const COLS = [
   { key: 'type', label: 'Type' },

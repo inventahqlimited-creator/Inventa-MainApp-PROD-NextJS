@@ -5,6 +5,7 @@ import { useSearchParams, useRouter } from 'next/navigation'
 import { PostToXeroButton, XeroColumnHeader, XeroPostNotice, XeroStatusBadge, usePostToXero, type XeroTableInfo } from '@/components/app/xero-sync-ui'
 import { toast } from '@/components/app/toast'
 import { useTermNames } from '@/components/app/payment-terms-provider'
+import type { ContactDefaults } from '@/lib/contact-defaults'
 
 type Contact = {
   id: string
@@ -159,6 +160,7 @@ export default function ContactsTable({
   priceLevels = [],
   currencies = [],
   baseCurrency = 'NZD',
+  defaults,
   taxRates = [],
   locations = [],
   customFields = [],
@@ -173,6 +175,7 @@ export default function ContactsTable({
   priceLevels?: { id: string; name: string; is_default: boolean }[]
   currencies?: { id: string; code: string; name: string; symbol: string | null }[]
   baseCurrency?: string
+  defaults?: ContactDefaults
   taxRates?: { id: string; name: string; rate: number }[]
   locations?: { id: string; name: string; active: boolean }[]
   customFields?: { id: string; name: string; field_type: string }[]
@@ -248,8 +251,10 @@ export default function ContactsTable({
   ], [taxRates])
 
   // Default values derived from settings
-  const defaultCurrency = baseCurrency
-  const defaultTier = priceLevels.find(p => p.is_default)?.id ?? priceLevels[0]?.id ?? ''
+  const defaultCurrency = defaults?.currency || baseCurrency
+  const savedTier = defaults?.price_level_id && priceLevels.some(p => p.id === defaults.price_level_id) ? defaults.price_level_id : ''
+  const defaultTier = savedTier || (priceLevels.find(p => p.is_default)?.id ?? priceLevels[0]?.id ?? '')
+  const savedTax = defaults?.tax_rate_id ? taxRates.find(t => t.id === defaults.tax_rate_id) : undefined
 
   // Auto-open modal when ?new=1 param is present (runs on mount AND when already on page)
   useEffect(() => {
@@ -279,7 +284,7 @@ export default function ContactsTable({
   }
 
   function openAdd() {
-    setForm({ ...EMPTY_FORM, currency: defaultCurrency, tier: '', price_level_id: defaultTier, tax_rate: taxRateOptions.length > 1 ? taxRateOptions[1].value : '' })
+    setForm({ ...EMPTY_FORM, currency: defaultCurrency, tier: '', price_level_id: defaultTier, terms: defaults?.payment_terms || 'Net 30', tax_rate: savedTax ? `${savedTax.rate}% — ${savedTax.name}` : (taxRateOptions.length > 1 ? taxRateOptions[1].value : '') })
     setActiveContact(null)
     setModal('add')
     setModalTab('details')

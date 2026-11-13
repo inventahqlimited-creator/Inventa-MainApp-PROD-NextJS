@@ -44,17 +44,18 @@ const num = (v: unknown) => { const n = Number(v); return Number.isFinite(n) ? n
 
 // ── Xero reads ──────────────────────────────────────────────────────────────
 
-type XRec = { id: string; name: string; code?: string | null }
+/** `relevant` (contacts only): Xero marks the contact as a customer or a supplier. Others (e.g. one-off or system contacts) are not shown or imported. */
+type XRec = { id: string; name: string; code?: string | null; relevant?: boolean }
 type Fail = { ok: false; status: number; error: string }
 
 async function fetchXeroContacts(db: SupabaseClient, orgId: string): Promise<{ ok: true; list: XRec[] } | Fail> {
   const out: XRec[] = []
   for (let page = 1; page <= 60; page++) {
-    const r = await xeroGet<{ Contacts?: { ContactID: string; Name: string }[] }>(db, orgId, `/Contacts?page=${page}&summaryOnly=true`)
+    const r = await xeroGet<{ Contacts?: { ContactID: string; Name: string; IsCustomer?: boolean; IsSupplier?: boolean }[] }>(db, orgId, `/Contacts?page=${page}&summaryOnly=true`)
     if (!r.ok) return r
     const batch = r.data.Contacts ?? []
     if (batch.length === 0) break
-    for (const c of batch) if (c.ContactID && c.Name) out.push({ id: c.ContactID, name: c.Name })
+    for (const c of batch) if (c.ContactID && c.Name) out.push({ id: c.ContactID, name: c.Name, relevant: c.IsCustomer === true || c.IsSupplier === true })
   }
   return { ok: true, list: out }
 }
@@ -265,14 +266,16 @@ export async function buildOverview(db: SupabaseClient, orgId: string, entity: E
     else onlyInInventa.push({ id: String(r.id), name: String(r.name) })
   }
 
-  const onlyInXero = xero.list.filter(x => !used.has(x.id)).map(x => ({ xeroId: x.id, name: x.name, code: x.code ?? null }))
+  // Xero contacts that are neither customers nor suppliers are skipped, unless they are already linked to an InventaHQ contact.
+  const shown = xero.list.filter(x => entity !== 'contact' || x.relevant || used.has(x.id))
+  const onlyInXero = shown.filter(x => !used.has(x.id)).map(x => ({ xeroId: x.id, name: x.name, code: x.code ?? null }))
   const failedCount = failures.length
 
   return {
     ok: true,
     overview: {
       inventa: rows.length,
-      xero: xero.list.length,
+      xero: shown.length,
       synced,
       notSynced: rows.length - synced - failedCount,
       failed: failedCount,
@@ -324,6 +327,7 @@ export async function importFromXero(
     for (const c of full) {
       const name = clean(c.Name)
       if (!name) continue
+      if (!c.IsCustomer && !c.IsSupplier) continue // not a customer or supplier in Xero
       const dup = existingByKey.get(norm(name))
       if (dup) { out.linked++; toSave.push({ entity_id: dup, xero_id: c.ContactID, status: 'synced', error: null }); continue }
       const phone = c.Phones?.find(p => p.PhoneNumber)

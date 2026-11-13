@@ -7,6 +7,7 @@ import { xeroInvoiceUrl } from './invoice'
 import { xeroBillUrl } from './bill'
 import { accountsMapped, xeroJournalUrl } from './adjustment'
 import { normalizePrefs } from './prefs'
+import { fetchAllRows } from './paged'
 import type { XeroSettings } from './mapping'
 
 export async function loadXeroTableInfo(db: SupabaseClient, orgId: string, entity: 'contact' | 'product' | 'invoice' | 'bill' | 'adjustment', isAdmin: boolean): Promise<XeroTableInfo> {
@@ -18,9 +19,10 @@ export async function loadXeroTableInfo(db: SupabaseClient, orgId: string, entit
   if (!(org as { xero_enabled?: boolean } | null)?.xero_enabled) return off
   if ((conn as { status?: string } | null)?.status !== 'connected') return off
 
-  const { data } = await db.from('xero_sync_records').select('entity_id, xero_id, status, error').eq('org_id', orgId).eq('entity', entity)
+  const data = await fetchAllRows<{ entity_id: string; xero_id: string | null; status: 'synced' | 'failed'; error: string | null }>((from, to) =>
+    db.from('xero_sync_records').select('entity_id, xero_id, status, error').eq('org_id', orgId).eq('entity', entity).order('entity_id').range(from, to))
   const records: XeroTableInfo['records'] = {}
-  for (const r of (data ?? []) as { entity_id: string; xero_id: string | null; status: 'synced' | 'failed'; error: string | null }[]) {
+  for (const r of data) {
     records[r.entity_id] = { status: r.status, error: r.error, url: r.xero_id ? (entity === 'invoice' ? xeroInvoiceUrl(r.xero_id) : entity === 'bill' ? xeroBillUrl(r.xero_id) : entity === 'adjustment' ? xeroJournalUrl(r.xero_id) : null) : null }
   }
   return { show: true, canPost: isAdmin, records }

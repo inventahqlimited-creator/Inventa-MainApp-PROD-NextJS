@@ -14,6 +14,7 @@ import { stockError, type XeroPrefs } from './prefs'
 import { auditPost } from './audit'
 import { loadKitDoc } from '@/lib/kits/doc-lines-server'
 import { dueDateFor, type PaymentTerm } from '@/lib/payment-terms'
+import { fetchAllRows } from './paged'
 
 type Row = Record<string, unknown>
 type Db = SupabaseClient
@@ -276,12 +277,12 @@ export type BulkSummary = { posted: number; failed: number; remaining: number; f
 
 /** Posts up to 20 Closed, not-yet-posted orders. Returns how many are left so the caller can ask again. */
 export async function postEligibleInvoices(db: Db, orgId: string, settings: XeroSettings, prefs: XeroPrefs, retryFailed = true, deadline = Infinity): Promise<BulkSummary> {
-  const [{ data: closed }, { data: recs }] = await Promise.all([
-    db.from('sales_orders').select('id, so_number').eq('org_id', orgId).ilike('status', 'closed').order('created_at', { ascending: true }),
-    db.from('xero_sync_records').select('entity_id, status').eq('org_id', orgId).eq('entity', 'invoice'),
+  const [closed, recs] = await Promise.all([
+    fetchAllRows<{ id: string; so_number: string | null }>((from, to) => db.from('sales_orders').select('id, so_number').eq('org_id', orgId).ilike('status', 'closed').order('created_at', { ascending: true }).order('id').range(from, to)),
+    fetchAllRows<{ entity_id: string; status: string }>((from, to) => db.from('xero_sync_records').select('entity_id, status').eq('org_id', orgId).eq('entity', 'invoice').order('entity_id').range(from, to)),
   ])
-  const done = new Set(((recs ?? []) as { entity_id: string; status: string }[]).filter(r => r.status === 'synced' || (!retryFailed && r.status === 'failed')).map(r => r.entity_id))
-  const todo = ((closed ?? []) as { id: string; so_number: string | null }[]).filter(o => !done.has(o.id))
+  const done = new Set(recs.filter(r => r.status === 'synced' || (!retryFailed && r.status === 'failed')).map(r => r.entity_id))
+  const todo = closed.filter(o => !done.has(o.id))
 
   const out: BulkSummary = { posted: 0, failed: 0, remaining: 0, failures: [] }
   const batch = todo.slice(0, MAX_BULK)

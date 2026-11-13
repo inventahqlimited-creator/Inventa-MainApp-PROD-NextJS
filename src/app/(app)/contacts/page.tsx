@@ -5,6 +5,7 @@ import { redirect } from 'next/navigation'
 import ContactsTable from '@/components/app/contacts-table'
 import { loadXeroTableInfo } from '@/lib/xero/table-info'
 import { normalizeContactDefaults } from '@/lib/contact-defaults'
+import { allRows } from '@/lib/all-rows'
 
 const FULL_PERMISSIONS = {
   create_contacts: true,
@@ -65,7 +66,7 @@ export default async function ContactsPage() {
     { data: customListOptions },
     xero,
   ] = await Promise.all([
-    adminClient.from('contacts').select('*').eq('org_id', m.org_id).order('name'),
+    allRows((a, b) => adminClient.from('contacts').select('*').eq('org_id', m.org_id).order('name').order('id').range(a, b)),
     adminClient.from('organisations').select('*').eq('id', m.org_id).single(),
     adminClient.from('price_levels').select('id, name, is_default').eq('org_id', m.org_id).order('name'),
     adminClient.from('currencies').select('id, code, name, symbol').eq('org_id', m.org_id).order('code'),

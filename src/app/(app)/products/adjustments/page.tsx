@@ -4,6 +4,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import AdjustmentsTable from '@/components/app/adjustments-table'
 import { loadXeroTableInfo } from '@/lib/xero/table-info'
+import { allRows } from '@/lib/all-rows'
 
 export default async function AdjustmentsPage() {
   const supabase = await createClient()
@@ -34,11 +35,11 @@ export default async function AdjustmentsPage() {
       .eq('org_id', m.org_id)
       .eq('active', true)
       .order('name'),
-    adminClient
+    allRows((a, b) => adminClient
       .from('products')
       .select('id, name, sku, sell_uom, track_stock, serial_tracking, batch_tracking, expiry_tracking')
       .eq('org_id', m.org_id)
-      .order('name'),
+      .order('name').order('id').range(a, b)),
   ])
 
   const xero = await loadXeroTableInfo(adminClient, m.org_id, 'adjustment', m.role === 'admin')

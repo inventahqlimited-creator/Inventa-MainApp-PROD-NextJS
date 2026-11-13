@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import EditPurchaseOrder from '@/components/app/edit-purchase-order'
 import { relatedSalesOrders } from '@/lib/related'
 import { loadXeroTableInfo } from '@/lib/xero/table-info'
+import { allRows } from '@/lib/all-rows'
 
 export default async function EditPurchaseOrderPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ edit?: string }> }) {
   const { id } = await params
@@ -50,11 +51,11 @@ export default async function EditPurchaseOrderPage({ params, searchParams }: { 
 
   const [{ data: locations }, { data: contacts }, { data: products }, { data: org }, { data: taxRates }, { data: stockLevels }] = await Promise.all([
     adminClient.from('locations').select('id, name, address, city, country, phone, email').eq('org_id', m.org_id).eq('active', true).order('name'),
-    adminClient.from('contacts').select('id, name, email, phone, bill_street, bill_city, bill_country, terms, currency, price_level_id').eq('org_id', m.org_id).eq('type', 'supplier').eq('is_active', true).order('name'),
-    adminClient.from('products').select('id, name, sku, buy_uom, cost_price, tax_rate, buy_tax_rate_id, description, track_stock, type').eq('org_id', m.org_id).eq('is_active', true).order('name'),
+    allRows((a, b) => adminClient.from('contacts').select('id, name, email, phone, bill_street, bill_city, bill_country, terms, currency, price_level_id').eq('org_id', m.org_id).eq('type', 'supplier').eq('is_active', true).order('name').order('id').range(a, b)),
+    allRows((a, b) => adminClient.from('products').select('id, name, sku, buy_uom, cost_price, tax_rate, buy_tax_rate_id, description, track_stock, type').eq('org_id', m.org_id).eq('is_active', true).order('name').order('id').range(a, b)),
     adminClient.from('organisations').select('po_default_payment_terms, decimal_places').eq('id', m.org_id).single(),
     adminClient.from('tax_rates').select('id, name, rate, is_default').eq('org_id', m.org_id).order('name'),
-    adminClient.from('stock_levels').select('product_id, location_id, quantity, committed').eq('org_id', m.org_id),
+    allRows((a, b) => adminClient.from('stock_levels').select('product_id, location_id, quantity, committed').eq('org_id', m.org_id).order('id').range(a, b)),
   ])
 
   // Shape the order. A kit line holds no quantity of its own in the database; the screen shows the number of kits.

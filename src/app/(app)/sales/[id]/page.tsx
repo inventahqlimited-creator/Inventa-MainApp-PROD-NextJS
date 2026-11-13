@@ -5,6 +5,7 @@ import SalesOrderForm from '@/components/app/sales-order-form'
 import { loadKitColumns, loadKitScreenData } from '@/lib/kits/order-lines-server'
 import { relatedPurchaseOrders } from '@/lib/related'
 import { loadXeroTableInfo } from '@/lib/xero/table-info'
+import { allRows } from '@/lib/all-rows'
 
 export default async function SalesOrderPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -50,18 +51,18 @@ export default async function SalesOrderPage({ params }: { params: Promise<{ id:
     { data: prices }, { data: pricing },
   ] = await Promise.all([
     adminClient.from('locations').select('id, name, address, city, country, phone, email').eq('org_id', m.org_id).eq('active', true).order('name'),
-    adminClient.from('contacts')
+    allRows((a, b) => adminClient.from('contacts')
       .select('id, name, email, phone, bill_street, bill_city, bill_country, terms, currency, price_level_id, default_location')
-      .eq('org_id', m.org_id).eq('type', 'customer').eq('is_active', true).order('name'),
-    adminClient.from('products')
+      .eq('org_id', m.org_id).eq('type', 'customer').eq('is_active', true).order('name').order('id').range(a, b)),
+    allRows((a, b) => adminClient.from('products')
       .select('id, name, sku, sell_uom, sell_price, tax_rate, sell_tax_rate_id, description, track_stock, type')
-      .eq('org_id', m.org_id).eq('is_active', true).order('name'),
+      .eq('org_id', m.org_id).eq('is_active', true).order('name').order('id').range(a, b)),
     adminClient.from('organisations').select('so_default_payment_terms, so_default_ship_from, decimal_places, fulfilment_mode, quotes_enabled').eq('id', m.org_id).single(),
     adminClient.from('tax_rates').select('id, name, rate, is_default').eq('org_id', m.org_id).order('name'),
-    adminClient.from('stock_levels').select('product_id, location_id, quantity, committed').eq('org_id', m.org_id),
+    allRows((a, b) => adminClient.from('stock_levels').select('product_id, location_id, quantity, committed').eq('org_id', m.org_id).order('id').range(a, b)),
     adminClient.from('price_levels').select('id, name, is_default').eq('org_id', m.org_id).order('name'),
     adminClient.from('currencies').select('code, is_base').eq('org_id', m.org_id).order('code'),
-    adminClient.from('product_prices').select('product_id, level_id, price, break_qty').eq('org_id', m.org_id),
+    allRows((a, b) => adminClient.from('product_prices').select('product_id, level_id, price, break_qty').eq('org_id', m.org_id).order('id').range(a, b)),
     adminClient.from('product_pricing').select('product_id, price_level_id, price').eq('org_id', m.org_id),
   ])
 

@@ -3,6 +3,7 @@ import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { redirect, notFound } from 'next/navigation'
 import TransferForm from '@/components/app/transfer-form'
 import { loadKitColumns, loadKitScreenData } from '@/lib/kits/order-lines-server'
+import { allRows } from '@/lib/all-rows'
 
 export default async function ViewTransferPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -24,8 +25,8 @@ export default async function ViewTransferPage({ params }: { params: Promise<{ i
     adminClient.from('transfer_orders').select('*').eq('id', id).eq('org_id', m.org_id).single(),
     adminClient.from('transfer_order_lines').select('*').eq('tr_id', id).eq('org_id', m.org_id).order('sort_order'),
     adminClient.from('locations').select('id, name, address, city, country, phone, email').eq('org_id', m.org_id).eq('active', true).order('name'),
-    adminClient.from('products').select('id, name, sku, sell_uom, track_stock, type').eq('org_id', m.org_id).eq('is_active', true).eq('track_stock', true).eq('type', 'Stock').order('name'),
-    adminClient.from('stock_levels').select('product_id, location_id, quantity, committed').eq('org_id', m.org_id),
+    allRows((a, b) => adminClient.from('products').select('id, name, sku, sell_uom, track_stock, type').eq('org_id', m.org_id).eq('is_active', true).eq('track_stock', true).eq('type', 'Stock').order('name').order('id').range(a, b)),
+    allRows((a, b) => adminClient.from('stock_levels').select('product_id, location_id, quantity, committed').eq('org_id', m.org_id).order('id').range(a, b)),
     adminClient.from('bins').select('id, name, location_id').eq('org_id', m.org_id).order('name'),
   ])
   if (!transfer) notFound()

@@ -1,6 +1,7 @@
 import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { redirect, notFound } from 'next/navigation'
 import EditAdjustment from '@/components/app/edit-adjustment'
+import { allRows } from '@/lib/all-rows'
 
 export default async function EditAdjustmentPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -24,8 +25,8 @@ export default async function EditAdjustmentPage({ params }: { params: Promise<{
     adminClient.from('adjustment_orders').select('*').eq('id', id).eq('org_id', m.org_id).single(),
     adminClient.from('adjustment_order_lines').select('*').eq('adj_id', id).eq('org_id', m.org_id).order('sort_order'),
     adminClient.from('locations').select('id, name').eq('org_id', m.org_id).eq('active', true).order('name'),
-    adminClient.from('products').select('id, name, sku, sell_uom, track_stock, type, serial_tracking, batch_tracking, expiry_tracking').eq('org_id', m.org_id).order('name'),
-    adminClient.from('stock_levels').select('product_id, location_id, quantity').eq('org_id', m.org_id),
+    allRows((a, b) => adminClient.from('products').select('id, name, sku, sell_uom, track_stock, type, serial_tracking, batch_tracking, expiry_tracking').eq('org_id', m.org_id).order('name').order('id').range(a, b)),
+    allRows((a, b) => adminClient.from('stock_levels').select('product_id, location_id, quantity').eq('org_id', m.org_id).order('id').range(a, b)),
     adminClient.from('organisations').select('serial_tracking, batch_tracking, expiry_tracking').eq('id', m.org_id).single(),
     adminClient.from('bins').select('id, name, location_id').eq('org_id', m.org_id).eq('is_active', true).order('name'),
   ])

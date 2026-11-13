@@ -52,11 +52,11 @@ type Fail = { ok: false; status: number; error: string }
 async function fetchXeroContacts(db: SupabaseClient, orgId: string): Promise<{ ok: true; list: XRec[] } | Fail> {
   const out: XRec[] = []
   for (let page = 1; page <= 60; page++) {
-    const r = await xeroGet<{ Contacts?: { ContactID: string; Name: string; IsCustomer?: boolean; IsSupplier?: boolean }[] }>(db, orgId, `/Contacts?page=${page}&summaryOnly=true`)
+    const r = await xeroGet<{ Contacts?: { ContactID: string; Name: string; IsCustomer?: boolean; IsSupplier?: boolean }[] }>(db, orgId, `/Contacts?page=${page}`)
     if (!r.ok) return r
     const batch = r.data.Contacts ?? []
     if (batch.length === 0) break
-    for (const c of batch) if (c.ContactID && c.Name) out.push({ id: c.ContactID, name: c.Name, relevant: c.IsCustomer === true || c.IsSupplier === true })
+    for (const c of batch) if (c.ContactID && c.Name) out.push({ id: c.ContactID, name: c.Name, relevant: c.IsCustomer === undefined && c.IsSupplier === undefined ? true : c.IsCustomer === true || c.IsSupplier === true })
   }
   return { ok: true, list: out }
 }

@@ -2,6 +2,7 @@ import { loadKitColumns, loadKitScreenData } from '@/lib/kits/order-lines-server
 import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import NewPurchaseOrder from '@/components/app/new-purchase-order'
+import { allRows } from '@/lib/all-rows'
 
 export default async function NewPurchaseOrderPage({ searchParams }: { searchParams: Promise<{ from_so?: string; scope?: string; clone?: string }> }) {
   const { from_so, scope, clone } = await searchParams
@@ -28,19 +29,19 @@ export default async function NewPurchaseOrderPage({ searchParams }: { searchPar
       .eq('org_id', m.org_id)
       .eq('active', true)
       .order('name'),
-    adminClient
+    allRows((a, b) => adminClient
       .from('contacts')
       .select('id, name, email, phone, bill_street, bill_city, bill_country, terms, currency')
       .eq('org_id', m.org_id)
       .eq('type', 'supplier')
       .eq('is_active', true)
-      .order('name'),
-    adminClient
+      .order('name').order('id').range(a, b)),
+    allRows((a, b) => adminClient
       .from('products')
       .select('id, name, sku, buy_uom, cost_price, tax_rate, buy_tax_rate_id, description, track_stock, type')
       .eq('org_id', m.org_id)
       .eq('is_active', true)
-      .order('name'),
+      .order('name').order('id').range(a, b)),
     adminClient
       .from('organisations')
       .select('po_default_payment_terms, decimal_places')
@@ -51,10 +52,10 @@ export default async function NewPurchaseOrderPage({ searchParams }: { searchPar
       .select('id, name, rate, is_default')
       .eq('org_id', m.org_id)
       .order('name'),
-    adminClient
+    allRows((a, b) => adminClient
       .from('stock_levels')
       .select('product_id, location_id, quantity, committed')
-      .eq('org_id', m.org_id),
+      .eq('org_id', m.org_id).order('id').range(a, b)),
   ])
 
   // Create Purchase Order from a sales order: all stocked items, or only the ones the ship-from location can't cover

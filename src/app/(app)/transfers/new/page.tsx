@@ -3,6 +3,7 @@ import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import TransferForm from '@/components/app/transfer-form'
 import { loadKitColumns, loadKitScreenData } from '@/lib/kits/order-lines-server'
+import { allRows } from '@/lib/all-rows'
 
 export default async function NewTransferPage({ searchParams }: { searchParams: Promise<{ clone?: string }> }) {
   const { clone } = await searchParams
@@ -22,8 +23,8 @@ export default async function NewTransferPage({ searchParams }: { searchParams: 
 
   const [{ data: locations }, { data: products }, { data: stockLevels }, { data: bins }, { data: org }] = await Promise.all([
     adminClient.from('locations').select('id, name, address, city, country, phone, email').eq('org_id', m.org_id).eq('active', true).order('name'),
-    adminClient.from('products').select('id, name, sku, sell_uom, track_stock, type').eq('org_id', m.org_id).eq('is_active', true).eq('track_stock', true).eq('type', 'Stock').order('name'),
-    adminClient.from('stock_levels').select('product_id, location_id, quantity, committed').eq('org_id', m.org_id),
+    allRows((a, b) => adminClient.from('products').select('id, name, sku, sell_uom, track_stock, type').eq('org_id', m.org_id).eq('is_active', true).eq('track_stock', true).eq('type', 'Stock').order('name').order('id').range(a, b)),
+    allRows((a, b) => adminClient.from('stock_levels').select('product_id, location_id, quantity, committed').eq('org_id', m.org_id).order('id').range(a, b)),
     adminClient.from('bins').select('id, name, location_id').eq('org_id', m.org_id).order('name'),
     adminClient.from('organisations').select('so_default_ship_from').eq('id', m.org_id).single(),
   ])

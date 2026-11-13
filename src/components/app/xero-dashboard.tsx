@@ -209,11 +209,6 @@ function Section({ entity, isAdmin, reloadKey, onChanged }: { entity: Entity; is
               ? <div style={{ fontSize: 13, color: 'var(--gray-500)', marginTop: 14 }}>{data.notSynced} {l.many} will be linked to Xero the next time you sync.</div>
               : <div style={{ fontSize: 13, color: '#047857', marginTop: 14 }}>Nothing needs attention.</div>
           )}
-          {entity === 'contact' && data.xeroTotal > 0 && (
-            <div style={{ fontSize: 12.5, color: 'var(--gray-500)', marginTop: 14, lineHeight: 1.5 }}>
-              Xero has {data.xeroTotal} contacts in total: {data.xeroTotal - data.skippedXero} {data.xeroTotal - data.skippedXero === 1 ? 'is a customer or supplier' : 'are customers or suppliers'}, and {data.skippedXero} {data.skippedXero === 1 ? 'is' : 'are'} skipped (not a customer or supplier).
-            </div>
-          )}
           {data.sharedKey > 0 && (
             <div style={{ fontSize: 12.5, color: 'var(--gray-500)', marginTop: 14, lineHeight: 1.5 }}>
               {data.sharedKey} {data.sharedKey === 1 ? `${l.one} in InventaHQ shares` : `${l.many} in InventaHQ share`} {entity === 'contact' ? 'a name' : 'a SKU'} with another {l.one}. Xero keeps one record for each {entity === 'contact' ? 'name' : 'item code'}, so they share it. That is why InventaHQ shows {data.inventa} and Xero shows {data.xero}.

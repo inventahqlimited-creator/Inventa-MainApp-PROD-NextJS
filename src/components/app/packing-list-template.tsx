@@ -7,13 +7,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { DEFAULT_PACKING_LIST_CONFIG, PACKING_LIST_OPTIONS, type PackingListConfig } from '@/lib/packing-list/config'
 import { renderPackingListHtml, SAMPLE_PACK_BUSINESS, SAMPLE_PACK_ORDERS } from '@/lib/packing-list/render'
+import { previewPackBusiness, type DocPreviewOrg } from '@/lib/doc-preview'
 
 const PAGE_W = 794
 
 export default function PackingListTemplate({
-  initial, onClose, onSaved,
+  initial, orgInfo, onClose, onSaved,
 }: {
   initial: PackingListConfig
+  orgInfo: DocPreviewOrg
   onClose: () => void
   onSaved: (cfg: PackingListConfig) => void
 }) {
@@ -29,10 +31,10 @@ export default function PackingListTemplate({
 
   const html = useMemo(
     () => renderPackingListHtml(
-      { orders: SAMPLE_PACK_ORDERS, business: SAMPLE_PACK_BUSINESS, config: cfg, timezone: 'Pacific/Auckland' },
+      { orders: SAMPLE_PACK_ORDERS, business: previewPackBusiness(orgInfo, SAMPLE_PACK_BUSINESS), config: cfg, timezone: orgInfo.timezone || 'Pacific/Auckland' },
       { preview: true, now: new Date('2026-10-02T09:52:00+13:00') },
     ),
-    [cfg],
+    [cfg, orgInfo],
   )
 
   // Fit the A4 preview to the space available

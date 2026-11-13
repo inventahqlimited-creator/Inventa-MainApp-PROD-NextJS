@@ -6,6 +6,7 @@ import ProductsTable from '@/components/app/products-table'
 import { loadXeroTableInfo } from '@/lib/xero/table-info'
 import { hasAddon } from '@/lib/addons-server'
 import { loadKitSettings } from '@/lib/kits/settings-server'
+import { allRows } from '@/lib/all-rows'
 
 export default async function ProductsPage() {
   const supabase = await createClient()
@@ -38,10 +39,10 @@ export default async function ProductsPage() {
     { data: org },
     xero,
   ] = await Promise.all([
-    adminClient.from('products').select('*').eq('org_id', m.org_id).order('name'),
-    adminClient.from('stock_levels').select('*').eq('org_id', m.org_id),
+    allRows((a, b) => adminClient.from('products').select('*').eq('org_id', m.org_id).order('name').order('id').range(a, b)),
+    allRows((a, b) => adminClient.from('stock_levels').select('*').eq('org_id', m.org_id).order('id').range(a, b)),
     adminClient.from('locations').select('id, name').eq('org_id', m.org_id).eq('active', true).order('name'),
-    adminClient.from('contacts').select('id, name').eq('org_id', m.org_id).eq('type', 'supplier').order('name'),
+    allRows((a, b) => adminClient.from('contacts').select('id, name').eq('org_id', m.org_id).eq('type', 'supplier').order('name').order('id').range(a, b)),
     adminClient.from('tax_rates').select('id, name, rate, is_default').eq('org_id', m.org_id).order('name'),
     adminClient.from('uoms').select('id, name, abbr').eq('org_id', m.org_id).order('sort_order').order('created_at'),
     adminClient.from('price_levels').select('id, name, is_default').eq('org_id', m.org_id).order('name'),

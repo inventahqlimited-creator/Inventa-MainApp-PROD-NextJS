@@ -9,6 +9,7 @@ import { xeroGet, xeroPost } from './api'
 import { ensureTerm, termForContact, type XPaymentTerms } from './terms'
 import { resolveTaxType, type XeroSettings } from './mapping'
 import { logXero } from './audit'
+import { fetchAllRows } from './paged'
 
 export type Entity = 'contact' | 'product'
 type Row = Record<string, unknown>
@@ -44,17 +45,18 @@ const num = (v: unknown) => { const n = Number(v); return Number.isFinite(n) ? n
 
 // ── Xero reads ──────────────────────────────────────────────────────────────
 
-type XRec = { id: string; name: string; code?: string | null }
+/** `relevant` (contacts only): Xero marks the contact as a customer or a supplier. Others (e.g. one-off or system contacts) are not shown or imported. */
+type XRec = { id: string; name: string; code?: string | null; relevant?: boolean }
 type Fail = { ok: false; status: number; error: string }
 
 async function fetchXeroContacts(db: SupabaseClient, orgId: string): Promise<{ ok: true; list: XRec[] } | Fail> {
   const out: XRec[] = []
   for (let page = 1; page <= 60; page++) {
-    const r = await xeroGet<{ Contacts?: { ContactID: string; Name: string }[] }>(db, orgId, `/Contacts?page=${page}&summaryOnly=true`)
+    const r = await xeroGet<{ Contacts?: { ContactID: string; Name: string; IsCustomer?: boolean; IsSupplier?: boolean }[] }>(db, orgId, `/Contacts?page=${page}&summaryOnly=true`)
     if (!r.ok) return r
     const batch = r.data.Contacts ?? []
     if (batch.length === 0) break
-    for (const c of batch) if (c.ContactID && c.Name) out.push({ id: c.ContactID, name: c.Name })
+    for (const c of batch) if (c.ContactID && c.Name) out.push({ id: c.ContactID, name: c.Name, relevant: c.IsCustomer === true || c.IsSupplier === true })
   }
   return { ok: true, list: out }
 }
@@ -72,16 +74,19 @@ const fetchXero = (db: SupabaseClient, orgId: string, entity: Entity) => (entity
 type Link = { entity_id: string; xero_id: string | null; status: 'synced' | 'failed'; error: string | null; synced_at: string }
 
 async function loadLinks(db: SupabaseClient, orgId: string, entity: Entity): Promise<Map<string, Link>> {
-  const { data } = await db.from('xero_sync_records').select('entity_id, xero_id, status, error, synced_at').eq('org_id', orgId).eq('entity', entity)
-  return new Map(((data ?? []) as Link[]).map(l => [l.entity_id, l]))
+  const data = await fetchAllRows<Link>((from, to) =>
+    db.from('xero_sync_records').select('entity_id, xero_id, status, error, synced_at').eq('org_id', orgId).eq('entity', entity).order('entity_id').range(from, to))
+  return new Map(data.map(l => [l.entity_id, l]))
 }
 
 async function loadInventa(db: SupabaseClient, orgId: string, entity: Entity, ids?: string[]): Promise<Row[]> {
   const table = entity === 'contact' ? 'contacts' : 'products'
-  let q = db.from(table).select('*').eq('org_id', orgId)
-  if (ids && ids.length > 0) q = q.in('id', ids)
-  const { data } = await q.order('name')
-  const rows = (data ?? []) as Row[]
+  // Read every row (Supabase stops at 1000 per query), in a stable order.
+  const rows = await fetchAllRows<Row>((from, to) => {
+    let q = db.from(table).select('*').eq('org_id', orgId)
+    if (ids && ids.length > 0) q = q.in('id', ids)
+    return q.order('name').order('id').range(from, to)
+  })
   return entity === 'product' ? rows.filter(r => !isHiddenProductName(r.name)) : rows
 }
 
@@ -265,14 +270,16 @@ export async function buildOverview(db: SupabaseClient, orgId: string, entity: E
     else onlyInInventa.push({ id: String(r.id), name: String(r.name) })
   }
 
-  const onlyInXero = xero.list.filter(x => !used.has(x.id)).map(x => ({ xeroId: x.id, name: x.name, code: x.code ?? null }))
+  // Xero contacts that are neither customers nor suppliers are skipped, unless they are already linked to an InventaHQ contact.
+  const shown = xero.list.filter(x => entity !== 'contact' || x.relevant || used.has(x.id))
+  const onlyInXero = shown.filter(x => !used.has(x.id)).map(x => ({ xeroId: x.id, name: x.name, code: x.code ?? null }))
   const failedCount = failures.length
 
   return {
     ok: true,
     overview: {
       inventa: rows.length,
-      xero: xero.list.length,
+      xero: shown.length,
       synced,
       notSynced: rows.length - synced - failedCount,
       failed: failedCount,
@@ -324,6 +331,7 @@ export async function importFromXero(
     for (const c of full) {
       const name = clean(c.Name)
       if (!name) continue
+      if (!c.IsCustomer && !c.IsSupplier) continue // not a customer or supplier in Xero
       const dup = existingByKey.get(norm(name))
       if (dup) { out.linked++; toSave.push({ entity_id: dup, xero_id: c.ContactID, status: 'synced', error: null }); continue }
       const phone = c.Phones?.find(p => p.PhoneNumber)

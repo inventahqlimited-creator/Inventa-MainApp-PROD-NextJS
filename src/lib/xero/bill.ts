@@ -12,6 +12,7 @@ import type { XeroPrefs } from './prefs'
 import { runSync } from './sync'
 import { loadTerms } from '@/lib/payment-terms-server'
 import { clean, money, n, r2, saveRecord, sleep, xeroDueDate, taxTypeFor, type PostResult, type BulkSummary } from './invoice'
+import { fetchAllRows } from './paged'
 
 type Row = Record<string, unknown>
 type Db = SupabaseClient
@@ -182,20 +183,20 @@ export async function postBill(db: Db, orgId: string, poId: string, settings: Xe
 
 /** Closed purchase orders with something received. */
 async function loadEligible(db: Db, orgId: string): Promise<{ id: string; po_number: string | null }[]> {
-  const { data } = await db.from('purchase_orders')
+  const data = await fetchAllRows<{ id: string; po_number: string | null; purchase_order_lines: Row[] | null }>((from, to) => db.from('purchase_orders')
     .select('id, po_number, purchase_order_lines ( quantity_ordered, quantity_received )')
-    .eq('org_id', orgId).ilike('status', 'closed').order('created_at', { ascending: true })
-  return ((data ?? []) as { id: string; po_number: string | null; purchase_order_lines: Row[] | null }[])
+    .eq('org_id', orgId).ilike('status', 'closed').order('created_at', { ascending: true }).order('id').range(from, to))
+  return data
     .filter(o => hasReceived(o.purchase_order_lines ?? []))
     .map(o => ({ id: o.id, po_number: o.po_number }))
 }
 
 export async function postEligibleBills(db: Db, orgId: string, settings: XeroSettings, prefs: XeroPrefs, retryFailed = true, deadline = Infinity): Promise<BulkSummary> {
-  const [eligible, { data: recs }] = await Promise.all([
+  const [eligible, recs] = await Promise.all([
     loadEligible(db, orgId),
-    db.from('xero_sync_records').select('entity_id, status').eq('org_id', orgId).eq('entity', 'bill'),
+    fetchAllRows<{ entity_id: string; status: string }>((from, to) => db.from('xero_sync_records').select('entity_id, status').eq('org_id', orgId).eq('entity', 'bill').order('entity_id').range(from, to)),
   ])
-  const done = new Set(((recs ?? []) as { entity_id: string; status: string }[]).filter(r => r.status === 'synced' || (!retryFailed && r.status === 'failed')).map(r => r.entity_id))
+  const done = new Set(recs.filter(r => r.status === 'synced' || (!retryFailed && r.status === 'failed')).map(r => r.entity_id))
   const todo = eligible.filter(o => !done.has(o.id))
 
   const out: BulkSummary = { posted: 0, failed: 0, remaining: 0, failures: [] }

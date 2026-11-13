@@ -1721,7 +1721,7 @@ export default function SettingsClient({
 
   async function saveOrg() {
     setSavingOrg(true)
-    const res = await fetch('/api/org/settings', {
+    const res = await fetch('/api/org/company', {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1734,7 +1734,7 @@ export default function SettingsClient({
     })
     setSavingOrg(false)
     if (res.ok) showToast('success', 'Business details saved')
-    else showToast('error', 'Failed to save')
+    else showToast('error', (await res.json().catch(() => null))?.error ?? 'Failed to save')
   }
 
   async function addTaxRate() {

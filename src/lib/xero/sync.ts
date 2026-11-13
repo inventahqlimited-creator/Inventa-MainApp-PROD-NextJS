@@ -29,6 +29,10 @@ export type Overview = {
   lastSyncedAt: string | null
   /** InventaHQ records that share a name (contacts) or SKU (products) with another record. Xero keeps one record per name, so they share it. */
   sharedKey: number
+  /** Contacts only: Xero contacts left out because they are neither a customer nor a supplier. */
+  skippedXero: number
+  /** Contacts only: how many of the Xero contacts shown are customers or suppliers, and how many are in Xero in total. */
+  xeroTotal: number
 }
 
 const LIST_CAP = 200
@@ -52,11 +56,11 @@ type Fail = { ok: false; status: number; error: string }
 async function fetchXeroContacts(db: SupabaseClient, orgId: string): Promise<{ ok: true; list: XRec[] } | Fail> {
   const out: XRec[] = []
   for (let page = 1; page <= 60; page++) {
-    const r = await xeroGet<{ Contacts?: { ContactID: string; Name: string; IsCustomer?: boolean; IsSupplier?: boolean }[] }>(db, orgId, `/Contacts?page=${page}&summaryOnly=true`)
+    const r = await xeroGet<{ Contacts?: { ContactID: string; Name: string; IsCustomer?: boolean; IsSupplier?: boolean }[] }>(db, orgId, `/Contacts?page=${page}`)
     if (!r.ok) return r
     const batch = r.data.Contacts ?? []
     if (batch.length === 0) break
-    for (const c of batch) if (c.ContactID && c.Name) out.push({ id: c.ContactID, name: c.Name, relevant: c.IsCustomer === true || c.IsSupplier === true })
+    for (const c of batch) if (c.ContactID && c.Name) out.push({ id: c.ContactID, name: c.Name, relevant: c.IsCustomer === undefined && c.IsSupplier === undefined ? true : c.IsCustomer === true || c.IsSupplier === true })
   }
   return { ok: true, list: out }
 }
@@ -272,6 +276,7 @@ export async function buildOverview(db: SupabaseClient, orgId: string, entity: E
 
   // Xero contacts that are neither customers nor suppliers are skipped, unless they are already linked to an InventaHQ contact.
   const shown = xero.list.filter(x => entity !== 'contact' || x.relevant || used.has(x.id))
+  const skippedXero = xero.list.length - shown.length
   const onlyInXero = shown.filter(x => !used.has(x.id)).map(x => ({ xeroId: x.id, name: x.name, code: x.code ?? null }))
   const failedCount = failures.length
 
@@ -288,6 +293,8 @@ export async function buildOverview(db: SupabaseClient, orgId: string, entity: E
       onlyInXero: onlyInXero.slice(0, LIST_CAP),
       lastSyncedAt,
       sharedKey,
+      skippedXero,
+      xeroTotal: xero.list.length,
     },
   }
 }

@@ -3,6 +3,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { xeroGet } from './api'
 import { termFromXero, type PaymentTerm } from '@/lib/payment-terms'
+import { fetchAllRows } from './paged'
 
 type XTerm = { Day?: number | null; Type?: string | null }
 export type XPaymentTerms = { Bills?: XTerm | null; Sales?: XTerm | null }
@@ -44,8 +45,8 @@ export async function importPaymentTerms(db: SupabaseClient, orgId: string): Pro
     if (t && await ensureTerm(db, orgId, t, known)) termsAdded++
   }
 
-  const { data: links } = await db.from('xero_sync_records').select('entity_id, xero_id').eq('org_id', orgId).eq('entity', 'contact').not('xero_id', 'is', null)
-  const byXero = new Map(((links ?? []) as { entity_id: string; xero_id: string }[]).map(l => [l.xero_id.toLowerCase(), l.entity_id]))
+  const links = await fetchAllRows<{ entity_id: string; xero_id: string }>((from, to) => db.from('xero_sync_records').select('entity_id, xero_id').eq('org_id', orgId).eq('entity', 'contact').not('xero_id', 'is', null).order('entity_id').range(from, to))
+  const byXero = new Map(links.map(l => [l.xero_id.toLowerCase(), l.entity_id]))
 
   let contactsUpdated = 0, contactsSkipped = 0
   for (let page = 1; page <= 60; page++) {

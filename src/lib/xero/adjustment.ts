@@ -13,6 +13,7 @@ import { xeroGet, xeroPost } from './api'
 import type { XeroSettings } from './mapping'
 import type { XeroPrefs } from './prefs'
 import { clean, n, saveRecord, sleep, type BulkSummary } from './invoice'
+import { fetchAllRows } from './paged'
 
 type Row = Record<string, unknown>
 type Db = SupabaseClient
@@ -250,10 +251,10 @@ async function postTracked(db: Db, orgId: string, a: Row, lines: Row[], number: 
 
 /** Completed, after the cut-off, not ticked "Don't send", with at least one quantity change. */
 async function loadEligible(db: Db, orgId: string, cutoff: string): Promise<{ id: string; adj_number: string | null }[]> {
-  const { data } = await db.from('adjustment_orders')
+  const data = await fetchAllRows<{ id: string; adj_number: string | null; adjustment_order_lines: Row[] | null }>((from, to) => db.from('adjustment_orders')
     .select('id, adj_number, adjustment_order_lines:adjustment_order_lines ( quantity_before, quantity_after )')
-    .eq('org_id', orgId).ilike('status', 'completed').eq('skip_xero', false).gte('completed_at', cutoff).order('completed_at', { ascending: true })
-  return ((data ?? []) as unknown as { id: string; adj_number: string | null; adjustment_order_lines: Row[] | null }[])
+    .eq('org_id', orgId).ilike('status', 'completed').eq('skip_xero', false).gte('completed_at', cutoff).order('completed_at', { ascending: true }).order('id').range(from, to))
+  return data
     .filter(o => (o.adjustment_order_lines ?? []).some(l => n(l.quantity_after) - n(l.quantity_before) !== 0))
     .map(o => ({ id: o.id, adj_number: o.adj_number }))
 }
@@ -263,11 +264,11 @@ export async function postEligibleAdjustments(db: Db, orgId: string, settings: X
   if (!adjustmentReady(settings, prefs)) return { ...out, note: mapMessage(prefs) }
 
   const cutoff = await adjustCutoff(db, orgId, prefs)
-  const [eligible, { data: recs }] = await Promise.all([
+  const [eligible, recs] = await Promise.all([
     loadEligible(db, orgId, cutoff),
-    db.from('xero_sync_records').select('entity_id, status').eq('org_id', orgId).eq('entity', 'adjustment'),
+    fetchAllRows<{ entity_id: string; status: string }>((from, to) => db.from('xero_sync_records').select('entity_id, status').eq('org_id', orgId).eq('entity', 'adjustment').order('entity_id').range(from, to)),
   ])
-  const done = new Set(((recs ?? []) as { entity_id: string; status: string }[]).filter(r => r.status === 'synced' || (!retryFailed && r.status === 'failed')).map(r => r.entity_id))
+  const done = new Set(recs.filter(r => r.status === 'synced' || (!retryFailed && r.status === 'failed')).map(r => r.entity_id))
   const todo = eligible.filter(o => !done.has(o.id))
 
   const batch = todo.slice(0, MAX_BULK)

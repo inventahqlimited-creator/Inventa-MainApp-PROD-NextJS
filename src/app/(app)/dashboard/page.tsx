@@ -2,6 +2,7 @@ import { createAdminClient } from '@/lib/supabase/server'
 import { createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import DashboardClient from '@/components/app/dashboard-client'
+import { allRows } from '@/lib/all-rows'
 
 export default async function DashboardPage() {
   const supabase = await createClient()
@@ -44,15 +45,15 @@ export default async function DashboardPage() {
       .eq('org_id', m.org_id)
       .order('created_at', { ascending: false })
       .limit(100),
-    adminClient
+    allRows((a, b) => adminClient
       .from('stock_levels')
       .select('product_id, location_id, quantity, on_order, committed')
-      .eq('org_id', m.org_id),
-    adminClient
+      .eq('org_id', m.org_id).order('id').range(a, b)),
+    allRows((a, b) => adminClient
       .from('products')
       .select('id, name, sku, type, sell_price, cost_price, avg_cost, low_stock_threshold, is_active, track_stock')
       .eq('org_id', m.org_id)
-      .eq('is_active', true),
+      .eq('is_active', true).order('id').range(a, b)),
     adminClient
       .from('locations')
       .select('id, name')

@@ -4,6 +4,7 @@ import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import { normalizeMethod } from '@/lib/purchases/landed-cost'
 import ViewPurchaseOrder from '@/components/app/view-purchase-order'
+import { allRows } from '@/lib/all-rows'
 
 export default async function ReceivePurchaseOrderPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -47,7 +48,7 @@ export default async function ReceivePurchaseOrderPage({ params }: { params: Pro
   if (!['open', 'partially received'].includes(status)) redirect(`/purchases/${id}`)
 
   const [{ data: contacts }, { data: locations }, { data: org }] = await Promise.all([
-    adminClient.from('contacts').select('id, name, email, phone, bill_street, bill_city, bill_country, terms, currency').eq('org_id', m.org_id).eq('type', 'supplier'),
+    allRows((a, b) => adminClient.from('contacts').select('id, name, email, phone, bill_street, bill_city, bill_country, terms, currency').eq('org_id', m.org_id).eq('type', 'supplier').order('id').range(a, b)),
     adminClient.from('locations').select('id, name').eq('org_id', m.org_id),
     adminClient.from('organisations').select('serial_tracking, batch_tracking, expiry_tracking, allow_over_receive, landing_cost_method').eq('id', m.org_id).single(),
   ])

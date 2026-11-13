@@ -3,6 +3,7 @@ import { createClient } from '@/lib/supabase/server'
 import { redirect, notFound } from 'next/navigation'
 import ViewAdjustment from '@/components/app/view-adjustment'
 import { loadAdjustmentXeroMode, loadXeroTableInfo } from '@/lib/xero/table-info'
+import { allRows } from '@/lib/all-rows'
 
 export default async function ViewAdjustmentPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
@@ -26,7 +27,7 @@ export default async function ViewAdjustmentPage({ params }: { params: Promise<{
     adminClient.from('adjustment_orders').select('*').eq('id', id).eq('org_id', m.org_id).single(),
     adminClient.from('adjustment_order_lines').select('*').eq('adj_id', id).eq('org_id', m.org_id).order('sort_order'),
     adminClient.from('organisations').select('serial_tracking, batch_tracking, expiry_tracking').eq('id', m.org_id).single(),
-    adminClient.from('products').select('serial_tracking, batch_tracking, expiry_tracking').eq('org_id', m.org_id),
+    allRows((a, b) => adminClient.from('products').select('serial_tracking, batch_tracking, expiry_tracking').eq('org_id', m.org_id).order('id').range(a, b)),
     adminClient.from('bins').select('id, name').eq('org_id', m.org_id),
   ])
 

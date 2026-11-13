@@ -2,6 +2,7 @@
 import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import MovementsTable from '@/components/app/movements-table'
+import { allRows } from '@/lib/all-rows'
 
 export default async function MovementsPage() {
   const supabase = await createClient()
@@ -20,11 +21,11 @@ export default async function MovementsPage() {
   const orgId = membership.org_id
 
   const [{ data: products }, { data: locations }] = await Promise.all([
-    adminClient
+    allRows((a, b) => adminClient
       .from('products')
       .select('id, name, sku')
       .eq('org_id', orgId)
-      .order('name'),
+      .order('name').order('id').range(a, b)),
     adminClient
       .from('locations')
       .select('id, name')

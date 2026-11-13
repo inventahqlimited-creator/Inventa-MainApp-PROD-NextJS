@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import PurchasesTable from '@/components/app/purchases-table'
 import { relatedSalesOrders } from '@/lib/related'
 import { loadXeroTableInfo } from '@/lib/xero/table-info'
+import { allRows } from '@/lib/all-rows'
 
 export default async function PurchasesPage() {
   const supabase = await createClient()
@@ -27,13 +28,13 @@ export default async function PurchasesPage() {
       .select('id, po_number, status, order_date, expected_date, total_amount, supplier_id, supplier_name, location_id, location_name, notes, reference, terms, currency')
       .eq('org_id', m.org_id)
       .order('created_at', { ascending: false }),
-    adminClient
+    allRows((a, b) => adminClient
       .from('contacts')
       .select('id, name')
       .eq('org_id', m.org_id)
       .eq('type', 'supplier')
       .eq('is_active', true)
-      .order('name'),
+      .order('name').order('id').range(a, b)),
     adminClient
       .from('locations')
       .select('id, name')

@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import SalesTable from '@/components/app/sales-table'
 import { relatedPurchaseOrders } from '@/lib/related'
 import { loadXeroTableInfo } from '@/lib/xero/table-info'
+import { allRows } from '@/lib/all-rows'
 
 type Line = { product_id: string | null; quantity: number | null }
 type Row = {
@@ -33,10 +34,10 @@ export default async function SalesPage() {
       .select('id, so_number, status, order_date, expected_date, total_amount, customer_id, customer_name, location_id, location_name, notes, ref, terms, currency, sales_order_lines(product_id, quantity)')
       .eq('org_id', m.org_id)
       .order('created_at', { ascending: false }),
-    adminClient.from('contacts').select('id, name').eq('org_id', m.org_id).eq('type', 'customer').eq('is_active', true).order('name'),
+    allRows((a, b) => adminClient.from('contacts').select('id, name').eq('org_id', m.org_id).eq('type', 'customer').eq('is_active', true).order('name').order('id').range(a, b)),
     adminClient.from('locations').select('id, name').eq('org_id', m.org_id).eq('active', true).order('name'),
-    adminClient.from('stock_levels').select('product_id, location_id, quantity').eq('org_id', m.org_id),
-    adminClient.from('products').select('id, track_stock').eq('org_id', m.org_id),
+    allRows((a, b) => adminClient.from('stock_levels').select('product_id, location_id, quantity').eq('org_id', m.org_id).order('id').range(a, b)),
+    allRows((a, b) => adminClient.from('products').select('id, track_stock').eq('org_id', m.org_id).order('id').range(a, b)),
     adminClient.from('organisations').select('fulfilment_mode').eq('id', m.org_id).single(),
   ])
 

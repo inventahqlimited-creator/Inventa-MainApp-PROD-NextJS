@@ -8,13 +8,15 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { DEFAULT_PURCHASE_ORDER_CONFIG, PURCHASE_ORDER_OPTIONS, PURCHASE_ORDER_TEXT_FIELDS, toInvoiceConfig, type PurchaseOrderConfig } from '@/lib/purchase-order/config'
 import { renderInvoiceHtml, SAMPLE_INVOICE_BUSINESS } from '@/lib/invoice/render'
 import { SAMPLE_PURCHASE_ORDERS } from '@/lib/purchase-order/sample'
+import { inCurrency, previewInvoiceBusiness, type DocPreviewOrg } from '@/lib/doc-preview'
 
 const PAGE_W = 794
 
 export default function PurchaseOrderTemplate({
-  initial, onClose, onSaved,
+  initial, orgInfo, onClose, onSaved,
 }: {
   initial: PurchaseOrderConfig
+  orgInfo: DocPreviewOrg
   onClose: () => void
   onSaved: (cfg: PurchaseOrderConfig) => void
 }) {
@@ -31,15 +33,15 @@ export default function PurchaseOrderTemplate({
   const html = useMemo(
     () => renderInvoiceHtml(
       {
-        orders: SAMPLE_PURCHASE_ORDERS,
-        business: SAMPLE_INVOICE_BUSINESS,
+        orders: inCurrency(SAMPLE_PURCHASE_ORDERS, orgInfo.currency),
+        business: previewInvoiceBusiness(orgInfo, SAMPLE_INVOICE_BUSINESS),
         config: toInvoiceConfig({ ...cfg, content: { notes: cfg.content.notes || 'Please quote the PO number on your invoice and delivery documents.' } }),
-        timezone: 'Pacific/Auckland',
-        decimals: 2,
+        timezone: orgInfo.timezone || 'Pacific/Auckland',
+        decimals: orgInfo.decimals,
       },
       { preview: true, now: new Date('2026-10-02T09:52:00+13:00') },
     ),
-    [cfg],
+    [cfg, orgInfo],
   )
 
   // Fit the A4 preview to the space available

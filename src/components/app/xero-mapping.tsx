@@ -83,6 +83,11 @@ export default function XeroMapping() {
   async function importFromXero() {
     setImporting(true)
     try {
+      // 1. Copy any Xero tax rates Inventa doesn't have yet into Settings → General.
+      const imp = await fetch('/api/integrations/xero/tax-rates', { method: 'POST' })
+      const impBody = await imp.json().catch(() => ({})) as { added?: number; skipped?: number; failed?: number; error?: string }
+      if (!imp.ok) { toast.error(impBody.error ?? 'Could not import tax rates from Xero. Please try again.'); return }
+      // 2. Reload the lists so the new rates appear here with their Xero rate already matched.
       const res = await fetch('/api/integrations/xero/mapping?refresh=1', { cache: 'no-store' })
       const body = await res.json().catch(() => ({}))
       if (!res.ok) { toast.error(body.error ?? 'Could not import from Xero. Please try again.'); return }
@@ -90,8 +95,20 @@ export default function XeroMapping() {
       cached = { at: Date.now(), payload: p }
       const accounts = new Set(Object.values(p.accounts).flat().map(a => a.code)).size
       setData(p)
-      setDraft(d => (d && JSON.stringify(d) !== saved ? d : draftFrom(p, false)))
-      toast.success(`Imported from Xero: ${accounts} accounts and ${p.taxRates.length} tax rates.`)
+      setDraft(d => {
+        const fresh = draftFrom(p, false)
+        if (!d || JSON.stringify(d) === saved) return fresh
+        // Keep unsaved choices, but match the newly added tax rates.
+        return { ...d, tax: { ...fresh.tax, ...d.tax } }
+      })
+      const added = impBody.added ?? 0
+      const failed = impBody.failed ?? 0
+      toast.success(
+        added > 0
+          ? `Imported ${added} new tax rate${added === 1 ? '' : 's'} from Xero (see Settings → General). ${accounts} accounts refreshed.`
+          : `No new tax rates to import: Inventa already has all ${impBody.skipped ?? p.taxRates.length} from Xero. ${accounts} accounts refreshed.`,
+      )
+      if (failed > 0) toast.error(`${failed} tax rate${failed === 1 ? '' : 's'} could not be imported.`)
     } catch {
       toast.error('Network error. Please try again.')
     } finally {

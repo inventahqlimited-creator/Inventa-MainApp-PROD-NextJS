@@ -38,6 +38,8 @@ const clean = (s: unknown): string | null => {
   const t = typeof s === 'string' ? s.trim() : ''
   return t === '' ? null : t
 }
+/** Products named "zz…" are parked or retired items: they are kept out of the Xero products view and never synced. */
+export const isHiddenProductName = (name: unknown) => /^zz/i.test(String(name ?? '').trim())
 const num = (v: unknown) => { const n = Number(v); return Number.isFinite(n) ? n : 0 }
 
 // ── Xero reads ──────────────────────────────────────────────────────────────
@@ -60,7 +62,7 @@ async function fetchXeroContacts(db: SupabaseClient, orgId: string): Promise<{ o
 async function fetchXeroItems(db: SupabaseClient, orgId: string): Promise<{ ok: true; list: XRec[] } | Fail> {
   const r = await xeroGet<{ Items?: { ItemID: string; Code: string; Name?: string }[] }>(db, orgId, '/Items')
   if (!r.ok) return r
-  return { ok: true, list: (r.data.Items ?? []).filter(i => i.ItemID && i.Code).map(i => ({ id: i.ItemID, name: i.Name ?? i.Code, code: i.Code })) }
+  return { ok: true, list: (r.data.Items ?? []).filter(i => i.ItemID && i.Code && !isHiddenProductName(i.Name ?? i.Code)).map(i => ({ id: i.ItemID, name: i.Name ?? i.Code, code: i.Code })) }
 }
 
 const fetchXero = (db: SupabaseClient, orgId: string, entity: Entity) => (entity === 'contact' ? fetchXeroContacts(db, orgId) : fetchXeroItems(db, orgId))
@@ -79,7 +81,8 @@ async function loadInventa(db: SupabaseClient, orgId: string, entity: Entity, id
   let q = db.from(table).select('*').eq('org_id', orgId)
   if (ids && ids.length > 0) q = q.in('id', ids)
   const { data } = await q.order('name')
-  return (data ?? []) as Row[]
+  const rows = (data ?? []) as Row[]
+  return entity === 'product' ? rows.filter(r => !isHiddenProductName(r.name)) : rows
 }
 
 /** The key a record is matched on in Xero: contact name, or product SKU (item code). */

@@ -7,13 +7,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { DEFAULT_INVOICE_CONFIG, INVOICE_OPTIONS, INVOICE_TEXT_FIELDS, type InvoiceConfig } from '@/lib/invoice/config'
 import { renderInvoiceHtml, SAMPLE_INVOICE_BUSINESS, SAMPLE_INVOICES } from '@/lib/invoice/render'
+import { inCurrency, previewInvoiceBusiness, type DocPreviewOrg } from '@/lib/doc-preview'
 
 const PAGE_W = 794
 
 export default function InvoiceTemplate({
-  initial, onClose, onSaved,
+  initial, orgInfo, onClose, onSaved,
 }: {
   initial: InvoiceConfig
+  orgInfo: DocPreviewOrg
   onClose: () => void
   onSaved: (cfg: InvoiceConfig) => void
 }) {
@@ -41,11 +43,11 @@ export default function InvoiceTemplate({
         },
       }
       return renderInvoiceHtml(
-        { orders: SAMPLE_INVOICES, business: SAMPLE_INVOICE_BUSINESS, config: previewCfg, timezone: 'Pacific/Auckland', decimals: 2 },
+        { orders: inCurrency(SAMPLE_INVOICES, orgInfo.currency), business: previewInvoiceBusiness(orgInfo, SAMPLE_INVOICE_BUSINESS), config: previewCfg, timezone: orgInfo.timezone || 'Pacific/Auckland', decimals: orgInfo.decimals },
         { preview: true, now: new Date('2026-10-02T09:52:00+13:00') },
       )
     },
-    [cfg],
+    [cfg, orgInfo],
   )
 
   // Fit the A4 preview to the space available

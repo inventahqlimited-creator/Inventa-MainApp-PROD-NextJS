@@ -2263,6 +2263,7 @@ export default function SettingsClient({
             </Card>
             {poDocOpen && (
               <PurchaseOrderTemplate
+                orgInfo={{ name: bizName, tradingName: String(org.trading_name ?? ''), address: bizAddress, phone: bizPhone, email: bizEmail, abn, gst: gstNumber, country, logoUrl, currency: baseCurrency, timezone, decimals: parseInt(decimalPlaces) || 2 }}
                 initial={poDocCfg}
                 onClose={() => setPoDocOpen(false)}
                 onSaved={cfg => { setPoDocCfg(cfg); setPoDocOpen(false); showToast('success', 'Purchase order template saved') }}
@@ -2447,6 +2448,7 @@ export default function SettingsClient({
             </Card>
             {invoiceOpen && (
               <InvoiceTemplate
+                orgInfo={{ name: bizName, tradingName: String(org.trading_name ?? ''), address: bizAddress, phone: bizPhone, email: bizEmail, abn, gst: gstNumber, country, logoUrl, currency: baseCurrency, timezone, decimals: parseInt(decimalPlaces) || 2 }}
                 initial={invoiceCfg}
                 onClose={() => setInvoiceOpen(false)}
                 onSaved={cfg => { setInvoiceCfg(cfg); setInvoiceOpen(false); showToast('success', 'Invoice template saved') }}
@@ -2454,6 +2456,7 @@ export default function SettingsClient({
             )}
             {packingOpen && (
               <PackingListTemplate
+                orgInfo={{ name: bizName, tradingName: String(org.trading_name ?? ''), address: bizAddress, phone: bizPhone, email: bizEmail, abn, gst: gstNumber, country, logoUrl, currency: baseCurrency, timezone, decimals: parseInt(decimalPlaces) || 2 }}
                 initial={packingCfg}
                 onClose={() => setPackingOpen(false)}
                 onSaved={cfg => { setPackingCfg(cfg); setPackingOpen(false); showToast('success', 'Packing list template saved') }}

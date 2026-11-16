@@ -37,7 +37,7 @@ function mast(o: InvoiceOrder, biz: InvoiceBusiness, cfg: InvoiceConfig): string
     cfg.header.businessDetails && contact.length ? `<div class="ba">${contact.map(esc).join('<br>')}</div>` : '',
   ].join('')
   // "Tax Invoice" is the wording required for businesses that are registered for tax
-  const title = o.kind === 'purchase' ? 'Purchase Order' : o.is_quote ? 'Quote' : biz.numbers.some(n => n.startsWith('Tax no.')) ? 'Tax Invoice' : 'Invoice'
+  const title = o.kind === 'credit' ? 'Credit Note' : o.kind === 'purchase' ? 'Purchase Order' : o.is_quote ? 'Quote' : biz.numbers.some(n => n.startsWith('Tax no.')) ? 'Tax Invoice' : 'Invoice'
   return `<header class="mast"><div class="biz">${left}</div><div class="doc"><h2>${title}</h2><div class="no">${esc(o.invoice_number)}</div></div></header>`
 }
 
@@ -50,15 +50,16 @@ function info(o: InvoiceOrder, cfg: InvoiceConfig, invoiceDate: string): string 
   const d = cfg.details
   const due = dueDate(o.terms, invoiceDate)
   const po = o.kind === 'purchase'
+  const cr = o.kind === 'credit'
   const kv = [
-    d.invoiceDate ? [po ? 'Order date' : o.is_quote ? 'Quote date' : 'Invoice date', fmtDate(invoiceDate)] : null,
-    po
+    d.invoiceDate ? [po ? 'Order date' : cr ? 'Credit note date' : o.is_quote ? 'Quote date' : 'Invoice date', fmtDate(invoiceDate)] : null,
+    cr ? (o.original_invoice ? ['Original invoice', o.original_invoice] : null) : po
       ? (d.dueDate ? ['Expected delivery', o.due_date ? fmtDate(o.due_date) : dash] : null)
       : (d.dueDate && !o.is_quote ? ['Due date', due ? fmtDate(due) : dash] : null),
-    d.terms ? ['Terms', o.terms ?? dash] : null,
+    d.terms && !cr ? ['Terms', o.terms ?? dash] : null,
     d.orderNumber ? ['Order #', o.so_number] : null,
     d.customerPo && o.customer_po ? [po ? 'Supplier ref' : 'Customer PO', o.customer_po] : null,
-    ...(po || o.is_quote ? [] : [
+    ...(po || cr || o.is_quote ? [] : [
       d.carrier && o.carrier ? ['Carrier', o.carrier] : null,
       d.shippingMethod && o.shipping_method ? ['Shipping method', o.shipping_method] : null,
       d.serviceType && o.service_type ? ['Service', o.service_type] : null,
@@ -68,7 +69,7 @@ function info(o: InvoiceOrder, cfg: InvoiceConfig, invoiceDate: string): string 
   const blocks = [
     cfg.addresses.billTo ? { w: '1fr', html: addrBlock(po ? 'Supplier' : 'Bill to', o.bill_to) } : null,
     cfg.addresses.shipTo ? { w: '1fr', html: addrBlock(po ? 'Deliver to' : 'Ship to', o.ship_to) } : null,
-    kv.length ? { w: '1.05fr', html: `<div><div class="lbl">${po ? 'Order details' : 'Invoice details'}</div><div class="kv">${kv.map(([k, v]) => `<span>${esc(k)}</span><span>${esc(v)}</span>`).join('')}</div></div>` } : null,
+    kv.length ? { w: '1.05fr', html: `<div><div class="lbl">${po ? 'Order details' : cr ? 'Credit note details' : 'Invoice details'}</div><div class="kv">${kv.map(([k, v]) => `<span>${esc(k)}</span><span>${esc(v)}</span>`).join('')}</div></div>` } : null,
   ].filter((x): x is { w: string; html: string } => !!x)
   if (!blocks.length) return ''
   return `<div class="info" style="grid-template-columns:${blocks.map(b => b.w).join(' ')}">${blocks.map(b => b.html).join('')}</div>`
@@ -120,7 +121,7 @@ function totals(o: InvoiceOrder, money: (n: number) => string): string {
     ...(o.taxes.length ? o.taxes.map(t => row(t.label, money(t.amount), 'm')) : [row('Tax', money(0), 'm')]),
     row(`Total ${o.currency}`, money(o.total), 't'),
   ].join('')
-  return `<div><div class="tot">${parts}</div><div class="due"><span>${o.kind === 'purchase' ? 'Total' : o.is_quote ? 'Quote total' : 'Amount due'}</span><span>${esc(o.currency)} ${esc(money(o.total))}</span></div></div>`
+  return `<div><div class="tot">${parts}</div><div class="due"><span>${o.kind === 'purchase' ? 'Total' : o.kind === 'credit' ? 'Credit total' : o.is_quote ? 'Quote total' : 'Amount due'}</span><span>${esc(o.currency)} ${esc(money(o.total))}</span></div></div>`
 }
 
 function left(o: InvoiceOrder, cfg: InvoiceConfig): string {
@@ -129,7 +130,7 @@ function left(o: InvoiceOrder, cfg: InvoiceConfig): string {
   const pay = cfg.footer.paymentDetails && bank.length && !o.is_quote && !o.kind
     ? `<div class="pay"><div class="lbl">Payment details</div><div class="kv">${[...bank, ['Reference', o.invoice_number]].map(([k, v]) => `<span>${esc(k)}</span><span>${esc(v)}</span>`).join('')}</div></div>`
     : ''
-  const notes = [o.notes, c.notes].filter(Boolean).join('\n\n')
+  const notes = [o.kind === 'credit' && o.reason ? `Reason for return: ${o.reason}` : '', o.notes, c.notes].filter(Boolean).join('\n\n')
   const note = cfg.footer.notes && notes ? `<div class="note"><div class="lbl">Notes</div><p>${esc(notes).replace(/\n/g, '<br>')}</p></div>` : ''
   return pay || note ? `<div class="stack">${pay}${note}</div>` : '<div></div>'
 }
@@ -210,7 +211,7 @@ export function renderInvoiceHtml(payload: InvoicePayload, opts: InvoiceRenderOp
   setDocQty(payload.qty)
   DOC_TERMS = payload.paymentTerms ?? []
   const sheets = payload.orders.map(o => sheet(o, payload.business, payload.config, payload.decimals, payload.timezone, opts.now)).join('')
-  const title = payload.orders.length === 1 ? `${payload.orders[0].kind === 'purchase' ? 'Purchase Order' : payload.orders[0].is_quote ? 'Quote' : 'Invoice'} ${payload.orders[0].invoice_number}` : `${payload.orders[0].kind === 'purchase' ? 'Purchase orders' : 'Invoices'} (${payload.orders.length} orders)`
+  const title = payload.orders.length === 1 ? `${payload.orders[0].kind === 'credit' ? 'Credit Note' : payload.orders[0].kind === 'purchase' ? 'Purchase Order' : payload.orders[0].is_quote ? 'Quote' : 'Invoice'} ${payload.orders[0].invoice_number}` : `${payload.orders[0].kind === 'credit' ? 'Credit notes' : payload.orders[0].kind === 'purchase' ? 'Purchase orders' : 'Invoices'} (${payload.orders.length} orders)`
   const previewCss = `body{background:#E5E9EA;padding:20px 0}.sheet{width:794px;min-height:1123px;margin:0 auto 20px;padding:48px 48px 34px;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.12),0 12px 32px rgba(0,0,0,.12);break-after:auto}.tail{margin-top:auto}.fb{display:flex;font:500 10px var(--mono);color:var(--mut);letter-spacing:.04em;border-top:1px solid var(--line);padding-top:9px}.fb .pg::before{content:"Page 1 of 1"}`
   // Print once the fonts and the logo have loaded
   const printJs = `<script>(function(){var done=false;function go(){if(done)return;done=true;setTimeout(function(){window.focus();window.print()},150)}var waits=[];if(document.fonts&&document.fonts.ready)waits.push(document.fonts.ready);Array.prototype.forEach.call(document.images,function(i){if(!i.complete)waits.push(new Promise(function(r){i.onload=r;i.onerror=r}))});Promise.all(waits).then(go);setTimeout(go,3500)})()</script>`
@@ -251,4 +252,18 @@ export const SAMPLE_INVOICES: InvoiceOrder[] = [{
   ],
   items_subtotal: 1868.92, costs_subtotal: 25.5, discount_amount: 0, subtotal: 1894.42,
   taxes: [{ label: 'Tax 15%', rate: 15, amount: 284.16 }], tax_total: 284.16, total: 2178.58,
+}]
+
+export const SAMPLE_CREDIT_NOTES: InvoiceOrder[] = [{
+  id: 'c', kind: 'credit', so_number: 'SO-0005', invoice_number: 'CN-0001', original_invoice: 'INV-0005', reason: 'Faulty on arrival', invoice_date: '2026-10-09', terms: null, customer_po: null,
+  notes: null, currency: 'NZD',
+  bill_to: { name: 'Summit Gear Co.', lines: ['PO Box 4410', 'Christchurch 8140', 'New Zealand'], email: 'accounts@summitgear.example' },
+  ship_to: null,
+  lines: [
+    { name: 'Trail Pack 28L, Olive', sku: 'PCK-TRL-28-OL', qty: 1, unitPrice: 189, discount: 0, taxRate: 15, amount: 189, serials: ['TP28-1002'] },
+    { name: 'Insulated Bottle 750ml', sku: 'BTL-INS-750', qty: 2, unitPrice: 34.9, discount: 10, taxRate: 15, amount: 62.82 },
+  ],
+  costs: [],
+  items_subtotal: 251.82, costs_subtotal: 0, discount_amount: 0, subtotal: 251.82,
+  taxes: [{ label: 'Tax 15%', rate: 15, amount: 37.77 }], tax_total: 37.77, total: 289.59,
 }]

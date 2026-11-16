@@ -6,14 +6,19 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { DEFAULT_INVOICE_CONFIG, INVOICE_OPTIONS, INVOICE_TEXT_FIELDS, type InvoiceConfig } from '@/lib/invoice/config'
-import { renderInvoiceHtml, SAMPLE_INVOICE_BUSINESS, SAMPLE_INVOICES } from '@/lib/invoice/render'
+import { renderInvoiceHtml, SAMPLE_CREDIT_NOTES, SAMPLE_INVOICE_BUSINESS, SAMPLE_INVOICES } from '@/lib/invoice/render'
+import type { CreditNoteSettings } from '@/lib/credit-notes/config'
 import { inCurrency, previewInvoiceBusiness, type DocPreviewOrg } from '@/lib/doc-preview'
 
 const PAGE_W = 794
+// A credit note has no due date, terms, carrier, tracking or payment details
+const CREDIT_HIDDEN = new Set(['details.dueDate', 'details.terms', 'details.customerPo', 'details.carrier', 'details.shippingMethod', 'details.serviceType', 'details.trackingNumber', 'addresses.shipTo', 'footer.paymentDetails'])
 
 export default function InvoiceTemplate({
-  initial, orgInfo, onClose, onSaved,
+  initial, orgInfo, onClose, onSaved, credit,
 }: {
+  /** Credit note template: same editor, credit note wording and sample, saved inside credit_note_settings */
+  credit?: CreditNoteSettings
   initial: InvoiceConfig
   orgInfo: DocPreviewOrg
   onClose: () => void
@@ -43,11 +48,11 @@ export default function InvoiceTemplate({
         },
       }
       return renderInvoiceHtml(
-        { orders: inCurrency(SAMPLE_INVOICES, orgInfo.currency), business: previewInvoiceBusiness(orgInfo, SAMPLE_INVOICE_BUSINESS), config: previewCfg, timezone: orgInfo.timezone || 'Pacific/Auckland', decimals: orgInfo.decimals },
+        { orders: inCurrency(credit ? SAMPLE_CREDIT_NOTES : SAMPLE_INVOICES, orgInfo.currency), business: previewInvoiceBusiness(orgInfo, SAMPLE_INVOICE_BUSINESS), config: previewCfg, timezone: orgInfo.timezone || 'Pacific/Auckland', decimals: orgInfo.decimals },
         { preview: true, now: new Date('2026-10-02T09:52:00+13:00') },
       )
     },
-    [cfg, orgInfo],
+    [cfg, orgInfo, credit],
   )
 
   // Fit the A4 preview to the space available
@@ -80,7 +85,7 @@ export default function InvoiceTemplate({
     try {
       const res = await fetch('/api/org/sales-settings', {
         method: 'PATCH', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ invoice_settings: cfg }),
+        body: JSON.stringify(credit ? { credit_note_settings: { ...credit, template: cfg } } : { invoice_settings: cfg }),
       })
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
@@ -100,8 +105,8 @@ export default function InvoiceTemplate({
       <div className="modal-box" style={{ maxWidth: 1180, height: '90vh', maxHeight: '90vh' }}>
         <div className="modal-header">
           <div>
-            <div className="modal-title">Invoice</div>
-            <div className="modal-subtitle">Choose what appears on the printed invoice. Business details come from Company Settings.</div>
+            <div className="modal-title">{credit ? 'Credit Note' : 'Invoice'}</div>
+            <div className="modal-subtitle">Choose what appears on the printed {credit ? 'credit note' : 'invoice'}. Business details come from Company Settings.</div>
           </div>
           <button className="modal-close" onClick={onClose} disabled={saving} aria-label="Close">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" /></svg>
@@ -111,7 +116,7 @@ export default function InvoiceTemplate({
         <div style={{ display: 'flex', flex: 1, minHeight: 0 }}>
           {/* Options */}
           <div style={{ width: 300, flexShrink: 0, borderRight: '1px solid var(--gray-100)', overflowY: 'auto', padding: '18px 22px', display: 'flex', flexDirection: 'column', gap: 20 }}>
-            {INVOICE_OPTIONS.map(g => (
+            {INVOICE_OPTIONS.map(g => credit ? { ...g, items: g.items.filter(it => !CREDIT_HIDDEN.has(`${g.group}.${it.key}`)) } : g).filter(g => g.items.length > 0).map(g => (
               <div key={g.group}>
                 <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--gray-400)', marginBottom: 8 }}>{g.title}</div>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
@@ -135,7 +140,7 @@ export default function InvoiceTemplate({
             <div>
               <div style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.08em', textTransform: 'uppercase', color: 'var(--gray-400)', marginBottom: 8 }}>Wording & payment details</div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                {INVOICE_TEXT_FIELDS.map(f => (
+                {INVOICE_TEXT_FIELDS.filter(f => !credit || f.key === 'notes').map(f => (
                   <label key={f.key} style={{ display: 'flex', flexDirection: 'column', gap: 4 }}>
                     <span style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--slate)' }}>{f.label}</span>
                     {f.multiline ? (
@@ -146,7 +151,7 @@ export default function InvoiceTemplate({
                     {f.hint && <span style={{ fontSize: 11.5, color: 'var(--gray-400)' }}>{f.hint}</span>}
                   </label>
                 ))}
-                <span style={{ fontSize: 11.5, color: 'var(--gray-400)' }}>Payment details only print when a bank detail is filled in.</span>
+                {!credit && <span style={{ fontSize: 11.5, color: 'var(--gray-400)' }}>Payment details only print when a bank detail is filled in.</span>}
               </div>
             </div>
             <button type="button" className="btn-sm btn-sm-ghost" style={{ alignSelf: 'flex-start' }} onClick={() => setCfg(c => ({ ...DEFAULT_INVOICE_CONFIG, content: c.content }))}>Show everything</button>
@@ -161,7 +166,7 @@ export default function InvoiceTemplate({
               <div style={{ width: PAGE_W * scale, height: frameH * scale, margin: '0 auto', position: 'relative' }}>
                 <iframe
                   ref={frame}
-                  title="Invoice preview"
+                  title="Document preview"
                   srcDoc={html}
                   sandbox="allow-same-origin"
                   onLoad={measure}

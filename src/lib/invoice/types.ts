@@ -32,7 +32,10 @@ export type InvoiceOrder = {
   /** A quote (order status Quote): printed as "Quote" with the order number and no payment details */
   is_quote?: boolean
   /** Set when the same layout is used for a purchase order (see lib/purchase-order): different wording, no payment details */
-  kind?: 'purchase'
+  kind?: 'purchase' | 'credit'
+  /** Credit notes: the invoice the credit is against, and why it was returned */
+  original_invoice?: string | null
+  reason?: string | null
   /** Purchase orders: the expected delivery date (YYYY-MM-DD), shown where an invoice shows its due date */
   due_date?: string | null
   /** YYYY-MM-DD. null until the order has shipped — the day it is printed is used until then. */

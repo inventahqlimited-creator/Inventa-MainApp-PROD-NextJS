@@ -56,9 +56,14 @@ export function billTo(c: ContactDb | undefined, fallbackName: string): InvoiceA
 function shipTo(c: ContactDb | undefined, fallbackName: string): InvoiceAddress | null {
   if (!c) return fallbackName ? { name: fallbackName, lines: [], email: null } : null
   const has = !!(clean(c.ship_street) || clean(c.ship_city) || clean(c.ship_postcode))
+  // no shipping address saved (a country on its own doesn't count) → ship to the billing address
+  if (!has) {
+    const bill = billTo(c, fallbackName)
+    return bill ? { ...bill, name: clean(c.ship_name) || bill.name, email: null } : null
+  }
   return {
     name: clean(c.ship_name) || clean(c.name) || fallbackName,
-    lines: (has ? [clean(c.ship_street), joinParts([c.ship_city, c.ship_postcode]), clean(c.ship_country)] : [clean(c.address), clean(c.city), clean(c.country)]).filter(Boolean),
+    lines: [clean(c.ship_street), joinParts([c.ship_city, c.ship_postcode]), clean(c.ship_country)].filter(Boolean),
     email: null,
   }
 }

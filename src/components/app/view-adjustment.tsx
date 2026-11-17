@@ -185,7 +185,7 @@ export default function ViewAdjustment({
         </div>
       </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', padding: '24px 28px 100px' }}>
+      <div className="doc-scroll" style={{ flex: 1, overflowY: 'auto', padding: '24px 28px 100px' }}>
 
         <div className="npo-card" style={{ marginBottom: 20 }}>
           <div className="npo-card-title">

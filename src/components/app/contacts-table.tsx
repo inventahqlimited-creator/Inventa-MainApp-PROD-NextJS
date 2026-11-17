@@ -300,7 +300,7 @@ export default function ContactsTable({
     setForm({
       name: c.name, type: c.type,
       email: c.email ?? '', phone: c.phone ?? '', website: c.website ?? '',
-      tax_number: c.tax_number ?? '', currency: c.currency ?? 'NZD',
+      tax_number: c.tax_number ?? '', currency: c.currency ?? baseCurrency,
       tier: '', price_level_id: c.price_level_id ?? '', default_location: locations.find(l => l.id === c.default_location || l.name === c.default_location)?.id ?? '', terms: c.terms ?? 'Net 30', tax_rate: c.tax_rate ?? '',
       credit_limit: String(c.credit_limit ?? 0), disc_type: c.disc_type ?? 'percent',
       disc_value: String(c.disc_value ?? 0),

@@ -419,7 +419,7 @@ export default function NewPurchaseOrder({
       ref: supplierOrderNum || null,
       terms,
       notes: notes || null,
-      currency: selectedSupplier.currency ?? 'NZD',
+      currency: selectedSupplier.currency ?? null,
       ...(prefill?.source_so_id ? { source_so_id: prefill.source_so_id } : {}),
       total_amount: total,
       order_discount: orderDiscount || null,

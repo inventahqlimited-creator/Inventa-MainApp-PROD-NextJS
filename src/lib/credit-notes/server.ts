@@ -33,6 +33,16 @@ export async function returnedByLine(db: Db, orgId: string, soId: string, exclud
   return out
 }
 
+/** Serials (as "product_id|serial") already on another Open or Closed credit note for this order, so they can't be returned twice. */
+export async function takenSerials(db: Db, orgId: string, soId: string, excludeCn?: string): Promise<Set<string>> {
+  const { data } = await db.from('credit_note_lines').select('product_id, serial_number, cn_id, credit_notes!inner(so_id, status)').eq('org_id', orgId).not('serial_number', 'is', null)
+  return new Set(
+    ((data ?? []) as unknown as { product_id: string; serial_number: string; cn_id: string; credit_notes: { so_id: string; status: string } | { so_id: string; status: string }[] }[])
+      .filter(r => { const c = Array.isArray(r.credit_notes) ? r.credit_notes[0] : r.credit_notes; return c && c.so_id === soId && ['Open', 'Closed'].includes(c.status) && r.cn_id !== excludeCn })
+      .map(r => `${r.product_id}|${r.serial_number}`),
+  )
+}
+
 export type CnOrder = {
   id: string; so_number: string | null; status: string; customer_id: string | null; customer_name: string | null
   location_id: string | null; currency: string | null
@@ -87,19 +97,14 @@ export async function buildLines(
   const byId = new Map(lines.map(l => [String(l.id), l]))
   const returned = await returnedByLine(db, orgId, soId, excludeCn)
   const productIds = [...new Set(lines.map(l => String(l.product_id)))]
-  const [{ data: prods }, sold, { data: bins }, { data: otherSerials }] = await Promise.all([
+  const [{ data: prods }, sold, { data: bins }, taken] = await Promise.all([
     db.from('products').select('id, serial_tracking, batch_tracking, track_stock, type').in('id', productIds),
     soldTracking(db, orgId, soId),
     db.from('bins').select('id').eq('org_id', orgId).eq('location_id', locationId),
-    db.from('credit_note_lines').select('product_id, serial_number, cn_id, credit_notes!inner(so_id, status)').eq('org_id', orgId).not('serial_number', 'is', null),
+    takenSerials(db, orgId, soId, excludeCn),
   ])
   const prodById = new Map(((prods ?? []) as Row[]).map(p => [String(p.id), p]))
   const binIds = new Set(((bins ?? []) as { id: string }[]).map(b => String(b.id)))
-  const takenSerials = new Set(
-    ((otherSerials ?? []) as unknown as { product_id: string; serial_number: string; cn_id: string; credit_notes: { so_id: string; status: string } | { so_id: string; status: string }[] }[])
-      .filter(r => { const c = Array.isArray(r.credit_notes) ? r.credit_notes[0] : r.credit_notes; return c && c.so_id === soId && ['Open', 'Closed'].includes(c.status) && r.cn_id !== excludeCn })
-      .map(r => `${r.product_id}|${r.serial_number}`),
-  )
 
   const factor = discountFactor(order, lines, costsTotal)
 
@@ -124,7 +129,7 @@ export async function buildLines(
       if (!t?.serials.has(serial)) return { error: `Serial ${serial} wasn’t shipped on this order (${name}).`, status: 400 }
       if (qty !== 1) return { error: `A serial number is one unit: use quantity 1 for ${serial}.`, status: 400 }
       const key = `${sl.product_id}|${serial}`
-      if (takenSerials.has(key) || seenSerial.has(key)) return { error: `Serial ${serial} is already on another credit note for this order.`, status: 409 }
+      if (taken.has(key) || seenSerial.has(key)) return { error: `Serial ${serial} is already on another credit note for this order.`, status: 409 }
       seenSerial.add(key)
     } else if (serial) return { error: `${name} isn’t serial tracked.`, status: 400 }
     if (isStock && p.batch_tracking) {

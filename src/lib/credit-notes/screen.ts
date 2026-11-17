@@ -2,7 +2,7 @@
 // Everything the credit note screen needs, for a new credit note (from an order) or an existing one.
 import type { Access } from '@/lib/auth/access'
 import { orgToday } from '@/lib/org-today'
-import { discountFactor, invoiceNumberFor, loadClosedOrder, loadSettings, returnedByLine, soldTracking } from './server'
+import { discountFactor, invoiceNumberFor, loadClosedOrder, loadSettings, returnedByLine, soldTracking, takenSerials } from './server'
 
 type Row = Record<string, unknown>
 const num = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : 0)
@@ -45,12 +45,13 @@ export async function loadReturnScreen(a: Access, opts: { so?: string; id?: stri
   const factor = discountFactor(order, lines, costsTotal)
   const returned = await returnedByLine(db, orgId, soId, opts.id)
   const productIds = [...new Set(lines.map(l => String(l.product_id)))]
-  const [{ data: prods }, sold, { data: locs }, { data: bins }, { data: org }] = await Promise.all([
+  const [{ data: prods }, sold, { data: locs }, { data: bins }, { data: org }, taken] = await Promise.all([
     db.from('products').select('id, serial_tracking, batch_tracking, track_stock, type').in('id', productIds),
     soldTracking(db, orgId, soId),
     db.from('locations').select('id, name').eq('org_id', orgId).eq('active', true).order('name'),
     db.from('bins').select('id, location_id, name, is_active').eq('org_id', orgId).order('name'),
     db.from('organisations').select('decimal_places, xero_enabled, so_prefix, so_suffix').eq('id', orgId).single(),
+    takenSerials(db, orgId, soId, opts.id),
   ])
   const prodById = new Map(((prods ?? []) as Row[]).map(p => [String(p.id), p]))
   const orgRow = (org ?? {}) as { decimal_places?: number | null; xero_enabled?: boolean | null }
@@ -65,7 +66,8 @@ export async function loadReturnScreen(a: Access, opts: { so?: string; id?: stri
       shipped: num(l.quantity_shipped) || num(l.quantity), returned: returned.get(String(l.id)) ?? 0,
       unit_price: num(l.unit_price), discount: eff > 0 ? eff : 0, tax_rate: num(l.tax_rate),
       stock, serial: stock && p.serial_tracking === true, batch: stock && p.batch_tracking === true,
-      serials: [...(t?.serials ?? [])].sort(), batches: [...(t?.batches ?? [])].sort(),
+      // serials already on another credit note for this order aren't offered again
+      serials: [...(t?.serials ?? [])].filter(s => !taken.has(`${l.product_id}|${s}`)).sort(), batches: [...(t?.batches ?? [])].sort(),
     }
   })
 

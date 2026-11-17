@@ -33,6 +33,7 @@ type OrderRow = {
 type CartonDb = { id: string; so_id: string; sales_order_carton_lines: { so_line_id: string; qty: number }[] | null }
 type ContactDb = {
   id: string; name: string | null; address: string | null; city: string | null; country: string | null; phone: string | null
+  bill_name: string | null; bill_street: string | null; bill_city: string | null; bill_postcode: string | null; bill_country: string | null
   ship_name: string | null; ship_street: string | null; ship_city: string | null; ship_postcode: string | null; ship_country: string | null; ship_phone: string | null
 }
 type LocationDb = { id: string; name: string | null; address: string | null; city: string | null; country: string | null; phone: string | null }
@@ -43,13 +44,15 @@ const num = (v: unknown) => (Number.isFinite(Number(v)) ? Number(v) : 0)
 
 function shipTo(c: ContactDb | undefined, fallbackName: string): PackAddress | null {
   if (!c) return fallbackName ? { name: fallbackName, lines: [], phone: null } : null
-  // the delivery address if one is saved, otherwise the contact's main address
+  // the delivery address if one is saved, otherwise the billing address, otherwise the contact's main address
+  // (a country on its own doesn't count as an address)
   const hasShip = !!(clean(c.ship_street) || clean(c.ship_city) || clean(c.ship_postcode))
-  const street = hasShip ? clean(c.ship_street) : clean(c.address)
-  const cityLine = hasShip ? joinParts([c.ship_city, c.ship_postcode]) : clean(c.city)
-  const country = hasShip ? clean(c.ship_country) : clean(c.country)
+  const hasBill = !!(clean(c.bill_street) || clean(c.bill_city) || clean(c.bill_postcode))
+  const street = hasShip ? clean(c.ship_street) : hasBill ? clean(c.bill_street) : clean(c.address)
+  const cityLine = hasShip ? joinParts([c.ship_city, c.ship_postcode]) : hasBill ? joinParts([c.bill_city, c.bill_postcode]) : clean(c.city)
+  const country = hasShip ? clean(c.ship_country) : hasBill ? clean(c.bill_country) : clean(c.country)
   return {
-    name: clean(c.ship_name) || clean(c.name) || fallbackName,
+    name: clean(c.ship_name) || (hasShip ? '' : clean(c.bill_name)) || clean(c.name) || fallbackName,
     lines: [street, cityLine, country].filter(Boolean),
     phone: clean(c.ship_phone) || clean(c.phone) || null,
   }
@@ -105,7 +108,7 @@ export async function loadPackingListPayload(db: Db, orgId: string, ids: string[
   const [{ data: org }, { data: cartons }, { data: contacts }, { data: locations }] = await Promise.all([
     db.from('organisations').select('name, trading_name, abn_nzbn, gst_number, logo_url, phone, email, contact_phone, contact_email, address, address_line1, address_line2, city, state, postcode, country, default_carrier, default_shipping_method, timezone, packing_list_settings, decimal_qty, decimal_qty_places').eq('id', orgId).single(),
     orderIds.length ? db.from('sales_order_cartons').select('id, so_id, sales_order_carton_lines ( so_line_id, qty )').in('so_id', orderIds) : none,
-    customerIds.length ? db.from('contacts').select('id, name, address, city, country, phone, ship_name, ship_street, ship_city, ship_postcode, ship_country, ship_phone').in('id', customerIds) : none,
+    customerIds.length ? db.from('contacts').select('id, name, address, city, country, phone, bill_name, bill_street, bill_city, bill_postcode, bill_country, ship_name, ship_street, ship_city, ship_postcode, ship_country, ship_phone').in('id', customerIds) : none,
     locationIds.length ? db.from('locations').select('id, name, address, city, country, phone').in('id', locationIds) : none,
   ])
   const orgRow = (org ?? {}) as OrgDb

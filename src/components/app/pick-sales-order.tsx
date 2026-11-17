@@ -327,7 +327,7 @@ export default function PickSalesOrder({
 
       {/* Body */}
       <div style={{ flex: 1, display: 'flex', minHeight: 0, overflow: 'hidden' }}>
-        <div style={{ flex: 1, overflowY: 'auto', padding: '20px 24px 100px' }}>
+        <div className="doc-scroll doc-scroll-20" style={{ flex: 1, overflowY: 'auto', padding: '20px 24px 100px' }}>
           {error && <div style={{ marginBottom: 14, padding: '10px 14px', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 10, fontSize: 13, color: '#B91C1C' }}>{error}</div>}
           {lines.length === 0 && (
             <div style={{ textAlign: 'center', padding: '48px 0', color: 'var(--gray-400)', fontSize: 13 }}>There are no stocked items to pick.</div>

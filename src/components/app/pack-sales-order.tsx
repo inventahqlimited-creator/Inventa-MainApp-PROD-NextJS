@@ -164,7 +164,7 @@ export default function PackSalesOrder({ packs }: { packs: OrderPack[] }) {
       </div>
 
       {/* Body */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '20px 28px 100px' }}>
+      <div className="doc-scroll doc-scroll-20" style={{ flex: 1, overflowY: 'auto', padding: '20px 28px 100px' }}>
         {error && <div style={{ marginBottom: 14, padding: '10px 14px', background: '#FEF2F2', border: '1px solid #FECACA', borderRadius: 10, fontSize: 13, color: '#B91C1C' }}>{error}</div>}
 
         {packs.map(p => {

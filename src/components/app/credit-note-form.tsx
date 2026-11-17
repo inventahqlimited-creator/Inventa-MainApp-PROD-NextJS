@@ -122,7 +122,7 @@ export default function CreditNoteForm({ data, canProcess, isAdmin }: { data: Sc
   const title = cn.cn_number ?? 'New credit note'
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
-      <div className="page-header-card">
+      <div className="page-header-card" style={{ borderRadius: 16, paddingBottom: 4 }}>
         <div className="page-header-top">
           <div>
             <div className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>{title} {cn.status !== 'New' && cnBadge(cn.status)}</div>
@@ -132,13 +132,13 @@ export default function CreditNoteForm({ data, canProcess, isAdmin }: { data: Sc
             <button className="btn btn-outline" onClick={() => router.push(cn.id ? '/sales/returns' : `/sales/${so.id}`)}>Back</button>
             {cn.id && cn.status !== 'Cancelled' && <button className="btn btn-outline" onClick={onPrint}>Print</button>}
             {editable && cn.id && <button className="btn btn-outline" disabled={!!busy} onClick={() => setConfirm('cancel')}>Cancel credit note</button>}
-            {editable && <button className="btn btn-outline" disabled={!!busy} onClick={onSave}>{busy === 'save' ? 'Saving…' : cn.id ? 'Save' : 'Create credit note'}</button>}
+            {editable && <button className={cn.id ? 'btn btn-outline' : 'btn btn-primary'} disabled={!!busy} onClick={onSave}>{busy === 'save' ? 'Saving…' : cn.id ? 'Save' : 'Create credit note'}</button>}
             {editable && cn.id && <button className="btn btn-primary" disabled={!!busy} onClick={() => { const v = validate(); if (v) setError(v); else { setError(null); setConfirm('close') } }}>{busy === 'close' ? 'Closing…' : 'Close'}</button>}
           </div>
         </div>
       </div>
 
-      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '0 2px 24px' }}>
+      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '0 20px 24px' }}>
         {error && <div style={{ margin: '12px 0', padding: '10px 14px', borderRadius: 10, background: '#FEE2E2', color: '#991B1B', fontSize: 13 }}>{error}</div>}
 
         {cn.status === 'Closed' && xero.show && (
@@ -173,7 +173,7 @@ export default function CreditNoteForm({ data, canProcess, isAdmin }: { data: Sc
           </div>
         </div>
 
-        <div className="table-container" style={{ marginTop: 4 }}>
+        <div className="table-container" style={{ margin: '4px 0 0', borderRadius: 14, border: '1px solid var(--gray-100)', flex: 'none' }}>
           <div className="table-wrap">
             <table>
               <thead>

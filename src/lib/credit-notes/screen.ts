@@ -1,6 +1,7 @@
 // src/lib/credit-notes/screen.ts
 // Everything the credit note screen needs, for a new credit note (from an order) or an existing one.
 import type { Access } from '@/lib/auth/access'
+import { orgToday } from '@/lib/org-today'
 import { discountFactor, invoiceNumberFor, loadClosedOrder, loadSettings, returnedByLine, soldTracking } from './server'
 
 type Row = Record<string, unknown>
@@ -99,7 +100,7 @@ export async function loadReturnScreen(a: Access, opts: { so?: string; id?: stri
     cn: {
       id: existing ? String(existing.id) : null, cn_number: existing ? String(existing.cn_number) : null,
       status: existing ? (existing.status as 'Open' | 'Closed' | 'Cancelled') : 'New',
-      return_date: existing?.return_date ? String(existing.return_date).slice(0, 10) : new Date().toISOString().slice(0, 10),
+      return_date: existing?.return_date ? String(existing.return_date).slice(0, 10) : await orgToday(db, orgId),
       reason: existing ? String(existing.reason ?? '') : '', notes: existing ? String(existing.notes ?? '') : '',
       location_id: existing ? String(existing.location_id ?? '') : String(order.location_id ?? ''),
       currency: String(existing?.currency ?? order.currency ?? ''), total_amount: num(existing?.total_amount),

@@ -1,6 +1,7 @@
 // src/app/api/org/credit-notes/route.ts
 // POST — create a credit note (status Open) against a Closed sales order. Nothing moves until it is closed.
 import { NextResponse } from 'next/server'
+import { orgToday } from '@/lib/org-today'
 import { requirePerm } from '@/lib/auth/access'
 import { buildLines, invoiceNumberFor, loadClosedOrder, loadSettings, nextCreditNoteNumber } from '@/lib/credit-notes/server'
 import type { CnLineInput } from '@/lib/credit-notes/config'
@@ -33,7 +34,7 @@ export async function POST(req: Request) {
   const so = loaded.order
 
   const invoice = await invoiceNumberFor(db, orgId, soId)
-  const returnDate = typeof body.return_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.return_date) ? body.return_date : new Date().toISOString().slice(0, 10)
+  const returnDate = typeof body.return_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(body.return_date) ? body.return_date : await orgToday(db, orgId)
 
   // The number is taken from what exists; if two people save at once the unique index refuses the second, so try again
   for (let attempt = 0; attempt < 4; attempt++) {

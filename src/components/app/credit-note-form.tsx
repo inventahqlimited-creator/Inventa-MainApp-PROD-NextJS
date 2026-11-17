@@ -1,9 +1,10 @@
 'use client'
 // src/components/app/credit-note-form.tsx
-// One credit note (Sales Return): new, Open (editable), Closed or Cancelled (read only).
+// One credit note (Sales Return): new (edit mode), then view mode like the other transaction screens —
+// header Actions menu, bottom bar with Close Credit Note; Edit Credit Note switches an Open one to edit mode.
 //   • Whole-return reason (open text) and a return-to location; each line has its own bin.
 //   • Nothing moves until Close: a confirmation popup, then the stock comes back and the credit note goes to Xero.
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import type { ScreenData, ScreenRow } from '@/lib/credit-notes/screen'
 import { creditLineTotal } from '@/lib/credit-notes/config'
@@ -15,10 +16,53 @@ type Row = { key: number; so_line_id: string; quantity: string; bin_id: string; 
 const inputStyle: React.CSSProperties = { border: '1.5px solid var(--gray-200)', borderRadius: 8, padding: '7px 10px', fontSize: 13, fontFamily: 'var(--font-ui)', color: 'var(--gray-900)', background: '#fff', width: '100%' }
 const label: React.CSSProperties = { fontSize: 11.5, fontWeight: 600, color: 'var(--gray-400)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4, display: 'block' }
 
+// Actions dropdown in the header of a saved credit note (view mode), same pattern as the other transaction screens
+function CreditNoteActions({ soId, canEdit, canCancel, canPrint, canRetryXero, onEdit, onPrint, onCancel, onRetryXero }: {
+  soId: string; canEdit: boolean; canCancel: boolean; canPrint: boolean; canRetryXero: boolean
+  onEdit: () => void; onPrint: () => void; onCancel: () => void; onRetryXero: () => void
+}) {
+  const router = useRouter()
+  const [open, setOpen] = useState(false)
+  const box = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    if (!open) return
+    const close = (e: MouseEvent) => { if (box.current && !box.current.contains(e.target as Node)) setOpen(false) }
+    document.addEventListener('mousedown', close)
+    return () => document.removeEventListener('mousedown', close)
+  }, [open])
+  const ic = (d: string) => <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d={d} /></svg>
+  const item = (label: string, onClick: () => void, icon: React.ReactNode, danger = false) => (
+    <div key={label} className="fp-item" onClick={() => { setOpen(false); onClick() }} style={{ display: 'flex', alignItems: 'center', gap: 9, cursor: 'pointer', color: danger ? 'var(--danger)' : undefined }}>
+      <span style={{ width: 16, display: 'inline-flex', justifyContent: 'center', flexShrink: 0 }}>{icon}</span>
+      <span style={{ flex: 1 }}>{label}</span>
+    </div>
+  )
+  return (
+    <div ref={box} style={{ position: 'relative', display: 'inline-block' }}>
+      <button className="btn btn-outline" style={{ height: 34, marginLeft: 4 }} onClick={() => setOpen(o => !o)} aria-haspopup="menu" aria-expanded={open}>
+        Actions
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="6 9 12 15 18 9" /></svg>
+      </button>
+      {open && (
+        <div className="inv-dropdown" role="menu" style={{ display: 'block', position: 'absolute', right: 0, top: 'calc(100% + 6px)', width: 230, padding: 6, zIndex: 60 }}>
+          {canEdit && item('Edit Credit Note', onEdit, ic('M12 20h9M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z'))}
+          {canPrint && item('Print Credit Note', onPrint, ic('M6 9V2h12v7M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2M6 14h12v8H6z'))}
+          {item('View Sales Order', () => router.push(`/sales/${soId}`), ic('M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M16 13H8M16 17H8'))}
+          {canRetryXero && item('Post to Xero again', onRetryXero, ic('M3 12a9 9 0 1 0 3-6.7M3 4v5h5'))}
+          {canCancel && <><div style={{ height: 1, background: 'var(--gray-100)', margin: '5px 0' }} />{item('Cancel Credit Note', onCancel, ic('M18 6 6 18M6 6l12 12'), true)}</>}
+        </div>
+      )}
+    </div>
+  )
+}
+
 export default function CreditNoteForm({ data, canProcess, isAdmin }: { data: ScreenData; canProcess: boolean; isAdmin: boolean }) {
   const router = useRouter()
   const { cn, so, lines, locations, bins, xero } = data
-  const editable = canProcess && (cn.status === 'New' || cn.status === 'Open')
+  const isNew = cn.status === 'New'
+  const [mode, setMode] = useState<'view' | 'edit'>(isNew ? 'edit' : 'view')
+  const canEdit = canProcess && cn.status === 'Open'
+  const editable = canProcess && mode === 'edit' && (isNew || cn.status === 'Open')
 
   const [locationId, setLocationId] = useState(cn.location_id)
   const [returnDate, setReturnDate] = useState(cn.return_date)
@@ -72,7 +116,7 @@ export default function CreditNoteForm({ data, canProcess, isAdmin }: { data: Sc
     const id = await save()
     if (!id) return
     if (!cn.id) { toast.later('success', 'Credit note created'); router.push(`/sales/returns/${id}`) }
-    else { toast.success('Credit note saved'); router.refresh() }
+    else { toast.success('Credit note saved'); setMode('view'); router.refresh() }
   }
 
   async function onClose() {
@@ -99,7 +143,7 @@ export default function CreditNoteForm({ data, canProcess, isAdmin }: { data: Sc
       const res = await fetch(`/api/org/credit-notes/${cn.id}/cancel`, { method: 'POST' })
       const d = await res.json().catch(() => ({}))
       if (!res.ok) { setError(d.error ?? 'Could not cancel.'); return }
-      toast.success('Credit note cancelled'); router.refresh()
+      toast.success('Credit note cancelled'); setMode('view'); router.refresh()
     } finally { setBusy(null) }
   }
 
@@ -119,114 +163,193 @@ export default function CreditNoteForm({ data, canProcess, isAdmin }: { data: Sc
     if (!r.ok) setError(r.error)
   }
 
-  const title = cn.cn_number ?? 'New credit note'
+  const title = cn.cn_number ?? 'New Credit Note'
+  const locName = locations.find(l => l.id === locationId)?.name ?? '—'
+  const backHref = cn.id ? '/sales/returns' : `/sales/${so.id}`
+  const discard = () => {
+    setLocationId(cn.location_id); setReturnDate(cn.return_date); setReason(cn.reason); setNotes(cn.notes)
+    setRows(data.rows.map(mk)); setError(null); setMode('view')
+  }
+  const fmtDate = (d: string) => { const m = /^(\d{4})-(\d{2})-(\d{2})/.exec(d ?? ''); return m ? new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3])).toLocaleDateString('en-NZ', { day: 'numeric', month: 'short', year: 'numeric' }) : '—' }
+  const readText = (v: string) => <div style={{ fontSize: 13, fontWeight: 500, color: 'var(--slate)', padding: '4px 0', whiteSpace: 'pre-wrap' }}>{v || '—'}</div>
+  const shownRows = editable ? rows : rows.filter(r => Number(r.quantity) > 0)
+  const footerBtn = { height: 38 }
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', flex: 1, minHeight: 0, overflow: 'hidden' }}>
-      <div className="page-header-card" style={{ borderRadius: 16, paddingBottom: 4 }}>
-        <div className="page-header-top">
+      {/* Header */}
+      <div style={{ background: 'var(--white)', borderBottom: '1px solid var(--gray-100)', padding: '16px 28px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0, boxShadow: '0 1px 2px rgba(0,0,0,0.04)' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+          <button onClick={() => router.push(backHref)} className="sq-btn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
+          </button>
           <div>
-            <div className="page-title" style={{ display: 'flex', alignItems: 'center', gap: 10 }}>{title} {cn.status !== 'New' && cnBadge(cn.status)}</div>
-            <div className="page-subtitle">Against {so.so_number}{so.invoice_number ? ` · invoice ${so.invoice_number}` : ''} · {so.customer_name}</div>
+            <div style={{ fontFamily: 'var(--font-display)', fontSize: 18, fontWeight: 700, letterSpacing: '-0.02em', color: 'var(--slate)' }}>{title}</div>
+            <div style={{ fontSize: 12, color: 'var(--gray-400)', marginTop: 1 }}>
+              Against <a onClick={() => router.push(`/sales/${so.id}`)} style={{ color: 'var(--teal)', cursor: 'pointer' }}>{so.so_number}</a>{so.invoice_number ? ` · invoice ${so.invoice_number}` : ''} · {so.customer_name}
+            </div>
           </div>
-          <div className="page-header-actions">
-            <button className="btn btn-outline" onClick={() => router.push(cn.id ? '/sales/returns' : `/sales/${so.id}`)}>Back</button>
-            {cn.id && cn.status !== 'Cancelled' && <button className="btn btn-outline" onClick={onPrint}>Print</button>}
-            {editable && cn.id && <button className="btn btn-outline" disabled={!!busy} onClick={() => setConfirm('cancel')}>Cancel credit note</button>}
-            {editable && <button className={cn.id ? 'btn btn-outline' : 'btn btn-primary'} disabled={!!busy} onClick={onSave}>{busy === 'save' ? 'Saving…' : cn.id ? 'Save' : 'Create credit note'}</button>}
-            {editable && cn.id && <button className="btn btn-primary" disabled={!!busy} onClick={() => { const v = validate(); if (v) setError(v); else { setError(null); setConfirm('close') } }}>{busy === 'close' ? 'Closing…' : 'Close'}</button>}
-          </div>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          {!isNew && mode === 'edit' && <span style={{ fontSize: 12, color: 'var(--gray-400)' }}>Editing</span>}
+          {isNew
+            ? <><span style={{ fontSize: 12, color: 'var(--gray-400)' }}>New</span><div style={{ width: 8, height: 8, borderRadius: '50%', background: '#F59E0B' }} /></>
+            : cnBadge(cn.status)}
+          {!isNew && mode === 'view' && (
+            <CreditNoteActions
+              soId={so.id}
+              canEdit={canEdit}
+              canCancel={canEdit}
+              canPrint={cn.status !== 'Cancelled'}
+              canRetryXero={cn.status === 'Closed' && xero.show && xero.status !== 'synced' && isAdmin}
+              onEdit={() => { setError(null); setMode('edit') }}
+              onPrint={() => void onPrint()}
+              onCancel={() => setConfirm('cancel')}
+              onRetryXero={() => void onRetryXero()}
+            />
+          )}
         </div>
       </div>
 
-      <div style={{ flex: 1, minHeight: 0, overflowY: 'auto', padding: '0 20px 24px' }}>
-        {error && <div style={{ margin: '12px 0', padding: '10px 14px', borderRadius: 10, background: '#FEE2E2', color: '#991B1B', fontSize: 13 }}>{error}</div>}
-
+      <div className="doc-scroll" style={{ flex: 1, overflowY: 'auto', padding: '24px 28px 100px' }}>
+        {error && <div style={{ background: '#FEF2F2', border: '1.5px solid #FECACA', borderRadius: 10, padding: '12px 16px', fontSize: 13, color: '#B91C1C', marginBottom: 20 }}>{error}</div>}
+        {(cn.status === 'Closed' || cn.status === 'Cancelled') && (
+          <div style={{ background: '#F8FAFC', border: '1.5px solid var(--gray-200)', borderRadius: 10, padding: '10px 16px', fontSize: 13, color: 'var(--gray-400)', marginBottom: 20 }}>
+            This credit note is <strong style={{ color: 'var(--slate)' }}>{cn.status}</strong> and cannot be edited.
+          </div>
+        )}
         {cn.status === 'Closed' && xero.show && (
-          <div style={{ margin: '12px 0', padding: '10px 14px', borderRadius: 10, background: xero.status === 'synced' ? '#D1FAE5' : '#FEF3C7', color: xero.status === 'synced' ? '#065F46' : '#92400E', fontSize: 13, display: 'flex', gap: 12, alignItems: 'center' }}>
-            <span style={{ flex: 1 }}>
-              {xero.status === 'synced' ? 'Posted to Xero.' : `Xero: not posted${xero.error ? ` — ${xero.error}` : '.'}`}
-              {xero.status === 'synced' && xero.error ? ` Note: ${xero.error}` : ''}
-            </span>
-            {xero.status !== 'synced' && isAdmin && <button className="btn-sm btn-sm-primary" disabled={!!busy} onClick={onRetryXero}>{busy === 'retry' ? 'Sending…' : 'Retry'}</button>}
+          <div style={{ marginBottom: 20, padding: '10px 16px', borderRadius: 10, background: xero.status === 'synced' ? '#D1FAE5' : '#FEF3C7', color: xero.status === 'synced' ? '#065F46' : '#92400E', fontSize: 13 }}>
+            {xero.status === 'synced' ? 'Posted to Xero.' : `Xero: not posted${xero.error ? ` — ${xero.error}` : '.'}`}
+            {xero.status === 'synced' && xero.error ? ` Note: ${xero.error}` : ''}
+            {xero.status !== 'synced' && isAdmin && ' Use Actions → Post to Xero again.'}
           </div>
         )}
 
-        <div style={{ background: '#fff', border: '1px solid var(--gray-100)', borderRadius: 14, padding: 18, margin: '12px 0', display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
-          <div>
-            <span style={label}>Return to location</span>
-            <select style={inputStyle} disabled={!editable} value={locationId} onChange={e => { setLocationId(e.target.value); setRows(rs => rs.map(r => ({ ...r, bin_id: '' }))) }}>
-              <option value="">Select…</option>
-              {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
-            </select>
+        {/* Details */}
+        <div className="npo-card" style={{ marginBottom: 20 }}>
+          <div className="npo-card-title">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>
+            Return Details
           </div>
-          <div>
-            <span style={label}>Return date</span>
-            <input type="date" style={inputStyle} disabled={!editable} value={returnDate} onChange={e => setReturnDate(e.target.value)} />
-          </div>
-          <div style={{ gridColumn: '1 / -1' }}>
-            <span style={label}>Reason for return</span>
-            <textarea style={{ ...inputStyle, minHeight: 64, resize: 'vertical' }} disabled={!editable} value={reason} onChange={e => setReason(e.target.value)} placeholder="e.g. Faulty on arrival, wrong size ordered…" />
-          </div>
-          <div style={{ gridColumn: '1 / -1' }}>
-            <span style={label}>Notes (optional, printed on the credit note)</span>
-            <textarea style={{ ...inputStyle, minHeight: 48, resize: 'vertical' }} disabled={!editable} value={notes} onChange={e => setNotes(e.target.value)} />
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))', gap: 14 }}>
+            <div>
+              <span style={label}>Return to location</span>
+              {editable ? (
+                <select style={inputStyle} value={locationId} onChange={e => { setLocationId(e.target.value); setRows(rs => rs.map(r => ({ ...r, bin_id: '' }))) }}>
+                  <option value="">Select…</option>
+                  {locations.map(l => <option key={l.id} value={l.id}>{l.name}</option>)}
+                </select>
+              ) : readText(locName)}
+            </div>
+            <div>
+              <span style={label}>Return date</span>
+              {editable ? <input type="date" style={inputStyle} value={returnDate} onChange={e => setReturnDate(e.target.value)} /> : readText(fmtDate(returnDate))}
+            </div>
+            <div style={{ gridColumn: '1 / -1' }}>
+              <span style={label}>Reason for return</span>
+              {editable
+                ? <textarea style={{ ...inputStyle, minHeight: 64, resize: 'vertical' }} value={reason} onChange={e => setReason(e.target.value)} placeholder="e.g. Faulty on arrival, wrong size ordered…" />
+                : readText(reason)}
+            </div>
+            <div style={{ gridColumn: '1 / -1' }}>
+              <span style={label}>Notes (optional, printed on the credit note)</span>
+              {editable ? <textarea style={{ ...inputStyle, minHeight: 48, resize: 'vertical' }} value={notes} onChange={e => setNotes(e.target.value)} /> : readText(notes)}
+            </div>
           </div>
         </div>
 
-        <div className="table-container" style={{ margin: '4px 0 0', borderRadius: 14, border: '1px solid var(--gray-100)', flex: 'none' }}>
-          <div className="table-wrap">
-            <table>
+        {/* Items */}
+        <div className="npo-card">
+          <div className="npo-card-title">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/></svg>
+            Items Returned
+          </div>
+          <div style={{ overflowX: 'auto', margin: '0 -20px' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse' }}>
               <thead>
                 <tr>
-                  <th>Item</th><th style={{ textAlign: 'right' }}>Shipped</th><th style={{ textAlign: 'right' }}>Returned before</th>
-                  <th style={{ width: 90 }}>Qty back</th><th>Serial</th><th>Batch</th><th>Bin</th>
-                  <th style={{ textAlign: 'right' }}>Price</th><th style={{ textAlign: 'right' }}>Credit (incl. tax)</th><th style={{ width: 30 }} />
+                  <th className="li-th">Item</th><th className="li-th" style={{ textAlign: 'right' }}>Shipped</th><th className="li-th" style={{ textAlign: 'right' }}>Returned before</th>
+                  <th className="li-th" style={{ width: 90 }}>Qty back</th><th className="li-th">Serial</th><th className="li-th">Batch</th><th className="li-th">Bin</th>
+                  <th className="li-th" style={{ textAlign: 'right' }}>Price</th><th className="li-th" style={{ textAlign: 'right' }}>Credit (incl. tax)</th>{editable && <th className="li-th" style={{ width: 30 }} />}
                 </tr>
               </thead>
               <tbody>
-                {rows.map((r, i) => {
+                {shownRows.map((r, i) => {
                   const l = lineById.get(r.so_line_id); if (!l) return null
-                  const first = i === 0 || rows[i - 1].so_line_id !== r.so_line_id
+                  const first = i === 0 || shownRows[i - 1].so_line_id !== r.so_line_id
                   const sameLine = rows.filter(x => x.so_line_id === r.so_line_id)
                   const taken = new Set(sameLine.filter(x => x.key !== r.key).map(x => x.serial_number).filter(Boolean))
+                  const binName = locBins.find(b => b.id === r.bin_id)?.name
                   return (
                     <tr key={r.key}>
-                      <td style={{ whiteSpace: 'normal', minWidth: 200 }}>{first ? <><div style={{ fontWeight: 600 }}>{l.product_name}</div><div style={{ fontSize: 11.5, color: 'var(--gray-400)' }}>{l.product_sku}</div></> : <span style={{ color: 'var(--gray-300)' }}>↳ same item</span>}</td>
-                      <td style={{ textAlign: 'right' }}>{first ? l.shipped : ''}</td>
-                      <td style={{ textAlign: 'right' }}>{first ? l.returned : ''}</td>
-                      <td><input style={inputStyle} inputMode="decimal" disabled={!editable} value={r.quantity} onChange={e => setRow(r.key, { quantity: e.target.value.replace(/[^0-9.]/g, '') })} /></td>
-                      <td>{l.serial ? (
-                        <select style={inputStyle} disabled={!editable} value={r.serial_number} onChange={e => setRow(r.key, { serial_number: e.target.value, quantity: e.target.value ? '1' : r.quantity })}>
+                      <td className="li-td" style={{ whiteSpace: 'normal', minWidth: 200 }}>{first ? <><div style={{ fontWeight: 600, color: 'var(--slate)', fontSize: 13 }}>{l.product_name}</div><div style={{ fontSize: 11.5, color: 'var(--gray-400)' }}>{l.product_sku}</div></> : <span style={{ color: 'var(--gray-300)' }}>↳ same item</span>}</td>
+                      <td className="li-td" style={{ textAlign: 'right' }}>{first ? l.shipped : ''}</td>
+                      <td className="li-td" style={{ textAlign: 'right' }}>{first ? l.returned : ''}</td>
+                      <td className="li-td">{editable ? <input style={inputStyle} inputMode="decimal" value={r.quantity} onChange={e => setRow(r.key, { quantity: e.target.value.replace(/[^0-9.]/g, '') })} /> : <span style={{ fontWeight: 600 }}>{r.quantity || '0'}</span>}</td>
+                      <td className="li-td">{l.serial ? (editable ? (
+                        <select style={inputStyle} value={r.serial_number} onChange={e => setRow(r.key, { serial_number: e.target.value, quantity: e.target.value ? '1' : r.quantity })}>
                           <option value="">Select…</option>{l.serials.filter(s => !taken.has(s) || s === r.serial_number).map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>) : <span style={{ color: 'var(--gray-300)' }}>—</span>}</td>
-                      <td>{l.batch ? (
-                        <select style={inputStyle} disabled={!editable} value={r.batch_number} onChange={e => setRow(r.key, { batch_number: e.target.value })}>
+                        </select>) : (r.serial_number || '—')) : <span style={{ color: 'var(--gray-300)' }}>—</span>}</td>
+                      <td className="li-td">{l.batch ? (editable ? (
+                        <select style={inputStyle} value={r.batch_number} onChange={e => setRow(r.key, { batch_number: e.target.value })}>
                           <option value="">Select…</option>{l.batches.map(s => <option key={s} value={s}>{s}</option>)}
-                        </select>) : <span style={{ color: 'var(--gray-300)' }}>—</span>}</td>
-                      <td>{l.stock && locBins.length > 0 ? (
-                        <select style={inputStyle} disabled={!editable} value={r.bin_id} onChange={e => setRow(r.key, { bin_id: e.target.value })}>
+                        </select>) : (r.batch_number || '—')) : <span style={{ color: 'var(--gray-300)' }}>—</span>}</td>
+                      <td className="li-td">{l.stock && locBins.length > 0 ? (editable ? (
+                        <select style={inputStyle} value={r.bin_id} onChange={e => setRow(r.key, { bin_id: e.target.value })}>
                           <option value="">No bin</option>{locBins.map(b => <option key={b.id} value={b.id}>{b.name}</option>)}
-                        </select>) : <span style={{ color: 'var(--gray-300)' }}>—</span>}</td>
-                      <td style={{ textAlign: 'right' }}>{money(l.unit_price)}{l.discount > 0 ? <div style={{ fontSize: 11, color: 'var(--gray-400)' }}>−{Number(l.discount.toFixed(2))}%</div> : null}</td>
-                      <td style={{ textAlign: 'right', fontWeight: 600 }}>{Number(r.quantity) > 0 ? money(creditLineTotal({ quantity: r.quantity, unit_price: l.unit_price, discount: l.discount, tax_rate: l.tax_rate })) : '—'}</td>
-                      <td>{editable && (l.serial || l.batch || l.stock) && (
+                        </select>) : (binName ?? 'No bin')) : <span style={{ color: 'var(--gray-300)' }}>—</span>}</td>
+                      <td className="li-td" style={{ textAlign: 'right' }}>{money(l.unit_price)}{l.discount > 0 ? <div style={{ fontSize: 11, color: 'var(--gray-400)' }}>−{Number(l.discount.toFixed(2))}%</div> : null}</td>
+                      <td className="li-td" style={{ textAlign: 'right', fontWeight: 600 }}>{Number(r.quantity) > 0 ? money(creditLineTotal({ quantity: r.quantity, unit_price: l.unit_price, discount: l.discount, tax_rate: l.tax_rate })) : '—'}</td>
+                      {editable && <td className="li-td">{(l.serial || l.batch || l.stock) && (
                         <button type="button" title="Add another row for this item" onClick={() => setRows(rs => { const at = rs.map(x => x.so_line_id).lastIndexOf(r.so_line_id); const n = mk({ so_line_id: r.so_line_id }); return [...rs.slice(0, at + 1), n, ...rs.slice(at + 1)] })}
                           style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--teal)', fontSize: 18, lineHeight: 1 }}>＋</button>)}
-                        {editable && sameLine.length > 1 && <button type="button" title="Remove row" onClick={() => setRows(rs => rs.filter(x => x.key !== r.key))} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--gray-400)', fontSize: 15 }}>✕</button>}</td>
+                        {sameLine.length > 1 && <button type="button" title="Remove row" onClick={() => setRows(rs => rs.filter(x => x.key !== r.key))} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: 'var(--gray-400)', fontSize: 15 }}>✕</button>}</td>}
                     </tr>
                   )
                 })}
-                {rows.length === 0 && <tr><td colSpan={10} style={{ textAlign: 'center', color: 'var(--gray-400)', padding: 28 }}>Everything on this order has already been returned.</td></tr>}
+                {shownRows.length === 0 && <tr><td colSpan={10} style={{ textAlign: 'center', color: 'var(--gray-400)', padding: 28 }}>{editable ? 'Everything on this order has already been returned.' : 'No items on this credit note.'}</td></tr>}
               </tbody>
             </table>
           </div>
-          <div className="table-footer" style={{ justifyContent: 'flex-end', gap: 16, fontSize: 14 }}>
+          <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'baseline', gap: 16, fontSize: 14, paddingTop: 14 }}>
             <span style={{ color: 'var(--gray-400)' }}>Credit total (incl. tax)</span>
-            <strong>{money(cn.status === 'Closed' || cn.status === 'Cancelled' ? cn.total_amount : total)}</strong>
+            <strong style={{ color: 'var(--slate)' }}>{money(cn.status === 'Closed' || cn.status === 'Cancelled' ? cn.total_amount : total)}</strong>
           </div>
         </div>
-        <div style={{ fontSize: 12.5, color: 'var(--gray-400)', margin: '10px 2px' }}>
-          Returned items go back into stock when you Close this credit note. Damaged goods are written off afterwards with a stock adjustment.
+        {cn.status !== 'Closed' && cn.status !== 'Cancelled' && (
+          <div style={{ fontSize: 12.5, color: 'var(--gray-400)', margin: '12px 2px' }}>
+            Returned items go back into stock when you Close this credit note. Damaged goods are written off afterwards with a stock adjustment.
+          </div>
+        )}
+      </div>
+
+      {/* Bottom bar */}
+      <div style={{ background: 'var(--white)', borderTop: '1px solid var(--gray-100)', padding: '14px 28px', display: 'flex', alignItems: 'center', justifyContent: 'space-between', boxShadow: '0 -4px 16px rgba(0,0,0,0.06)', flexShrink: 0 }}>
+        {mode === 'edit' ? (
+          <button onClick={() => (isNew ? router.push(backHref) : discard())} className="btn btn-outline" style={footerBtn} disabled={!!busy}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+            Cancel
+          </button>
+        ) : (
+          <button onClick={() => router.push('/sales/returns')} className="btn btn-outline" style={footerBtn}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><polyline points="15 18 9 12 15 6"/></svg>
+            Back to Returns
+          </button>
+        )}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {mode === 'edit' && editable && (
+            <button className="btn btn-primary" style={{ ...footerBtn, padding: '0 20px', fontSize: 14 }} disabled={!!busy} onClick={onSave}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+              {busy === 'save' ? (isNew ? 'Creating…' : 'Saving…') : isNew ? 'Create Credit Note' : 'Save Changes'}
+            </button>
+          )}
+          {mode === 'view' && canEdit && (
+            <button className="btn btn-primary" style={{ ...footerBtn, padding: '0 20px', fontSize: 14 }} disabled={!!busy} onClick={() => { const v = validate(); if (v) setError(v); else { setError(null); setConfirm('close') } }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+              {busy === 'close' ? 'Closing…' : 'Close Credit Note'}
+            </button>
+          )}
         </div>
       </div>
 
@@ -241,7 +364,7 @@ export default function CreditNoteForm({ data, canProcess, isAdmin }: { data: Sc
             </div>
             <div className="modal-footer">
               <button className="btn btn-outline" onClick={() => setConfirm(null)}>Go back</button>
-              <button className={confirm === 'close' ? 'btn btn-primary' : 'btn btn-danger'} onClick={confirm === 'close' ? onClose : onCancel}>{confirm === 'close' ? 'Close credit note' : 'Cancel credit note'}</button>
+              <button className={confirm === 'close' ? 'btn btn-primary' : 'btn btn-danger'} onClick={confirm === 'close' ? onClose : onCancel}>{confirm === 'close' ? 'Close Credit Note' : 'Cancel Credit Note'}</button>
             </div>
           </div>
         </div>

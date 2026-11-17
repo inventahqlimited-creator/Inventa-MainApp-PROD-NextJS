@@ -591,7 +591,7 @@ function PurchaseOrderForm({
       reference: supplierOrderNum || null,
       terms,
       notes: notes || null,
-      currency: selectedSupplier.currency ?? order.currency ?? 'NZD',
+      currency: selectedSupplier.currency ?? order.currency ?? null,
       total_amount: total,
       order_discount: orderDiscount || null,
       order_discount_type: orderDiscount > 0 ? orderDiscountType : null,

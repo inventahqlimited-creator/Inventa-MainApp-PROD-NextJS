@@ -77,7 +77,7 @@ export async function POST(request: Request) {
   }
 
   const sent = await sendInvite(adminClient, email, {
-    redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`,
+    redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/confirm`,
     data: await inviteData(adminClient, m.org_id, role),
   })
 

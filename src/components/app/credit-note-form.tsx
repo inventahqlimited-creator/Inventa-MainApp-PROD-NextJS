@@ -56,12 +56,12 @@ function CreditNoteActions({ soId, canEdit, canCancel, canPrint, canRetryXero, o
   )
 }
 
-export default function CreditNoteForm({ data, canProcess, isAdmin }: { data: ScreenData; canProcess: boolean; isAdmin: boolean }) {
+export default function CreditNoteForm({ data, canProcess, isAdmin, startInEdit = false }: { data: ScreenData; canProcess: boolean; isAdmin: boolean; startInEdit?: boolean }) {
   const router = useRouter()
   const { cn, so, lines, locations, bins, xero } = data
   const isNew = cn.status === 'New'
-  const [mode, setMode] = useState<'view' | 'edit'>(isNew ? 'edit' : 'view')
   const canEdit = canProcess && cn.status === 'Open'
+  const [mode, setMode] = useState<'view' | 'edit'>(isNew || (startInEdit && canEdit) ? 'edit' : 'view')
   const editable = canProcess && mode === 'edit' && (isNew || cn.status === 'Open')
 
   const [locationId, setLocationId] = useState(cn.location_id)

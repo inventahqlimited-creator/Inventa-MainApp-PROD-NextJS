@@ -12,8 +12,11 @@ export default async function ReturnsPage() {
   if (!a) redirect('/login')
   if (!can(a, 'view_sales')) redirect('/no-access')
   const settings = await loadSettings(a.db, a.orgId)
-  const { data } = await allRows((x, y) => a.db.from('credit_notes')
-    .select('id, cn_number, so_id, so_number, customer_name, return_date, reason, status, total_amount, currency, location_name, created_at')
-    .eq('org_id', a.orgId).order('created_at', { ascending: false }).order('id').range(x, y))
-  return <ReturnsTable rows={data} enabled={settings.enabled} />
+  const [{ data }, { data: locations }] = await Promise.all([
+    allRows((x, y) => a.db.from('credit_notes')
+      .select('id, cn_number, so_id, so_number, customer_name, return_date, reason, status, total_amount, currency, location_id, location_name, created_at')
+      .eq('org_id', a.orgId).order('created_at', { ascending: false }).order('id').range(x, y)),
+    a.db.from('locations').select('id, name').eq('org_id', a.orgId).eq('active', true).order('name'),
+  ])
+  return <ReturnsTable rows={data} enabled={settings.enabled} locations={(locations ?? []) as { id: string; name: string }[]} canProcess={can(a, 'process_returns')} />
 }

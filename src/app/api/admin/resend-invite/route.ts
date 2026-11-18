@@ -28,7 +28,7 @@ export async function POST(request: Request) {
   if (m.invite_status === 'accepted') return NextResponse.json({ error: 'This user has already accepted' }, { status: 400 })
 
   const sent = await sendInvite(admin, email, {
-    redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/callback`,
+    redirectTo: `${process.env.NEXT_PUBLIC_APP_URL}/auth/confirm`,
     data: await inviteData(admin, orgId, isFixedRole(role) ? role : m.role),
   })
 

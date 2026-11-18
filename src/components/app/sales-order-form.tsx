@@ -4,6 +4,8 @@
 // New order  : <SalesOrderForm … />                     (starts in edit mode)
 // Saved order: <SalesOrderForm order={…} … />           (opens in view mode, Edit button switches to edit)
 
+import RelatedOrders from '@/components/app/related-orders'
+import type { RelatedDoc } from '@/lib/related-docs'
 import { useTermNames } from '@/components/app/payment-terms-provider'
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
@@ -135,6 +137,7 @@ type Props = {
   order?: SalesOrder | null
   prefill?: SalesOrder | null // Clone Order — a new order pre-filled from an existing one
   relatedPoId?: string | null // the purchase order this order was created from / created from it (shows Open Related Order)
+  related?: RelatedDoc[] // Related Orders card: linked purchase orders and credit notes
   customers: Customer[]
   locations: Location[]
   products: Product[]
@@ -148,6 +151,7 @@ type Props = {
   stockLevels?: StockLevel[]
   fulfilmentMode?: string // 'full' | 'pick-only' | 'none' (Settings → Sales)
   quotesEnabled?: boolean // Settings → Sales → Quotes: adds a Save Quote button
+  creditNotesEnabled?: boolean // Settings → Sales → Credit Notes
   kits?: KitScreenData // Kits & Bundles add-on: on/off, settings and each kit's items
 }
 
@@ -251,10 +255,10 @@ function Dd({ label, value, options, onPick, open, setOpen, disabled, placeholde
 }
 
 // Actions dropdown in the header of a saved order (view mode)
-function ActionsMenu({ orderId, soNumber, statusLower, relatedPoId, canEdit, canCancel, canPo, isQuote, onEdit, onCancel, onPo, onError, xero, onPostXero, onUnpick, onUnpack }: {
+function ActionsMenu({ orderId, soNumber, statusLower, relatedPoId, canEdit, canCancel, canPo, isQuote, creditNotesEnabled, onEdit, onCancel, onPo, onError, xero, onPostXero, onUnpick, onUnpack }: {
   orderId: string; soNumber: string; statusLower: string; relatedPoId: string | null
   xero?: { show: boolean; canPost: boolean; info: XeroRowInfo | null }; onPostXero: () => void
-  canEdit: boolean; canCancel: boolean; canPo: boolean; isQuote: boolean
+  canEdit: boolean; canCancel: boolean; canPo: boolean; isQuote: boolean; creditNotesEnabled?: boolean
   onEdit: () => void; onCancel: () => void; onPo: () => void
   onUnpick?: () => void; onUnpack?: () => void
   onError: (message: string) => void
@@ -266,6 +270,7 @@ function ActionsMenu({ orderId, soNumber, statusLower, relatedPoId, canEdit, can
   const [attOpen, setAttOpen] = useState(false)
   const box = useRef<HTMLDivElement>(null)
   const canEmail = useCan('send_emails')
+  const canReturn = useCan('process_returns') && !!creditNotesEnabled
   const [emailOpen, setEmailOpen] = useState(false)
 
   useEffect(() => {
@@ -323,7 +328,7 @@ function ActionsMenu({ orderId, soNumber, statusLower, relatedPoId, canEdit, can
             </div>
           )}
           {canEmail && item('Email', () => { shut(); setEmailOpen(true) }, { icon: ic('M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM22 6l-10 7L2 6') })}
-          {!isQuote && item('Create Credit Note', null, { soon: true, icon: ic('M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M9 15h6') })}
+          {!isQuote && statusLower === 'closed' && canReturn && item('Create Credit Note', () => { shut(); router.push(`/sales/returns/new?so=${orderId}`) }, { icon: ic('M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M9 15h6') })}
           {sep('s1')}
           {item('Clone Order', () => { shut(); router.push(`/sales/new?clone=${orderId}`) }, { icon: ic('M9 9h10a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V11a2 2 0 0 1 2-2zM5 15H4a2 2 0 0 1-2-2V3a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v1') })}
           {canPo && item('Create Purchase Order', () => { shut(); onPo() }, { icon: ic('M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4zM3 6h18M16 10a4 4 0 0 1-8 0') })}
@@ -361,6 +366,7 @@ function SalesOrderFormInner({
   order,
   prefill,
   relatedPoId,
+  related,
   xeroInvoice,
   customers,
   locations,
@@ -375,6 +381,7 @@ function SalesOrderFormInner({
   stockLevels = [],
   fulfilmentMode = 'full',
   quotesEnabled = false,
+  creditNotesEnabled = false,
   kits,
   mode,
   setMode,
@@ -931,6 +938,7 @@ function SalesOrderFormInner({
               canCancel={statusEditable}
               canPo={statusLower !== 'cancelled' && !isQuote}
               isQuote={isQuote}
+              creditNotesEnabled={creditNotesEnabled}
               onEdit={() => { setError(null); setMode('edit') }}
               onCancel={() => setConfirmCancelOrder(true)}
               onPo={() => { setPoScope('all'); setPoOpen(true) }}
@@ -943,7 +951,7 @@ function SalesOrderFormInner({
       </div>
 
       {/* Scrollable content */}
-      <div ref={scrollRef} style={{ flex: 1, overflowY: 'auto', padding: '24px 28px 100px' }}>
+      <div ref={scrollRef} className="doc-scroll" style={{ flex: 1, overflowY: 'auto', padding: '24px 28px 100px' }}>
 
         {error && (
           <div style={{ background: '#FEF2F2', border: '1.5px solid #FECACA', borderRadius: 10, padding: '12px 16px', fontSize: 13, color: '#B91C1C', marginBottom: 20 }}>{error}</div>
@@ -1410,6 +1418,7 @@ function SalesOrderFormInner({
             </div>
           </div>
         </div>
+        {!isNew && related && <RelatedOrders items={related} />}
       </div>
 
       {/* Bottom action bar */}

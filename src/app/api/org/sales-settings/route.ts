@@ -28,6 +28,7 @@ const ALLOWED_KEYS = [
   'pick_list_settings',
   'packing_list_settings',
   'invoice_settings',
+  'credit_note_settings',
   'quotes_enabled',
 ]
 

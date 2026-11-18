@@ -54,7 +54,7 @@ export function xeroDueDate(terms: string | null | undefined, date: string, list
 }
 export const addDays = (ymd: string, d: number) => { const t = new Date(`${ymd}T00:00:00Z`); t.setUTCDate(t.getUTCDate() + d); return t.toISOString().slice(0, 10) }
 
-export async function saveRecord(db: Db, orgId: string, soId: string, rec: { xero_id: string | null; status: 'synced' | 'failed'; error: string | null; meta?: Record<string, unknown> }, entity: 'invoice' | 'bill' | 'adjustment' = 'invoice') {
+export async function saveRecord(db: Db, orgId: string, soId: string, rec: { xero_id: string | null; status: 'synced' | 'failed'; error: string | null; meta?: Record<string, unknown> }, entity: 'invoice' | 'bill' | 'adjustment' | 'credit_note' = 'invoice') {
   // A failure that repeats unchanged (the schedule retrying) is not written to the Audit Log again.
   const { data: before } = await db.from('xero_sync_records').select('status, error').eq('org_id', orgId).eq('entity', entity).eq('entity_id', soId).maybeSingle()
   const prev = before as { status?: string; error?: string | null } | null

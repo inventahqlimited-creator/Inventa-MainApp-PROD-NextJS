@@ -178,20 +178,14 @@ export default function ViewAdjustment({
           </div>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-          {xero?.show && !xero.tracked && xeroInfo && (xeroInfo.url
+          {xero?.show && xeroInfo && (xeroInfo.url
             ? <a href={xeroInfo.url} target="_blank" rel="noreferrer" title="Open journal in Xero" style={{ textDecoration: 'none' }}><XeroStatusBadge info={xeroInfo} /></a>
             : <XeroStatusBadge info={xeroInfo} />)}
           {statusBadge(adj.status)}
         </div>
       </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', padding: '24px 28px 100px' }}>
-
-        {xero?.show && xero.tracked && isDone && (
-          <div style={{ marginBottom: 20, padding: '11px 16px', borderRadius: 10, fontSize: 13, fontWeight: 500, background: '#FFFBEB', color: '#92400E', border: '1px solid #FDE68A' }}>
-            Xero tracks your inventory. Post this stock adjustment in Xero manually.
-          </div>
-        )}
+      <div className="doc-scroll" style={{ flex: 1, overflowY: 'auto', padding: '24px 28px 100px' }}>
 
         <div className="npo-card" style={{ marginBottom: 20 }}>
           <div className="npo-card-title">
@@ -220,7 +214,7 @@ export default function ViewAdjustment({
           </div>
         </div>
 
-        {xero?.show && !xero.tracked && adj.status.toLowerCase() !== 'cancelled' && (
+        {xero?.show && adj.status.toLowerCase() !== 'cancelled' && (
           <div className="npo-card" style={{ marginBottom: 20 }}>
             <div className="npo-card-title">Xero</div>
             <label style={{ display: 'flex', alignItems: 'center', gap: 9, fontSize: 13, color: 'var(--slate)', cursor: xero.canPost && !synced ? 'pointer' : 'default' }}>
@@ -231,10 +225,14 @@ export default function ViewAdjustment({
               {synced
                 ? 'This adjustment has been posted to Xero.'
                 : !xero.mapped
-                  ? 'Choose the inventory asset and stock adjustment accounts in Settings → Xero → Accounts and tax. Completed adjustments are then sent to Xero as a journal.'
+                  ? (xero.tracked
+                    ? 'Choose the stock adjustment account in Settings → Xero → Accounts and tax. Completed adjustments then update the stock of your tracked items in Xero.'
+                    : 'Choose the inventory asset and stock adjustment accounts in Settings → Xero → Accounts and tax. Completed adjustments are then sent to Xero as a journal.')
                   : skip
                     ? 'This adjustment will not be sent to Xero.'
-                    : 'Once completed, this adjustment is sent to Xero as a journal the next time you sync. Tick this for corrections that shouldn’t reach your accounts.'}
+                    : xero.tracked
+                      ? 'Once completed, this adjustment updates the stock of your tracked items in Xero the next time you sync. Tick this for corrections, or stock Xero already has, that shouldn’t reach Xero.'
+                      : 'Once completed, this adjustment is sent to Xero as a journal the next time you sync. Tick this for corrections that shouldn’t reach your accounts.'}
             </div>
             {xero.canPost && isDone && !synced && !skip && xero.mapped && (
               <button className="btn btn-outline" style={{ height: 34, marginTop: 12 }} disabled={xeroPost.busyId === adj.id} onClick={() => void xeroPost.post(adj.id)}>

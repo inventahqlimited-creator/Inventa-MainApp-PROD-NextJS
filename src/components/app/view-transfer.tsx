@@ -142,7 +142,7 @@ export default function ViewTransfer({
         </div>
       </div>
 
-      <div style={{ flex: 1, overflowY: 'auto', padding: '24px 28px 100px' }} onClick={() => { setFromOpen(false); setToOpen(false) }}>
+      <div className="doc-scroll" style={{ flex: 1, overflowY: 'auto', padding: '24px 28px 100px' }} onClick={() => { setFromOpen(false); setToOpen(false) }}>
 
         {error && (
           <div style={{ background: '#FEF2F2', border: '1.5px solid #FECACA', borderRadius: 10, padding: '12px 16px', fontSize: 13, color: '#B91C1C', marginBottom: 20 }}>{error}</div>

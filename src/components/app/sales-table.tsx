@@ -138,8 +138,10 @@ export default function SalesTable({
   orgId,
   fulfilmentMode = 'full',
   xero,
+  creditNotesEnabled = false,
 }: {
   xero?: XeroTableInfo
+  creditNotesEnabled?: boolean
   orders: Order[]
   contacts: Contact[]
   locations: Location[]
@@ -148,6 +150,7 @@ export default function SalesTable({
 }) {
   const router = useRouter()
   const canEmail = useCan('send_emails')
+  const canReturn = useCan('process_returns') && creditNotesEnabled
   const canPickSales = useCan('pick_sales')
   const canPackSales = useCan('pack_sales')
   const [emailId, setEmailId] = useState<string | null>(null)
@@ -352,6 +355,9 @@ export default function SalesTable({
                 </div>
               )}
             </div>
+            {creditNotesEnabled && (
+              <button className="btn btn-outline" onClick={() => router.push('/sales/returns')}>Returns</button>
+            )}
             <button className="btn btn-primary" onClick={() => router.push('/sales/new')}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
               New Sales Order
@@ -658,7 +664,7 @@ export default function SalesTable({
               </div>
             )}
             {canEmail && item('Email', () => { const id = o.id; setMenu(null); setEmailId(id) }, { icon: ic('M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2zM22 6l-10 7L2 6') })}
-            {k !== 'quote' && item('Create Credit Note', null, { soon: true, icon: ic('M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M9 15h6') })}
+            {k === 'closed' && canReturn && item('Create Credit Note', () => { const id = o.id; setMenu(null); router.push(`/sales/returns/new?so=${id}`) }, { icon: ic('M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M9 15h6') })}
             {!closedLike && <>{sep('s3')}{item('Cancel Order', () => { setMenu(null); setDialog({ kind: 'cancel', order: o }) }, { danger: true, icon: ic('M18 6 6 18M6 6l12 12') })}</>}
           </div>
         )

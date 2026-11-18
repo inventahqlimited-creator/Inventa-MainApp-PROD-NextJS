@@ -5,6 +5,7 @@ import SalesTable from '@/components/app/sales-table'
 import { relatedPurchaseOrders } from '@/lib/related'
 import { loadXeroTableInfo } from '@/lib/xero/table-info'
 import { allRows } from '@/lib/all-rows'
+import { normalizeCreditNoteSettings } from '@/lib/credit-notes/config'
 
 type Line = { product_id: string | null; quantity: number | null }
 type Row = {
@@ -38,7 +39,7 @@ export default async function SalesPage() {
     adminClient.from('locations').select('id, name').eq('org_id', m.org_id).eq('active', true).order('name'),
     allRows((a, b) => adminClient.from('stock_levels').select('product_id, location_id, quantity').eq('org_id', m.org_id).order('id').range(a, b)),
     allRows((a, b) => adminClient.from('products').select('id, track_stock').eq('org_id', m.org_id).order('id').range(a, b)),
-    adminClient.from('organisations').select('fulfilment_mode').eq('id', m.org_id).single(),
+    adminClient.from('organisations').select('fulfilment_mode, credit_note_settings').eq('id', m.org_id).single(),
   ])
 
   const relatedPo = await relatedPurchaseOrders(adminClient, m.org_id, ((orders ?? []) as { id: string }[]).map(o => o.id))
@@ -79,6 +80,7 @@ export default async function SalesPage() {
       contacts={(contacts ?? []) as { id: string; name: string }[]}
       locations={(locations ?? []) as { id: string; name: string }[]}
       xero={xero}
+      creditNotesEnabled={normalizeCreditNoteSettings((orgRow as { credit_note_settings?: unknown } | null)?.credit_note_settings).enabled}
     />
   )
 }

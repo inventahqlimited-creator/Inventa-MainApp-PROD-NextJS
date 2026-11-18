@@ -15,6 +15,7 @@ import PickListTemplate from '@/components/app/pick-list-template'
 import PackingListTemplate from '@/components/app/packing-list-template'
 import { normalizePackingListConfig, type PackingListConfig } from '@/lib/packing-list/config'
 import InvoiceTemplate from '@/components/app/invoice-template'
+import { formatCreditNoteNumber, normalizeCreditNoteSettings, type CreditNoteSettings } from '@/lib/credit-notes/config'
 import { normalizeInvoiceConfig, type InvoiceConfig } from '@/lib/invoice/config'
 import PurchaseOrderTemplate from '@/components/app/purchase-order-template'
 import { normalizePurchaseOrderConfig, type PurchaseOrderConfig } from '@/lib/purchase-order/config'
@@ -1628,6 +1629,9 @@ export default function SettingsClient({
   const [packingOpen, setPackingOpen] = useState(false)
   const [invoiceCfg, setInvoiceCfg] = useState<InvoiceConfig>(() => normalizeInvoiceConfig(org.invoice_settings))
   const [invoiceOpen, setInvoiceOpen] = useState(false)
+  const [creditCfg, setCreditCfg] = useState<CreditNoteSettings>(() => normalizeCreditNoteSettings(org.credit_note_settings))
+  const [creditOpen, setCreditOpen] = useState(false)
+  const [savingCredit, setSavingCredit] = useState(false)
 
   async function saveFulfilment() {
     setSavingFulfilment(true)
@@ -1670,6 +1674,17 @@ export default function SettingsClient({
     })
     setSavingShippingDefaults(false)
     if (res.ok) showToast('success', 'Shipping defaults saved')
+    else showToast('error', 'Failed to save')
+  }
+
+  async function saveCreditNotes() {
+    setSavingCredit(true)
+    const res = await fetch('/api/org/sales-settings', {
+      method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ credit_note_settings: creditCfg }),
+    })
+    setSavingCredit(false)
+    if (res.ok) showToast('success', 'Credit note settings saved')
     else showToast('error', 'Failed to save')
   }
 
@@ -2384,6 +2399,36 @@ export default function SettingsClient({
                 />
               </div>
             </Card>
+            <Card title="Credit Notes" subtitle="Let your team process customer returns as credit notes against closed sales orders" action={<SaveBtn onClick={saveCreditNotes} saving={savingCredit} />}>
+              <div style={{ padding: '18px 20px', display: 'flex', flexDirection: 'column', gap: 16 }}>
+                <ToggleRow
+                  label="Enable credit notes"
+                  sub="Adds Create Credit Note to closed orders and a Returns list under Sales. Stock comes back and the credit note goes to Xero when a credit note is closed."
+                  active={creditCfg.enabled}
+                  onChange={v => setCreditCfg(c => ({ ...c, enabled: v }))}
+                />
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr 1fr', gap: 14 }}>
+                  <Field label="Prefix">
+                    <input className="modal-input" value={creditCfg.prefix} onChange={e => setCreditCfg(c => ({ ...c, prefix: e.target.value }))} maxLength={12} style={{ background: 'var(--white)', fontFamily: 'monospace', fontWeight: 700 }} />
+                  </Field>
+                  <Field label="Suffix">
+                    <input className="modal-input" value={creditCfg.suffix} onChange={e => setCreditCfg(c => ({ ...c, suffix: e.target.value }))} maxLength={12} placeholder="e.g. -NZ" style={{ background: 'var(--white)', fontFamily: 'monospace', fontWeight: 700 }} />
+                  </Field>
+                  <Field label="Start Number"><MInput value={String(creditCfg.start)} onChange={v => setCreditCfg(c => ({ ...c, start: Math.max(1, parseInt(v) || 1) }))} type="number" placeholder="1" /></Field>
+                  <Field label="Number Length (digits)">
+                    <Select value={String(creditCfg.digits)} onChange={v => setCreditCfg(c => ({ ...c, digits: parseInt(v) || 4 }))} options={['3', '4', '5', '6'].map(d => ({ value: d, label: `${d} digits` }))} />
+                  </Field>
+                </div>
+                <div>
+                  <div style={{ fontSize: 12, color: 'var(--gray-400)', marginBottom: 6 }}>Preview</div>
+                  <div style={{ background: 'var(--gray-50)', border: '1.5px solid var(--gray-200)', borderRadius: 9, padding: '9px 14px', fontFamily: 'monospace', fontSize: 14, fontWeight: 700, color: 'var(--slate)', display: 'inline-block' }}>{formatCreditNoteNumber(creditCfg, [])}</div>
+                </div>
+                <Field label="Send to Xero as">
+                  <Select value={creditCfg.xero_status} onChange={v => setCreditCfg(c => ({ ...c, xero_status: v === 'DRAFT' ? 'DRAFT' : 'AUTHORISED' }))} options={[{ value: 'AUTHORISED', label: 'Approved (goes live straight away)' }, { value: 'DRAFT', label: 'Draft (waits in Xero until you approve it)' }]} />
+                </Field>
+                <div style={{ fontSize: 12, color: 'var(--gray-400)' }}>Credit notes are created as Open and posted to Xero when closed. Allocating or refunding the credit is done in Xero. The printed template is edited under Sales Documents.</div>
+              </div>
+            </Card>
             <Card title="Shipping Defaults" subtitle="Default carrier and method for new shipments" action={<SaveBtn onClick={saveShippingDefaults} saving={savingShippingDefaults} />}>
               <div style={{ padding: '18px 20px', display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14 }}>
                 <Field label="Default Carrier">
@@ -2444,6 +2489,22 @@ export default function SettingsClient({
                   </span>
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--gray-300)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setCreditOpen(true)}
+                  style={{ width: '100%', display: 'flex', alignItems: 'center', gap: 14, padding: '12px 10px', background: 'transparent', border: 'none', borderRadius: 10, cursor: 'pointer', textAlign: 'left', fontFamily: 'inherit' }}
+                  onMouseEnter={e => (e.currentTarget.style.background = 'var(--gray-50)')}
+                  onMouseLeave={e => (e.currentTarget.style.background = 'transparent')}
+                >
+                  <span style={{ width: 36, height: 36, borderRadius: 10, background: 'var(--teal-surface)', color: 'var(--teal)', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
+                    <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8zM14 2v6h6M9 15h6" /></svg>
+                  </span>
+                  <span style={{ flex: 1 }}>
+                    <span style={{ display: 'block', fontSize: 13.5, fontWeight: 600, color: 'var(--slate)', fontFamily: 'var(--font-display)' }}>Credit Note</span>
+                    <span style={{ display: 'block', fontSize: 12.5, color: 'var(--gray-400)', marginTop: 2 }}>Logo, business details, columns and notes on the printed credit note</span>
+                  </span>
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="var(--gray-300)" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="9 18 15 12 9 6" /></svg>
+                </button>
               </div>
             </Card>
             {invoiceOpen && (
@@ -2452,6 +2513,15 @@ export default function SettingsClient({
                 initial={invoiceCfg}
                 onClose={() => setInvoiceOpen(false)}
                 onSaved={cfg => { setInvoiceCfg(cfg); setInvoiceOpen(false); showToast('success', 'Invoice template saved') }}
+              />
+            )}
+            {creditOpen && (
+              <InvoiceTemplate
+                credit={creditCfg}
+                orgInfo={{ name: bizName, tradingName: String(org.trading_name ?? ''), address: bizAddress, phone: bizPhone, email: bizEmail, abn, gst: gstNumber, country, logoUrl, currency: baseCurrency, timezone, decimals: parseInt(decimalPlaces) || 2 }}
+                initial={creditCfg.template}
+                onClose={() => setCreditOpen(false)}
+                onSaved={cfg => { setCreditCfg(c => ({ ...c, template: cfg })); setCreditOpen(false); showToast('success', 'Credit note template saved') }}
               />
             )}
             {packingOpen && (

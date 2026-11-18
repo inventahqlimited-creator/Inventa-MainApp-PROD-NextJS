@@ -5,7 +5,7 @@ import type { SupabaseClient } from '@supabase/supabase-js'
 import type { XeroTableInfo } from '@/components/app/xero-sync-ui'
 import { xeroInvoiceUrl } from './invoice'
 import { xeroBillUrl } from './bill'
-import { accountsMapped, xeroJournalUrl } from './adjustment'
+import { accountsMapped, adjustmentReady, xeroJournalUrl } from './adjustment'
 import { normalizePrefs } from './prefs'
 import { fetchAllRows } from './paged'
 import type { XeroSettings } from './mapping'
@@ -32,5 +32,7 @@ export async function loadXeroTableInfo(db: SupabaseClient, orgId: string, entit
 export async function loadAdjustmentXeroMode(db: SupabaseClient, orgId: string): Promise<{ tracked: boolean; mapped: boolean }> {
   const { data } = await db.from('xero_connections').select('settings, preferences').eq('org_id', orgId).maybeSingle()
   const row = data as { settings: XeroSettings | null; preferences: unknown } | null
-  return { tracked: normalizePrefs(row?.preferences).inventory_tracked, mapped: accountsMapped(row?.settings ?? {}) }
+  const prefs = normalizePrefs(row?.preferences)
+  // tracked mode only needs the stock adjustment account; journal mode needs both accounts
+  return { tracked: prefs.inventory_tracked, mapped: adjustmentReady(row?.settings ?? {}, prefs) }
 }

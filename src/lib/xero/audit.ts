@@ -42,11 +42,12 @@ const TABLE = {
   invoice: { table: 'sales_orders', numberCol: 'so_number', type: 'sales_orders', noun: 'invoice', Noun: 'Invoice' },
   bill: { table: 'purchase_orders', numberCol: 'po_number', type: 'purchase_orders', noun: 'bill', Noun: 'Bill' },
   adjustment: { table: 'adjustment_orders', numberCol: 'adj_number', type: 'adjustment_orders', noun: 'journal', Noun: 'Journal' },
+  credit_note: { table: 'credit_notes', numberCol: 'cn_number', type: 'credit_notes', noun: 'credit note', Noun: 'Credit note' },
 } as const
 
 /** One audit line for a document that was posted to Xero, or that Xero refused. */
 export async function auditPost(
-  db: Db, orgId: string, entity: 'invoice' | 'bill' | 'adjustment', id: string,
+  db: Db, orgId: string, entity: 'invoice' | 'bill' | 'adjustment' | 'credit_note', id: string,
   rec: { status: 'synced' | 'failed'; error: string | null; number?: string | null; postedAs?: string | null },
 ): Promise<void> {
   try {

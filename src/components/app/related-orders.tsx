@@ -24,16 +24,14 @@ function badge(status: string) {
 
 export default function RelatedOrders({ items }: { items: RelatedDoc[] }) {
   const router = useRouter()
+  if (items.length === 0) return null // nothing linked: no card at all
   return (
     <div className="npo-card" style={{ marginTop: 20 }}>
       <div className="npo-card-title">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/></svg>
         Related Orders
       </div>
-      {items.length === 0 ? (
-        <div style={{ fontSize: 13, color: 'var(--gray-400)', padding: '4px 0 2px' }}>No related orders.</div>
-      ) : (
-        <div style={{ overflowX: 'auto', margin: '0 -20px' }}>
+      <div style={{ overflowX: 'auto', margin: '0 -20px' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
             <thead>
               <tr>
@@ -56,8 +54,7 @@ export default function RelatedOrders({ items }: { items: RelatedDoc[] }) {
               ))}
             </tbody>
           </table>
-        </div>
-      )}
+      </div>
     </div>
   )
 }

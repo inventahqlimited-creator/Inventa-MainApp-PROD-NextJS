@@ -3,6 +3,7 @@ import { createAdminClient, createClient } from '@/lib/supabase/server'
 import { redirect } from 'next/navigation'
 import EditPurchaseOrder from '@/components/app/edit-purchase-order'
 import { relatedSalesOrders } from '@/lib/related'
+import { relatedForPurchaseOrder } from '@/lib/related-docs'
 import { loadXeroTableInfo } from '@/lib/xero/table-info'
 import { allRows } from '@/lib/all-rows'
 
@@ -48,6 +49,7 @@ export default async function EditPurchaseOrderPage({ params, searchParams }: { 
 
   if (!order) redirect('/purchases')
   const relatedSoId = (await relatedSalesOrders(adminClient, m.org_id, [id])).get(id) ?? null
+  const related = await relatedForPurchaseOrder(adminClient, m.org_id, id)
 
   const [{ data: locations }, { data: contacts }, { data: products }, { data: org }, { data: taxRates }, { data: stockLevels }] = await Promise.all([
     adminClient.from('locations').select('id, name, address, city, country, phone, email').eq('org_id', m.org_id).eq('active', true).order('name'),
@@ -79,6 +81,7 @@ export default async function EditPurchaseOrderPage({ params, searchParams }: { 
       orgId={m.org_id}
       order={shaped}
       relatedSoId={relatedSoId}
+      related={related}
       suppliers={(contacts ?? []) as any}
       locations={(locations ?? []) as any}
       products={(products ?? []) as any}

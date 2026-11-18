@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import SalesOrderForm from '@/components/app/sales-order-form'
 import { loadKitColumns, loadKitScreenData } from '@/lib/kits/order-lines-server'
 import { relatedPurchaseOrders } from '@/lib/related'
+import { relatedForSalesOrder } from '@/lib/related-docs'
 import { loadXeroTableInfo } from '@/lib/xero/table-info'
 import { allRows } from '@/lib/all-rows'
 import { normalizeCreditNoteSettings } from '@/lib/credit-notes/config'
@@ -44,6 +45,7 @@ export default async function SalesOrderPage({ params }: { params: Promise<{ id:
 
   if (!order) redirect('/sales')
   const relatedPoId = (await relatedPurchaseOrders(adminClient, m.org_id, [id])).get(id) ?? null
+  const related = await relatedForSalesOrder(adminClient, m.org_id, id)
   const xeroInfo = await loadXeroTableInfo(adminClient, m.org_id, 'invoice', m.role === 'admin')
 
   const [
@@ -102,6 +104,7 @@ export default async function SalesOrderPage({ params }: { params: Promise<{ id:
       order={shaped}
       kits={kits}
       relatedPoId={relatedPoId}
+      related={related}
       xeroInvoice={{ show: xeroInfo.show, canPost: xeroInfo.canPost, info: xeroInfo.records[id] ?? null }}
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       customers={(customers ?? []) as any}

@@ -1,5 +1,7 @@
 'use client'
 
+import RelatedOrders from '@/components/app/related-orders'
+import type { RelatedDoc } from '@/lib/related-docs'
 import { useTermNames } from '@/components/app/payment-terms-provider'
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
@@ -181,6 +183,7 @@ type Props = {
   relatedSoId?: string | null // sales order this was created from / created from it (shows Open Related Order)
   xeroBill?: { show: boolean; canPost: boolean; ready: boolean; info: XeroRowInfo | null } // Xero state of this order's bill (closed + something received = ready)
   startInEdit?: boolean // opened with ?edit=1 (Edit Order in the Purchases list)
+  related?: RelatedDoc[] // Related Orders card: linked sales orders and backorders
   kits?: KitScreenData // Kits & Bundles add-on: on/off, settings and each kit's items
 }
 
@@ -305,6 +308,7 @@ function PurchaseOrderForm({
   orgId,
   order,
   relatedSoId,
+  related,
   suppliers,
   locations,
   products,
@@ -1227,6 +1231,7 @@ function PurchaseOrderForm({
             </div>
           </div>
         </div>
+        {related && <RelatedOrders items={related} />}
       </div>
 
       {/* Bottom action bar */}

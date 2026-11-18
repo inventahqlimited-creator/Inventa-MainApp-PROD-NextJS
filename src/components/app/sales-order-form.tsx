@@ -4,6 +4,8 @@
 // New order  : <SalesOrderForm … />                     (starts in edit mode)
 // Saved order: <SalesOrderForm order={…} … />           (opens in view mode, Edit button switches to edit)
 
+import RelatedOrders from '@/components/app/related-orders'
+import type { RelatedDoc } from '@/lib/related-docs'
 import { useTermNames } from '@/components/app/payment-terms-provider'
 import { useState, useMemo, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
@@ -135,6 +137,7 @@ type Props = {
   order?: SalesOrder | null
   prefill?: SalesOrder | null // Clone Order — a new order pre-filled from an existing one
   relatedPoId?: string | null // the purchase order this order was created from / created from it (shows Open Related Order)
+  related?: RelatedDoc[] // Related Orders card: linked purchase orders and credit notes
   customers: Customer[]
   locations: Location[]
   products: Product[]
@@ -363,6 +366,7 @@ function SalesOrderFormInner({
   order,
   prefill,
   relatedPoId,
+  related,
   xeroInvoice,
   customers,
   locations,
@@ -1414,6 +1418,7 @@ function SalesOrderFormInner({
             </div>
           </div>
         </div>
+        {!isNew && related && <RelatedOrders items={related} />}
       </div>
 
       {/* Bottom action bar */}

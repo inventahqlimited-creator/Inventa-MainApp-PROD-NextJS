@@ -3,6 +3,7 @@ import { redirect } from 'next/navigation'
 import { getAccess, can } from '@/lib/auth/access'
 import { loadReturnScreen } from '@/lib/credit-notes/screen'
 import CreditNoteForm from '@/components/app/credit-note-form'
+import { relatedForCreditNote } from '@/lib/related-docs'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,5 +15,6 @@ export default async function ReturnPage({ params, searchParams }: { params: Pro
   if (!can(a, 'view_sales')) redirect('/no-access')
   const d = await loadReturnScreen(a, { id })
   if ('redirect' in d) redirect(d.redirect)
-  return <CreditNoteForm data={d} canProcess={can(a, 'process_returns')} isAdmin={a.isAdmin} startInEdit={edit === '1'} />
+  const related = await relatedForCreditNote(a.db, a.orgId, id)
+  return <CreditNoteForm data={d} canProcess={can(a, 'process_returns')} isAdmin={a.isAdmin} startInEdit={edit === '1'} related={related} />
 }

@@ -11,6 +11,8 @@ import { creditLineTotal } from '@/lib/credit-notes/config'
 import { printCreditNotes } from '@/lib/credit-notes/print'
 import { toast } from '@/components/app/toast'
 import { cnBadge } from '@/components/app/returns-table'
+import RelatedOrders from '@/components/app/related-orders'
+import type { RelatedDoc } from '@/lib/related-docs'
 
 type Row = { key: number; so_line_id: string; quantity: string; bin_id: string; serial_number: string; batch_number: string; expiry_date: string }
 const inputStyle: React.CSSProperties = { border: '1.5px solid var(--gray-200)', borderRadius: 8, padding: '7px 10px', fontSize: 13, fontFamily: 'var(--font-ui)', color: 'var(--gray-900)', background: '#fff', width: '100%' }
@@ -56,7 +58,7 @@ function CreditNoteActions({ soId, canEdit, canCancel, canPrint, canRetryXero, o
   )
 }
 
-export default function CreditNoteForm({ data, canProcess, isAdmin, startInEdit = false }: { data: ScreenData; canProcess: boolean; isAdmin: boolean; startInEdit?: boolean }) {
+export default function CreditNoteForm({ data, canProcess, isAdmin, startInEdit = false, related }: { data: ScreenData; canProcess: boolean; isAdmin: boolean; startInEdit?: boolean; related?: RelatedDoc[] }) {
   const router = useRouter()
   const { cn, so, lines, locations, bins, xero } = data
   const isNew = cn.status === 'New'
@@ -322,6 +324,7 @@ export default function CreditNoteForm({ data, canProcess, isAdmin, startInEdit 
             Returned items go back into stock when you Close this credit note. Damaged goods are written off afterwards with a stock adjustment.
           </div>
         )}
+        {!isNew && related && <RelatedOrders items={related} />}
       </div>
 
       {/* Bottom bar */}

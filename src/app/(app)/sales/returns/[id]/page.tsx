@@ -6,12 +6,13 @@ import CreditNoteForm from '@/components/app/credit-note-form'
 
 export const dynamic = 'force-dynamic'
 
-export default async function ReturnPage({ params }: { params: Promise<{ id: string }> }) {
+export default async function ReturnPage({ params, searchParams }: { params: Promise<{ id: string }>; searchParams: Promise<{ edit?: string }> }) {
   const { id } = await params
+  const { edit } = await searchParams
   const a = await getAccess()
   if (!a) redirect('/login')
   if (!can(a, 'view_sales')) redirect('/no-access')
   const d = await loadReturnScreen(a, { id })
   if ('redirect' in d) redirect(d.redirect)
-  return <CreditNoteForm data={d} canProcess={can(a, 'process_returns')} isAdmin={a.isAdmin} />
+  return <CreditNoteForm data={d} canProcess={can(a, 'process_returns')} isAdmin={a.isAdmin} startInEdit={edit === '1'} />
 }

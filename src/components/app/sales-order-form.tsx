@@ -91,6 +91,7 @@ type LineItem = {
   _manual?: boolean // price typed by hand — price level changes leave it alone
   _locked?: boolean // fully picked when the order was opened — can't be edited or removed
   kit_group?: string | null // kit line and its item lines share this
+  tracked?: { serial: string | null; batch: string | null; expiry: string | null; qty: number }[] // serials/batches picked or shipped on this line
   is_kit_parent?: boolean // the kit line itself (priced); its item lines are $0 and carry the stock
   kit_qty_per?: number | null // item lines: how many go into one kit
 }
@@ -557,6 +558,7 @@ function SalesOrderFormInner({
   }, [stockLevels, selectedLocation])
 
   // Line stock in view mode: does the ship-from location hold enough of this item for the whole order?
+  const showTracked = !isNew && !editable && lines.some(l => (l.tracked?.length ?? 0) > 0)
   const showStock = !isNew && mode === 'view' && !['closed', 'shipped', 'delivered', 'cancelled'].includes(statusLower)
   type LineState = 'in' | 'no' | 'picked' | 'packed' | { partial: string } | null
   function lineStock(l: LineItem): LineState {
@@ -1119,6 +1121,7 @@ function SalesOrderFormInner({
                   <th className="li-th" style={{ width: 70, textAlign: 'center' }}>Unit</th>
                   <th className="li-th" style={{ width: 80, textAlign: 'right' }}>Qty</th>
                   {showStock && <th className="li-th" style={{ width: 150 }}>Stock</th>}
+                  {showTracked && <th className="li-th" style={{ width: 210 }}>{['closed', 'shipped', 'delivered'].includes(statusLower) ? 'Serial / Batch shipped' : 'Serial / Batch picked'}</th>}
                   <th className="li-th" style={{ width: 100, textAlign: 'right' }}>Unit Price</th>
                   <th className="li-th" style={{ width: 80, textAlign: 'right' }}>Disc %</th>
                   <th className="li-th" style={{ width: 140 }}>Tax</th>
@@ -1129,7 +1132,7 @@ function SalesOrderFormInner({
               <tbody>
                 {lines.length === 0 && (
                   <tr>
-                    <td colSpan={(editable ? 9 : 8) + (showStock ? 1 : 0)} style={{ textAlign: 'center', padding: '24px 0', color: 'var(--gray-400)', fontSize: 13 }}>
+                    <td colSpan={(editable ? 9 : 8) + (showStock ? 1 : 0) + (showTracked ? 1 : 0)} style={{ textAlign: 'center', padding: '24px 0', color: 'var(--gray-400)', fontSize: 13 }}>
                       {editable ? 'No items added. Search below to add products.' : 'No line items on this order.'}
                     </td>
                   </tr>
@@ -1167,6 +1170,18 @@ function SalesOrderFormInner({
                             ? <span className="badge" style={{ background: '#FEE2E2', color: '#B91C1C' }} title={`${q(stockByProduct[l.product_id]?.onHand ?? 0, l.product_id)} on hand`}>No Stock ({q(stockByProduct[l.product_id]?.onHand ?? 0, l.product_id)} on hand)</span>
                             : <span className="badge" style={{ background: '#DCFCE7', color: '#15803D' }}>In Stock</span>
                         })()}
+                      </td>
+                    )}
+                    {showTracked && (
+                      <td className="li-td" style={{ whiteSpace: 'normal', fontSize: 12, lineHeight: 1.5 }}>
+                        {(l.tracked?.length ?? 0) === 0 ? <span style={{ color: 'var(--gray-300)' }}>—</span> : (
+                          <>
+                            {l.tracked!.filter(t => t.serial).length > 0 && <div style={{ fontFamily: 'monospace', color: 'var(--slate)' }}>{l.tracked!.filter(t => t.serial).map(t => t.serial).join(', ')}</div>}
+                            {l.tracked!.filter(t => !t.serial && t.batch).map((t, i) => (
+                              <div key={i} style={{ color: 'var(--slate)' }}>Batch <span style={{ fontFamily: 'monospace' }}>{t.batch}</span> × {q(t.qty, l.product_id)}{t.expiry ? <span style={{ color: 'var(--gray-400)' }}> · exp {t.expiry}</span> : null}</div>
+                            ))}
+                          </>
+                        )}
                       </td>
                     )}
                     {item ? <td className="li-td" colSpan={4} style={{ textAlign: 'right', color: 'var(--gray-300)', fontSize: 12 }}>included in the kit price</td> : (<>

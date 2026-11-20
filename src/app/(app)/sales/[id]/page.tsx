@@ -7,6 +7,7 @@ import { relatedPurchaseOrders } from '@/lib/related'
 import { relatedForSalesOrder } from '@/lib/related-docs'
 import { loadXeroTableInfo } from '@/lib/xero/table-info'
 import { allRows } from '@/lib/all-rows'
+import { loadTrackedByLine } from '@/lib/sales-tracking'
 import { normalizeCreditNoteSettings } from '@/lib/credit-notes/config'
 
 export default async function SalesOrderPage({ params }: { params: Promise<{ id: string }> }) {
@@ -89,10 +90,11 @@ export default async function SalesOrderPage({ params }: { params: Promise<{ id:
   const bySort = (a: { sort_order: number | null }, b: { sort_order: number | null }) => (a.sort_order ?? 0) - (b.sort_order ?? 0)
   const kitCols = await loadKitColumns(adminClient, m.org_id, id)
   const kits = await loadKitScreenData(adminClient, m.org_id)
+  const tracked = await loadTrackedByLine(adminClient, m.org_id, id, String(o.status ?? ''), o.sales_order_lines ?? [])
   const shaped = {
     ...o,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    lines: [...(o.sales_order_lines ?? [])].map((l: any) => ({ ...l, ...(kitCols.get(l.id) ?? {}) })).sort(bySort),
+    lines: [...(o.sales_order_lines ?? [])].map((l: any) => ({ ...l, ...(kitCols.get(l.id) ?? {}), tracked: tracked.get(l.id) ?? [] })).sort(bySort),
     cost_lines: [...(o.sales_order_cost_lines ?? [])].sort(bySort),
   }
 

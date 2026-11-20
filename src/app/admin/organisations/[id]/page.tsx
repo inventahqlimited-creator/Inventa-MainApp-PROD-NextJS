@@ -4,6 +4,7 @@ import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { DetailsCard, SubscriptionCard, type OrgData } from './org-panels'
 import OpenAppButton from './open-app-button'
+import { stagingEnabled } from '@/lib/hub/staging'
 import UsersTable, { type MemberRow } from './users-table'
 import { isSupportEmail } from '@/lib/hub/support'
 import { fmtDate, fmtDateTime } from '@/lib/hub/constants'
@@ -73,6 +74,7 @@ export default async function OrgDetailPage({ params }: { params: Promise<{ id: 
           <span style={{ display: 'inline-block', padding: '4px 12px', borderRadius: '999px', fontSize: '12px', fontWeight: 600, background: statusStyle[o.status]?.bg, color: statusStyle[o.status]?.color }}>
           {o.status.charAt(0).toUpperCase() + o.status.slice(1)}
         </span>
+          {stagingEnabled() && <OpenAppButton orgId={o.id} staging />}
           <OpenAppButton orgId={o.id} />
         </div>
       </div>

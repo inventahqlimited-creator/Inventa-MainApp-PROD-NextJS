@@ -17,11 +17,12 @@ export function supportEmailFor(adminUserId: string, orgId: string): string {
 }
 
 const secret = () => process.env.SUPPORT_LINK_SECRET || process.env.SUPABASE_SERVICE_ROLE_KEY || ''
-const mac = (th: string, orgId: string, exp: number) => createHmac('sha256', secret()).update(`${th}.${orgId}.${exp}`).digest('hex')
+const mac = (th: string, orgId: string, exp: number, key = secret()) => createHmac('sha256', key).update(`${th}.${orgId}.${exp}`).digest('hex')
 
-export function signSupportLink(th: string, orgId: string, ttlSeconds = 120) {
+/** `key` signs for another environment's app (the Hub's "Open Staging InventaHQ"); by default this app's own secret. */
+export function signSupportLink(th: string, orgId: string, ttlSeconds = 120, key?: string) {
   const exp = Math.floor(Date.now() / 1000) + ttlSeconds
-  return { exp, sig: mac(th, orgId, exp) }
+  return { exp, sig: mac(th, orgId, exp, key ?? secret()) }
 }
 
 export function verifySupportLink(th: string, orgId: string, exp: number, sig: string): boolean {

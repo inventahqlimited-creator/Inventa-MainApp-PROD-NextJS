@@ -29,3 +29,14 @@ describe('support access', () => {
     expect(verifySupportLink('tok', 'org-1', old.exp, old.sig)).toBe(false)
   })
 })
+
+describe('support links for another environment (Open Staging InventaHQ)', () => {
+  it('a link signed with the staging key verifies only where that key is the secret', () => {
+    const { exp, sig } = signSupportLink('tok', 'org-1', 120, 'staging-key')
+    expect(verifySupportLink('tok', 'org-1', exp, sig)).toBe(false) // this app's own secret is different
+    const prev = process.env.SUPPORT_LINK_SECRET
+    process.env.SUPPORT_LINK_SECRET = 'staging-key'
+    expect(verifySupportLink('tok', 'org-1', exp, sig)).toBe(true)
+    process.env.SUPPORT_LINK_SECRET = prev
+  })
+})

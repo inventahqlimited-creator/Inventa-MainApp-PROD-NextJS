@@ -68,7 +68,7 @@ const TYPE_NAV: Record<string, string> = {
   transfer_in:  '/transfers',
   transfer_out: '/transfers',
   adjustment:   '/products/adjustments',
-  return:       '/sales',
+  return:       '/sales/returns',
 }
 
 // Short human-readable reference label
@@ -83,6 +83,7 @@ function fmtRef(referenceId: string | null, referenceType: string | null, refere
     (referenceType === 'sale_order' || referenceType === 'sales_order') ? 'SO' :
     referenceType === 'transfer_order'   ? 'TR' :
     referenceType === 'adjustment_order' ? 'ADJ' :
+    referenceType === 'credit_note'      ? 'CN' :
     referenceType === 'return'           ? 'RET' : '#'
   return `${prefix}-${short}`
 }
@@ -698,6 +699,7 @@ export default function MovementsTable({
                     const navPath   = m.reference_type === 'purchase_order' ? '/purchases'
                                   : m.reference_type === 'transfer_order' ? '/transfers'
                                   : (m.reference_type === 'sales_order' || m.reference_type === 'sale_order') ? '/sales'
+                                  : m.reference_type === 'credit_note' ? '/sales/returns'
                                   : (TYPE_NAV[m.movement_type] ?? '/products')
                     const refLabel  = fmtRef(m.reference_id, m.reference_type, m.reference_number)
                     return (

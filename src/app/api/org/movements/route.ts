@@ -125,7 +125,7 @@ export async function GET(request: Request) {
     for (const b of bins ?? []) binMap.set(b.id, b.name)
   }
 
-  // --- Fetch reference numbers (ADJ-…, PO-…, SO-…) ---
+  // --- Fetch reference numbers (ADJ-…, PO-…, SO-…, CN-…) ---
   const referenceMap = new Map<string, string>() // reference_id → human number
   type Mv = { reference_type: string | null; reference_id: string | null }
   const idsFor = (type: string) => [...new Set(
@@ -146,6 +146,11 @@ export async function GET(request: Request) {
   if (trIds.length > 0) {
     const { data: trs } = await adminClient.from('transfer_orders').select('id, tr_number').in('id', trIds)
     for (const o of trs ?? []) if (o.tr_number) referenceMap.set(o.id, o.tr_number)
+  }
+  const cnIds = idsFor('credit_note')
+  if (cnIds.length > 0) {
+    const { data: cns } = await adminClient.from('credit_notes').select('id, cn_number').eq('org_id', orgId).in('id', cnIds)
+    for (const c of cns ?? []) if (c.cn_number) referenceMap.set(c.id, c.cn_number)
   }
   const soIds = [...new Set([...idsFor('sales_order'), ...idsFor('sale_order')])]
   if (soIds.length > 0) {

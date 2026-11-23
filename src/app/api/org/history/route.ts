@@ -52,5 +52,18 @@ export async function GET(req: Request) {
   const events = ([...(own.data ?? []), ...(lines.data ?? [])] as Row[])
     .filter(r => (seen.has(r.id) ? false : (seen.add(r.id), true)))
     .sort((a, b) => (a.created_at < b.created_at ? 1 : a.created_at > b.created_at ? -1 : 0))
-  return NextResponse.json({ number, events })
+
+  // Email entries link to the email that was sent (matched on status and nearest time), so the popup can show it.
+  const { data: mails } = await db.from('email_log').select('id, created_at, status').eq('org_id', orgId).eq('doc_id', id).order('created_at', { ascending: false }).limit(200)
+  const pool = ((mails ?? []) as { id: string; created_at: string; status: string }[]).map(m => ({ ...m, t: new Date(m.created_at).getTime(), used: false }))
+  const withEmail = (events as unknown as { id: string; category: string; action: string; created_at: string }[]).map(e => {
+    if (e.category !== 'Email' || !/^Email (sent|failed)$/.test(e.action)) return e
+    const want = e.action === 'Email sent' ? 'sent' : 'failed'
+    const t = new Date(e.created_at).getTime()
+    let best: (typeof pool)[number] | null = null
+    for (const m of pool) if (!m.used && m.status === want && Math.abs(m.t - t) <= 120000 && (!best || Math.abs(m.t - t) < Math.abs(best.t - t))) best = m
+    if (best) best.used = true
+    return best ? { ...e, email_id: best.id } : e
+  })
+  return NextResponse.json({ number, events: withEmail })
 }

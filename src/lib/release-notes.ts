@@ -6,6 +6,33 @@ export type ReleaseNote = { id: string; date: string; title: string; summary: st
 
 export const RELEASES: ReleaseNote[] = [
   {
+    id: '2026-11-24',
+    date: '2026-11-24',
+    title: 'Sales Returns & Credit Notes, serials on orders, email history and PDF downloads',
+    summary: 'Take returns against sales orders, see which serials were sent, look back at sent emails, and download documents as PDFs.',
+    sections: [
+      {
+        heading: 'Sales Returns & Credit Notes',
+        items: [
+          'Return goods from a closed sales order with Create Credit Note. Closing the return puts the stock back and sends the credit note to Xero.',
+          'Turn credit notes on, set the number format and edit the template in Settings → Sales → Credit Notes.',
+        ],
+      },
+      {
+        heading: 'Serial / Batch column on sales orders',
+        items: ['See which serial numbers and batches were picked and shipped, right on the order.'],
+      },
+      {
+        heading: 'Email history',
+        items: ['In Order History, hover over an email and click View to see exactly what was sent, including recipients and attachments.'],
+      },
+      {
+        heading: 'Download or print documents',
+        items: ['When you click Print on an invoice, credit note, purchase order, packing list or pick list, you now choose Download (a PDF file) or Print (your browser’s print window). Use the cross to cancel.'],
+      },
+    ],
+  },
+  {
     id: '2026-10-29',
     date: '2026-10-29',
     title: 'Kits & Bundles, and smarter Xero stock adjustments',

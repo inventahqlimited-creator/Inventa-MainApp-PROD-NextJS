@@ -6,19 +6,21 @@ import { loadInvoicePayload } from '@/lib/invoice/data'
 import { loadPurchaseOrderPayload } from '@/lib/purchase-order/data'
 import { loadPackingListPayload } from '@/lib/packing-list/data'
 import { loadPickListPayload } from '@/lib/pick-list/data'
+import { loadCreditNotePayload } from '@/lib/credit-notes/server'
+import type { PackOverrides } from '@/lib/packing-list/types'
 import { renderInvoicePdf } from './invoice'
 import { renderPackingListPdf } from './packing-list'
 import { renderPickListPdf } from './pick-list'
 
-export type DocType = 'invoice' | 'purchase_order' | 'packing_list' | 'pick_list'
-export const DOC_TYPES: DocType[] = ['invoice', 'purchase_order', 'packing_list', 'pick_list']
+export type DocType = 'invoice' | 'purchase_order' | 'packing_list' | 'pick_list' | 'credit_note'
+export const DOC_TYPES: DocType[] = ['invoice', 'purchase_order', 'packing_list', 'pick_list', 'credit_note']
 export const isDocType = (v: unknown): v is DocType => typeof v === 'string' && (DOC_TYPES as string[]).includes(v)
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Db = SupabaseClient<any, any, any> | any
 
 /** Builds one document for one order, scoped to the organisation. Throws a readable message when it can't. */
-export async function renderDocumentPdf(db: Db, orgId: string, type: DocType, orderId: string): Promise<{ filename: string; buffer: Buffer }> {
+export async function renderDocumentPdf(db: Db, orgId: string, type: DocType, orderId: string, overrides?: PackOverrides): Promise<{ filename: string; buffer: Buffer }> {
   switch (type) {
     case 'invoice': {
       const p = await loadInvoicePayload(db, orgId, [orderId])
@@ -31,9 +33,14 @@ export async function renderDocumentPdf(db: Db, orgId: string, type: DocType, or
       return renderInvoicePdf(p)
     }
     case 'packing_list': {
-      const p = await loadPackingListPayload(db, orgId, [orderId])
+      const p = await loadPackingListPayload(db, orgId, [orderId], overrides)
       if (!p.orders.length) throw new Error('This order isn’t ready for a packing list yet.')
       return renderPackingListPdf(p)
+    }
+    case 'credit_note': {
+      const p = await loadCreditNotePayload(db, orgId, [orderId])
+      if (!p.orders.length) throw new Error('Cancelled credit notes can’t be downloaded.')
+      return renderInvoicePdf(p)
     }
     case 'pick_list': {
       const p = await loadPickListPayload(db, orgId, [orderId])

@@ -91,17 +91,24 @@ export async function POST(req: Request) {
     } catch { /* the audit trail must never break a send */ }
   }
   const log = { org_id: access.orgId, sent_by: access.userId, sent_by_name: access.name, module, doc_id: id, doc_ref: ctx.ref, to_addresses: to.ok, cc_addresses: cc.ok, bcc_addresses: bcc.ok, from_address: from.address, subject, attachments: attachments.map(a => ({ name: a.filename, size: a.content.length })) }
+  const html = wrapEmail(body, signatureHtml)
+  const replyTo = reply.ok[0] || settings.reply_to || access.email || undefined
+  // Keeps the full email so Order History can show exactly what was sent. If the body columns aren't there yet, still log the send.
+  const saveLog = async (row: Record<string, unknown>) => {
+    const { error } = await access.db.from('email_log').insert({ ...row, body_html: html, reply_to: replyTo ?? null })
+    if (error) await access.db.from('email_log').insert(row)
+  }
   try {
     const sent = await sendEmail({
-      from: from.header, to: to.ok, cc: cc.ok, bcc: bcc.ok, replyTo: reply.ok[0] || settings.reply_to || access.email || undefined,
-      subject, html: wrapEmail(body, signatureHtml), attachments,
+      from: from.header, to: to.ok, cc: cc.ok, bcc: bcc.ok, replyTo,
+      subject, html, attachments,
     })
-    await access.db.from('email_log').insert({ ...log, status: 'sent', provider_id: sent.id })
+    await saveLog({ ...log, status: 'sent', provider_id: sent.id })
     await audit('Email sent', `To ${to.ok.join(', ')} — “${subject}”${attachments.length ? ` (${attachments.length} attachment${attachments.length === 1 ? '' : 's'})` : ''}`)
     return NextResponse.json({ success: true, preview: htmlToText(body).slice(0, 80) })
   } catch (e) {
     const msg = e instanceof Error ? e.message : 'Could not send the email.'
-    await access.db.from('email_log').insert({ ...log, status: 'failed', error: msg.slice(0, 500) })
+    await saveLog({ ...log, status: 'failed', error: msg.slice(0, 500) })
     await audit('Email failed', `To ${to.ok.join(', ')} — ${msg}`.slice(0, 480))
     return NextResponse.json({ error: msg }, { status: 502 })
   }

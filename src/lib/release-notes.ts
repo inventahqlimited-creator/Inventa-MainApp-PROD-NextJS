@@ -9,31 +9,26 @@ export const RELEASES: ReleaseNote[] = [
     id: '2026-11-24',
     date: '2026-11-24',
     title: 'Sales Returns & Credit Notes, serials on orders, email history and PDF downloads',
-    summary: 'Take returns against your sales orders, see exactly which serials and batches went out, look back at the emails you’ve sent, and download documents as PDFs.',
+    summary: 'Take returns against sales orders, see which serials were sent, look back at sent emails, and download documents as PDFs.',
     sections: [
       {
-        heading: 'New: Sales Returns & Credit Notes',
+        heading: 'Sales Returns & Credit Notes',
         items: [
-          'Open a closed sales order and choose Create Credit Note to return goods. You can only return what was sold on that order, and kits are returned one component at a time.',
-          'Give the return a reason, choose the bin for each line, and pick which location the stock goes back into — it can be different from where it was sent from.',
-          'Returns start as Open. Click Close (you’ll be asked to confirm) to bring the stock back in and send the credit note to Xero. If Xero can’t be reached, the return still closes and you can retry the Xero sync.',
-          'See all your credit notes in the new Returns list on the Sales page, and print or download any of them.',
-          'Settings → Sales → Credit Notes: switch credit notes on or off, choose your number format (starts with CN-), choose whether they arrive in Xero as drafts or approved, and edit the Credit Note template just like your sales order.',
-          'Damaged goods aren’t handled on the return — adjust them out separately with a stock adjustment.',
+          'Return goods from a closed sales order with Create Credit Note. Closing the return puts the stock back and sends the credit note to Xero.',
+          'Turn credit notes on, set the number format and edit the template in Settings → Sales → Credit Notes.',
         ],
       },
       {
-        heading: 'Easier to see what was sent',
-        items: [
-          'Sales orders have a new Serial / Batch column showing which serial numbers and batches were picked, and which were shipped once the order is closed.',
-        ],
+        heading: 'Serial / Batch column on sales orders',
+        items: ['See which serial numbers and batches were picked and shipped, right on the order.'],
       },
       {
-        heading: 'Email history and printing',
-        items: [
-          'In an order’s Order History, hover over an email entry and click View to see exactly what was sent: To, CC, BCC, reply-to, subject, the message and any attachments. Emails sent from now on are saved in full.',
-          'When you click Print on an invoice, credit note, purchase order, packing list or pick list, you now choose Download (a PDF file) or Print (your browser’s print window). Use the cross to cancel.',
-        ],
+        heading: 'Email history',
+        items: ['In Order History, hover over an email and click View to see exactly what was sent, including recipients and attachments.'],
+      },
+      {
+        heading: 'Download or print documents',
+        items: ['When you click Print on an invoice, credit note, purchase order, packing list or pick list, you now choose Download (a PDF file) or Print (your browser’s print window). Use the cross to cancel.'],
       },
     ],
   },

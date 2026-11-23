@@ -43,6 +43,13 @@ export async function deleteDomain(id: string) {
   try { await call('DELETE', `/domains/${encodeURIComponent(id)}`) } catch { /* already gone */ }
 }
 
+/** A sent email as Resend holds it (used for emails sent before we kept the body ourselves). */
+export async function getSentEmail(id: string) {
+  const r = await call<{ html?: string | null; text?: string | null; reply_to?: string[] | string | null }>('GET', `/emails/${encodeURIComponent(id)}`)
+  const reply = Array.isArray(r.reply_to) ? r.reply_to[0] : r.reply_to
+  return { html: r.html ?? null, text: r.text ?? null, replyTo: reply ?? null }
+}
+
 export type OutgoingEmail = {
   from: string; to: string[]; cc?: string[]; bcc?: string[]; replyTo?: string
   subject: string; html: string; attachments?: { filename: string; content: Buffer }[]

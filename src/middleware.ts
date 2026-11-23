@@ -82,7 +82,9 @@ export async function middleware(request: NextRequest) {
   const isPublic =
     pathname.startsWith('/login') ||
     pathname.startsWith('/auth') ||
-    pathname.startsWith('/api/health')
+    pathname.startsWith('/api/health') ||
+    // the database scheduler (pg_cron) has no login; the route checks its own x-cron-secret header
+    pathname === '/api/integrations/xero/cron'
 
   if (isPublic) {
     if (user && pathname === '/login') {

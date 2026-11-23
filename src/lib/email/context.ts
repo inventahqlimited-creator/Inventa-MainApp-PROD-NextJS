@@ -12,7 +12,7 @@ export const isEmailModule = (v: unknown): v is EmailModule => v === 'sales' || 
 
 export const MODULE_VIEW_PERM: Record<EmailModule, PermKey> = { sales: 'view_sales', purchases: 'view_purchases', transfers: 'view_transfers' }
 /** Permission needed to attach each generated document (same as printing it). */
-export const DOC_PERM: Record<DocType, PermKey> = { invoice: 'print_sales_invoice', packing_list: 'print_sales_pack', pick_list: 'print_sales_pick', purchase_order: 'print_purchases' }
+export const DOC_PERM: Record<DocType, PermKey> = { invoice: 'print_sales_invoice', packing_list: 'print_sales_pack', pick_list: 'print_sales_pick', purchase_order: 'print_purchases', credit_note: 'view_sales' }
 export const MODULE_DOCS: Record<EmailModule, { type: DocType; label: string }[]> = {
   sales: [{ type: 'invoice', label: 'Invoice / quote' }, { type: 'pick_list', label: 'Pick slip' }, { type: 'packing_list', label: 'Packing list' }],
   purchases: [{ type: 'purchase_order', label: 'Purchase order' }],

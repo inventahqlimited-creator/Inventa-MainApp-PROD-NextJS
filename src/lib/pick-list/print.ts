@@ -4,8 +4,12 @@
 
 import { renderPickListHtml } from './render'
 import type { PickListMode, PickListPayload } from './types'
+import { choosePrint } from '@/lib/print-choice'
 
 export async function printPickList(ids: string[], mode: PickListMode): Promise<{ ok: true } | { ok: false; error: string }> {
+  // Consolidated pick lists have no PDF layout yet, so they can only be printed
+  const choice = await choosePrint(mode === 'single' ? (ids.length === 1 ? 'Pick list' : `${ids.length} pick lists`) : 'Consolidated pick list', mode === 'single' ? 'pick_list' : null, ids)
+  if (choice !== 'print') return choice
   // Open the window straight away (inside the click) so pop-up blockers allow it, then fill it in
   const w = window.open('', '_blank')
   if (!w) return { ok: false, error: 'Your browser blocked the print window. Allow pop-ups for this site and try again.' }

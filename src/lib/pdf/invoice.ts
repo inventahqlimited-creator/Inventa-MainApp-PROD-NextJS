@@ -17,7 +17,7 @@ function dueDate(terms: string | null, invoiceDate: string): string | null {
 }
 
 export function documentTitle(o: InvoiceOrder, biz: InvoiceBusiness): string {
-  return o.kind === 'purchase' ? 'Purchase Order' : o.is_quote ? 'Quote' : biz.numbers.some(n => n.startsWith('Tax no.')) ? 'Tax Invoice' : 'Invoice'
+  return o.kind === 'purchase' ? 'Purchase Order' : o.kind === 'credit' ? 'Credit Note' : o.is_quote ? 'Quote' : biz.numbers.some(n => n.startsWith('Tax no.')) ? 'Tax Invoice' : 'Invoice'
 }
 
 const addr = (label: string, a: InvoiceAddress | null): Content => ({

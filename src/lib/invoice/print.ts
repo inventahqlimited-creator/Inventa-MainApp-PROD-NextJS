@@ -4,8 +4,11 @@
 
 import { renderInvoiceHtml } from './render'
 import type { InvoicePayload } from './types'
+import { choosePrint } from '@/lib/print-choice'
 
 export async function printInvoice(ids: string[]): Promise<{ ok: true } | { ok: false; error: string }> {
+  const choice = await choosePrint(ids.length === 1 ? 'Invoice' : `${ids.length} invoices`, 'invoice', ids)
+  if (choice !== 'print') return choice
   // Open the window straight away (inside the click) so pop-up blockers allow it, then fill it in
   const w = window.open('', '_blank')
   if (!w) return { ok: false, error: 'Your browser blocked the print window. Allow pop-ups for this site and try again.' }

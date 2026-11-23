@@ -14,6 +14,16 @@ type Ctx = {
 }
 export type EmailModule = 'sales' | 'purchases' | 'transfers'
 
+/** The signature lives inside the body as its own block (so it can be edited like any other text). Swapping signatures replaces that block. */
+const SIG_ATTR = 'data-sig'
+function withSignature(html: string, sigHtml: string): string {
+  const doc = new DOMParser().parseFromString(`<div id="r">${html}</div>`, 'text/html')
+  const root = doc.getElementById('r')!
+  root.querySelectorAll(`[${SIG_ATTR}]`).forEach(n => n.remove())
+  const base = root.innerHTML
+  return sigHtml ? `${base}<div ${SIG_ATTR}="1" style="margin-top:16px">${sigHtml}</div>` : base
+}
+
 const lbl: React.CSSProperties = { fontSize: 12, fontWeight: 600, color: 'var(--gray-500)', width: 62, flexShrink: 0 }
 const fmtSize = (n: number) => n > 1048576 ? `${(n / 1048576).toFixed(1)} MB` : `${Math.max(1, Math.round(n / 1024))} KB`
 
@@ -35,23 +45,36 @@ export default function EmailComposer({ module, id, onClose, onSent }: { module:
       if (!r.ok) { setLoadErr(j.error ?? 'Could not load'); return }
       const c = j as Ctx
       setCtx(c); setTo(c.doc.recipientEmail); setCc(c.defaultCc.join(', ')); setBcc((c.defaultBcc ?? []).join(', ')); setShowBcc((c.defaultBcc ?? []).length > 0); setReplyTo(c.replyTo)
-      const dflt = c.signatures.find(s => s.is_default); if (dflt) setSigId(dflt.id)
+      const dflt = c.signatures.find(s => s.is_default)
       const t = c.templates.find(x => x.is_default)
-      if (t) applyTemplate(t, c)
-      else { setSubject(`${c.doc.docLabel} ${c.doc.ref} from ${c.vars.company_name}`); setBodyHtml(`<p>Hi ${c.doc.recipientName || 'there'},</p><p>Please find ${c.doc.docLabel.toLowerCase()} ${c.doc.ref} attached.</p>`); setEditorKey(k => k + 1) }
+      if (t) applyTemplate(t, c, dflt?.id ?? '')
+      else {
+        setSigId(dflt?.id ?? '')
+        setSubject(`${c.doc.docLabel} ${c.doc.ref} from ${c.vars.company_name}`)
+        setBodyHtml(withSignature(`<p>Hi ${c.doc.recipientName || 'there'},</p><p>Please find ${c.doc.docLabel.toLowerCase()} ${c.doc.ref} attached.</p>`, dflt ? fillPlaceholders(dflt.body_html, c.vars, true) : ''))
+        setEditorKey(k => k + 1)
+      }
       if (c.docs.length) setDocs([c.docs[0].type])
     })()
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [module, id])
 
-  function applyTemplate(t: Tpl, c: Ctx | null = ctx) {
+  // `keepSig` is the signature in use; a template that names its own signature switches to it
+  function applyTemplate(t: Tpl, c: Ctx | null = ctx, keepSig: string = sigId) {
     if (!c) return
+    const useSig = t.signature_id && c.signatures.some(s => s.id === t.signature_id) ? t.signature_id : keepSig
+    const sig = c.signatures.find(s => s.id === useSig)
     setTplId(t.id)
     setSubject(fillPlaceholders(t.subject, c.vars))
-    setBodyHtml(fillPlaceholders(t.body_html, c.vars, true)); setEditorKey(k => k + 1)
-    if (t.signature_id && c.signatures.some(s => s.id === t.signature_id)) setSigId(t.signature_id)
+    setSigId(useSig)
+    setBodyHtml(withSignature(fillPlaceholders(t.body_html, c.vars, true), sig ? fillPlaceholders(sig.body_html, c.vars, true) : '')); setEditorKey(k => k + 1)
   }
-  const sig = ctx?.signatures.find(s => s.id === sigId)
+  function changeSignature(id: string) {
+    if (!ctx) return
+    const sig = ctx.signatures.find(s => s.id === id)
+    setSigId(id)
+    setBodyHtml(withSignature(bodyHtml, sig ? fillPlaceholders(sig.body_html, ctx.vars, true) : '')); setEditorKey(k => k + 1)
+  }
   const total = files.reduce((n, f) => n + f.size, 0)
 
   function addFiles(list: FileList | null) {
@@ -67,7 +90,8 @@ export default function EmailComposer({ module, id, onClose, onSent }: { module:
     setSending(true); setErr('')
     const fd = new FormData()
     fd.set('module', module); fd.set('id', id); fd.set('to', to); fd.set('cc', cc); fd.set('bcc', bcc); fd.set('replyTo', replyTo)
-    fd.set('subject', subject); fd.set('body_html', bodyHtml); fd.set('signature_id', sigId); fd.set('docs', JSON.stringify(docs))
+    fd.set('subject', subject); fd.set('body_html', bodyHtml); fd.set('signature_id', ''); // the signature is already inside the body
+    fd.set('docs', JSON.stringify(docs))
     files.forEach(f => fd.append('files', f))
     try {
       const r = await fetch('/api/org/email/send', { method: 'POST', body: fd })
@@ -104,12 +128,11 @@ export default function EmailComposer({ module, id, onClose, onSent }: { module:
                 <option value="">— none —</option>{ctx.templates.map(t => <option key={t.id} value={t.id}>{t.name}</option>)}
               </select>))}
             {row('Subject', <input className="modal-input" value={subject} onChange={e => setSubject(e.target.value)} />)}
-            <RichEditor html={bodyHtml} reset={editorKey} onChange={setBodyHtml} minHeight={170} placeholders={PLACEHOLDERS as never} />
             {row('Signature', (
-              <select className="modal-input" value={sigId} onChange={e => setSigId(e.target.value)}>
+              <select className="modal-input" value={sigId} onChange={e => changeSignature(e.target.value)}>
                 <option value="">— none —</option>{ctx.signatures.map(s => <option key={s.id} value={s.id}>{s.name}</option>)}
               </select>))}
-            {sig && <div style={{ fontSize: 12.5, color: 'var(--gray-500)', borderLeft: '3px solid var(--gray-200)', paddingLeft: 10 }} dangerouslySetInnerHTML={{ __html: fillPlaceholders(sig.body_html, ctx.vars, true) }} />}
+            <RichEditor html={bodyHtml} reset={editorKey} onChange={setBodyHtml} minHeight={220} placeholders={PLACEHOLDERS as never} />
             <div style={{ borderTop: '1px solid var(--gray-100)', paddingTop: 10 }}>
               <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--gray-500)', marginBottom: 6 }}>Attachments</div>
               {ctx.docs.map(d => (

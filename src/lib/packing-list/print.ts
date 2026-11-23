@@ -4,12 +4,15 @@
 
 import { renderPackingListHtml } from './render'
 import type { PackOverrides, PackingListPayload } from './types'
+import { choosePrint } from '@/lib/print-choice'
 
 /**
  * @param ids        sales order ids
  * @param overrides  optional: what the Pack screen is showing right now (cartons, carrier, tracking) that isn't saved yet
  */
 export async function printPackingList(ids: string[], overrides?: PackOverrides): Promise<{ ok: true } | { ok: false; error: string }> {
+  const choice = await choosePrint(ids.length === 1 ? 'Packing list' : `${ids.length} packing lists`, 'packing_list', ids, overrides)
+  if (choice !== 'print') return choice
   // Open the window straight away (inside the click) so pop-up blockers allow it, then fill it in
   const w = window.open('', '_blank')
   if (!w) return { ok: false, error: 'Your browser blocked the print window. Allow pop-ups for this site and try again.' }

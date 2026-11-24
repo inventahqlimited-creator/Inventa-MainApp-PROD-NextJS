@@ -106,11 +106,14 @@ export default function EmailComposer({ module, id, onClose, onSent }: { module:
   return (
     <div style={{ position: 'fixed', inset: 0, background: 'rgba(15,23,42,0.45)', zIndex: 600, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 12 }} onClick={e => e.stopPropagation()}>
       <div style={{ background: 'var(--white)', borderRadius: 16, width: 720, maxWidth: '100%', maxHeight: '94vh', display: 'flex', flexDirection: 'column', boxShadow: '0 20px 60px rgba(0,0,0,0.25)' }}>
-        <div style={{ padding: '16px 22px', borderBottom: '1px solid var(--gray-100)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ flexShrink: 0, padding: '16px 22px', borderBottom: '1px solid var(--gray-100)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ fontFamily: 'var(--font-display)', fontSize: 17, fontWeight: 700, color: 'var(--slate)' }}>Email {ctx ? `${ctx.doc.docLabel} ${ctx.doc.ref}` : ''}</div>
           <button className="btn btn-outline" style={{ height: 28, fontSize: 12 }} onClick={onClose}>Close</button>
         </div>
-        <div style={{ padding: '16px 22px', overflowY: 'auto', display: 'grid', gap: 10 }}>
+        {/* The scroll area takes the space left between header and footer; the grid sits inside it at its natural height,
+            so a short window scrolls instead of squashing the message editor to nothing. */}
+        <div style={{ flex: 1, minHeight: 0, overflowY: 'auto' }}>
+        <div style={{ padding: '16px 22px', display: 'grid', gap: 10 }}>
           {loadErr && <div style={{ color: '#B91C1C', fontSize: 13 }}>{loadErr}</div>}
           {!ctx && !loadErr && <div style={{ color: 'var(--gray-400)', fontSize: 13 }}>Loading…</div>}
           {ctx && !ctx.configured && (
@@ -154,7 +157,8 @@ export default function EmailComposer({ module, id, onClose, onSent }: { module:
           {err && <div style={{ color: '#B91C1C', fontSize: 13 }}>{err}</div>}
           {done && <div style={{ color: '#047857', fontSize: 13, fontWeight: 600 }}>Email sent ✓</div>}
         </div>
-        <div style={{ padding: '12px 22px', borderTop: '1px solid var(--gray-100)', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+        </div>
+        <div style={{ flexShrink: 0, padding: '12px 22px', borderTop: '1px solid var(--gray-100)', display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
           <button className="btn btn-outline" style={{ height: 36 }} onClick={onClose}>Cancel</button>
           <button className="btn btn-primary" style={{ height: 36, padding: '0 22px' }} onClick={send} disabled={sending || done || !ctx?.configured}>{sending ? 'Sending…' : 'Send email'}</button>
         </div>

@@ -29,6 +29,12 @@ export function hasReceived(lines: Row[]): boolean {
   return lines.some(l => n(l.quantity_received) > 0)
 }
 
+/** Account for a bill line: a stocked product that Xero tracks goes to the inventory asset account (null = let Xero use
+ *  the item's own); everything else goes to the purchases account. */
+export function billLineAccount(trackedLine: boolean, settings: Pick<XeroSettings, 'inventory_account_code' | 'purchases_account_code'>): string | null {
+  return trackedLine ? settings.inventory_account_code || null : settings.purchases_account_code || null
+}
+
 export async function postBill(db: Db, orgId: string, poId: string, settings: XeroSettings, prefs: XeroPrefs): Promise<PostResult> {
   if (!settings.sales_account_code || !settings.purchases_account_code) {
     return { ok: false, status: 409, error: 'Save the Accounts and tax settings in Xero settings before posting bills.' }
@@ -76,6 +82,15 @@ export async function postBill(db: Db, orgId: string, poId: string, settings: Xe
     const { data } = await db.from('xero_sync_records').select('entity_id').eq('org_id', orgId).eq('entity', 'product').eq('status', 'synced').in('entity_id', productIds)
     for (const r of (data ?? []) as { entity_id: string }[]) synced.add(r.entity_id)
   }
+  // When Xero tracks inventory, a stocked product that's in Xero may be a tracked item there, and Xero only accepts a
+  // tracked item on a bill against that item's own inventory asset account ("incorrect inventory asset account").
+  // So those lines go to the inventory asset account from Settings → Xero → Accounts (the same account the items use
+  // in Xero); without one set, the line carries just the ItemCode and Xero fills in the item's own account.
+  const stockItems = new Set<string>()
+  if (prefs.inventory_tracked && productIds.length) {
+    const { data } = await db.from('products').select('id, type, track_stock').eq('org_id', orgId).in('id', productIds)
+    for (const p of (data ?? []) as Row[]) if (p.type === 'Stock' && p.track_stock !== false) stockItems.add(String(p.id))
+  }
   const { data: taxData } = await db.from('tax_rates').select('id, name, rate').eq('org_id', orgId)
   const rates = ((taxData ?? []) as { id: string; name: string; rate: number | string }[]).map(r => ({ id: r.id, name: r.name, rate: n(r.rate) }))
 
@@ -110,14 +125,17 @@ export async function postBill(db: Db, orgId: string, poId: string, settings: Xe
     const note = clean(l.line_notes)
     const code = clean(l.product_sku)
     const dr = discountRate(n(l.discount))
+    const withItem = Boolean(code && synced.has(clean(l.product_id)))
+    const trackedLine = withItem && stockItems.has(clean(l.product_id))
+    const account = billLineAccount(trackedLine, settings)
     items.push({
       Description: (note ? `${name}\n${note}` : name).slice(0, 4000),
       Quantity: qty,
       UnitAmount: n(l.unit_cost),
-      AccountCode: settings.purchases_account_code,
+      ...(account ? { AccountCode: account } : {}),
       TaxType: tax.type,
       ...(dr ? { DiscountRate: dr } : {}),
-      ...(code && synced.has(clean(l.product_id)) ? { ItemCode: code } : {}),
+      ...(withItem ? { ItemCode: code } : {}),
     })
   }
   for (const c of costs) {

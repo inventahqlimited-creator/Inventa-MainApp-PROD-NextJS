@@ -1,3 +1,5 @@
+import type { Metadata } from 'next'
+import { headers } from 'next/headers'
 import { redirect } from 'next/navigation'
 import { createClient, createAdminClient } from '@/lib/supabase/server'
 import { PLATFORM_ORG_ID, isPlatformAdmin } from '@/lib/auth/platform-admin'
@@ -5,6 +7,13 @@ import { sweepExpired } from '@/lib/hub/support-lease'
 import HubSidebar from '@/components/hub/hub-sidebar'
 
 export const dynamic = 'force-dynamic'
+
+// The Hub says so in the tab (and on staging, that too)
+export async function generateMetadata(): Promise<Metadata> {
+  const host = ((await headers()).get('host') ?? '').toLowerCase()
+  const staging = host.includes('staging') || (process.env.NEXT_PUBLIC_APP_URL ?? '').toLowerCase().includes('staging')
+  return { title: { absolute: staging ? 'inventaHQ | Hub | Staging' : 'inventaHQ | Hub' } }
+}
 
 export default async function AdminLayout({ children }: { children: React.ReactNode }) {
   const supabase = await createClient()

@@ -3,6 +3,7 @@
 // "Order History" popup for a sales order, purchase order or transfer: every Audit Log entry for that order,
 // newest first — who created it, what changed, picked, packed, received, closed, and posted to Xero.
 import { useEffect, useState } from 'react'
+import { cleanUserName } from '@/lib/support-name'
 
 type Ev = { id: string; created_at: string; category: string; action: string; ref: string | null; detail: string | null; user_name: string | null; email_id?: string }
 
@@ -144,7 +145,7 @@ export default function OrderHistory({ type, id, label, onClose }: { type: 'sale
                 <div style={{ minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                     <span style={{ background: bg, color, fontSize: 11, fontWeight: 700, padding: '2px 9px', borderRadius: 20 }}>{e.action}</span>
-                    <span style={{ fontSize: 12, color: 'var(--gray-400)' }}>by <strong style={{ color: 'var(--slate)', fontWeight: 600 }}>{e.user_name ?? 'System'}</strong></span>
+                    <span style={{ fontSize: 12, color: 'var(--gray-400)' }}>by <strong style={{ color: 'var(--slate)', fontWeight: 600 }}>{cleanUserName(e.user_name) ?? 'System'}</strong></span>
                   </div>
                   {e.detail && <div style={{ fontSize: 12.5, color: 'var(--gray-500)', lineHeight: 1.5, marginTop: 5, overflowWrap: 'anywhere' }}>{e.detail}</div>}
                 </div>

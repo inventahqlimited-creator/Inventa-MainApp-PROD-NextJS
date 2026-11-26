@@ -237,7 +237,12 @@ type PostData = {
 function FailText({ error }: { error: string | null }) {
   if (!error) return null
   if (error.startsWith(STOCK_ERROR_PREFIX)) {
-    return <span title={error} style={{ fontSize: 12, color: '#B91C1C', cursor: 'help', textDecoration: 'underline dotted' }}>Not enough stock in Xero ⓘ</span>
+    return (
+      <span title={error} style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: '#B91C1C', cursor: 'help' }}>
+        Not enough stock in Xero
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9.5" /><path d="M12 11v5.5" /><path d="M12 7.6v.01" /></svg>
+      </span>
+    )
   }
   return <span style={{ fontSize: 12, color: '#B91C1C' }}>{error}</span>
 }

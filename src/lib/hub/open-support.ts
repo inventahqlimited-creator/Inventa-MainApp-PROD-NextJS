@@ -36,8 +36,9 @@ export async function openSupport(opts: {
   const mm = me as { first_name: string | null; last_name: string | null; email: string | null } | null
   const realName = [mm?.first_name, mm?.last_name].filter(Boolean).join(' ') || 'Inventa admin'
   const realEmail = user.email ?? mm?.email ?? ''
-  const first = realName
-  const last = `(Super Admin · ${realEmail})`
+  // Customers see one plain name; which Hub admin it was is kept in the Hub's own activity log (below)
+  const first = 'InventaHQ'
+  const last = 'Support'
 
   const email = supportEmailFor(user.id, orgId)
   const { data: existing } = await appDb.from('org_members').select('id, user_id').eq('org_id', orgId).eq('email', email).maybeSingle()

@@ -5,6 +5,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
+import { cleanUserName } from '@/lib/support-name'
 
 type Ev = {
   id: string; created_at: string; category: string; action: string; ref: string | null
@@ -202,7 +203,7 @@ export default function AuditLog({ allowed, disabled = false }: { allowed: boole
                     {href ? <a href={href} onClick={ev => { ev.preventDefault(); router.push(href) }} style={{ color: 'inherit', textDecoration: 'none' }}>{e.ref}</a> : e.ref}
                   </td>
                   <td style={{ padding: '10px 14px', fontSize: 12.5, color: 'var(--gray-400)', lineHeight: 1.5, overflowWrap: 'anywhere', whiteSpace: 'normal' }}>{e.detail}</td>
-                  <td style={{ padding: '10px 14px', fontSize: 12, fontWeight: 600, color: 'var(--slate)', overflowWrap: 'anywhere', whiteSpace: 'normal' }}>{e.user_name ?? '—'}</td>
+                  <td style={{ padding: '10px 14px', fontSize: 12, fontWeight: 600, color: 'var(--slate)', overflowWrap: 'anywhere', whiteSpace: 'normal' }}>{cleanUserName(e.user_name) ?? '—'}</td>
                 </tr>
               )
             })}

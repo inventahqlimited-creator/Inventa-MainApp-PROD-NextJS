@@ -1,4 +1,5 @@
 import type { Metadata } from 'next'
+import { headers } from 'next/headers'
 import { Plus_Jakarta_Sans, Inter } from 'next/font/google'
 import './globals.css'
 
@@ -16,9 +17,14 @@ const inter = Inter({
   display: 'swap',
 })
 
-export const metadata: Metadata = {
-  title: { default: 'inventaHQ', template: '%s — inventaHQ' },
-  description: 'Inventory Intelligence Platform',
+// Production keeps the plain name; the staging app says so in the tab
+export async function generateMetadata(): Promise<Metadata> {
+  const host = ((await headers()).get('host') ?? '').toLowerCase()
+  const staging = host.includes('staging') || (process.env.NEXT_PUBLIC_APP_URL ?? '').toLowerCase().includes('staging')
+  return {
+    title: staging ? { default: 'inventaHQ | Staging', template: '%s | Staging' } : { default: 'inventaHQ', template: '%s — inventaHQ' },
+    description: 'Inventory Intelligence Platform',
+  }
 }
 
 export default function RootLayout({
